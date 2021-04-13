@@ -1,0 +1,11 @@
+<project toolsVersion="5.0">
+    <dependency name="rtxdi-media" linkPath="../media" >
+        <package name="rtxdi-media" version="p4sw-29720145" />
+    </dependency>
+    <dependency name="dxc" linkPath="../dxc" >
+        <package name="dxc" version="1.6.0.3108-3960adab4-windows-x86_64" platforms="win" />
+    </dependency>
+    <dependency name="donut" linkPath="../donut-snapshot" >
+        <package name="rtxdi-donut" version="0102c189" />
+    </dependency>
+</project>

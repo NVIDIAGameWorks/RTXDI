@@ -1,0 +1,3 @@
+[submodule "donut"]
+	path = donut
+	url = https://gitlab-master.nvidia.com/nvrhi/donut.git

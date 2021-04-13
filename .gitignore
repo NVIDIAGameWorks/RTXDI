@@ -1,0 +1,8 @@
+media/
+bin/
+dxc/
+donut-snapshot/
+build*/
+.vs
+*.sublime-project
+*.sublime-workspace

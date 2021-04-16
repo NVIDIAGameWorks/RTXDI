@@ -42,8 +42,10 @@ set(DONUT_SHADERS_OUTPUT_DIR "${CMAKE_SOURCE_DIR}/bin/shaders/framework")
 
 if (EXISTS "${CMAKE_CURRENT_LIST_DIR}/donut")
 	add_subdirectory(donut)
+	set(DONUT_PATH "${CMAKE_CURRENT_LIST_DIR}/donut")
 else()
 	add_subdirectory(donut-snapshot)
+	set(DONUT_PATH "${CMAKE_CURRENT_LIST_DIR}/donut-snapshot")
 endif()
 
 add_subdirectory(rtxdi-sdk)

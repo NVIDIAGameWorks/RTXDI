@@ -1,5 +1,5 @@
 
-include(../donut/compileshaders.cmake)
+include("${DONUT_PATH}/compileshaders.cmake")
 file(GLOB shaders "*.hlsl" "*.hlsli" "*.h" "../rtxdi-sdk/shaders/*.hlsl" "../rtxdi-sdk/include/*.hlsli")
 
 set(project rtxdi-sample)

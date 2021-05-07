@@ -73,28 +73,35 @@ void UIData::SetDefaultDenoiserSettings()
     reblurSettings.diffuseSettings.antilagHitDistanceSettings.sigmaScale = 1.5f;
     reblurSettings.diffuseSettings.antilagHitDistanceSettings.sensitivityToDarkness = 0.5f;
     reblurSettings.diffuseSettings.antilagHitDistanceSettings.enable = true;
-    reblurSettings.diffuseSettings.maxAccumulatedFrameNum = 20;
+    reblurSettings.diffuseSettings.maxAccumulatedFrameNum = 31;
     reblurSettings.diffuseSettings.maxFastAccumulatedFrameNum = 3;
     reblurSettings.diffuseSettings.blurRadius = 10.0f;
-    reblurSettings.diffuseSettings.maxAdaptiveRadiusScale = 2.0f;
+    reblurSettings.diffuseSettings.maxAdaptiveRadiusScale = 5.0f;
+    reblurSettings.diffuseSettings.historyClampingColorBoxSigmaScale = 1.0f;
+    reblurSettings.diffuseSettings.stabilizationStrength = 0.2f;
+    reblurSettings.diffuseSettings.normalWeightStrictness = 0.33f;
     reblurSettings.diffuseSettings.antifirefly = true;
-    reblurSettings.diffuseSettings.skipPreBlur = true;
+    reblurSettings.diffuseSettings.usePrePass = false;
 
     reblurSettings.specularSettings.hitDistanceParameters.C = 10.0f;
     reblurSettings.specularSettings.hitDistanceParameters.D = -25.0f;
     reblurSettings.specularSettings.antilagIntensitySettings = reblurSettings.diffuseSettings.antilagIntensitySettings;
     reblurSettings.specularSettings.antilagHitDistanceSettings = reblurSettings.diffuseSettings.antilagHitDistanceSettings;
-    reblurSettings.specularSettings.maxAccumulatedFrameNum = 20;
-    reblurSettings.specularSettings.maxFastAccumulatedFrameNum = 3;
-    reblurSettings.specularSettings.blurRadius = 10.f;
-    reblurSettings.specularSettings.maxAdaptiveRadiusScale = 2.0f;
-    reblurSettings.specularSettings.antifirefly = true;
-    reblurSettings.specularSettings.skipPreBlur = true;
+    reblurSettings.specularSettings.maxAccumulatedFrameNum = reblurSettings.diffuseSettings.maxAccumulatedFrameNum;
+    reblurSettings.specularSettings.maxFastAccumulatedFrameNum = reblurSettings.diffuseSettings.maxFastAccumulatedFrameNum;
+    reblurSettings.specularSettings.blurRadius = reblurSettings.diffuseSettings.blurRadius;
+    reblurSettings.specularSettings.maxAdaptiveRadiusScale = reblurSettings.diffuseSettings.maxAdaptiveRadiusScale;
+    reblurSettings.specularSettings.historyClampingColorBoxSigmaScale = reblurSettings.diffuseSettings.historyClampingColorBoxSigmaScale;
+    reblurSettings.specularSettings.stabilizationStrength = reblurSettings.diffuseSettings.stabilizationStrength;
+    reblurSettings.specularSettings.normalWeightStrictness = reblurSettings.diffuseSettings.normalWeightStrictness;
+    reblurSettings.specularSettings.antifirefly = reblurSettings.diffuseSettings.antifirefly;
+    reblurSettings.specularSettings.usePrePass = reblurSettings.diffuseSettings.usePrePass;
 
     relaxSettings.diffuseMaxAccumulatedFrameNum = 31;
     relaxSettings.specularMaxAccumulatedFrameNum = 31;
     relaxSettings.diffuseMaxFastAccumulatedFrameNum = 3;
     relaxSettings.specularMaxFastAccumulatedFrameNum = 3;
+    relaxSettings.historyClampingColorBoxSigmaScale = 1.0f;
     relaxSettings.disocclusionFixEdgeStoppingNormalPower = 1.0f;
     relaxSettings.disocclusionFixNumFramesToFix = 1;
     relaxSettings.diffusePhiLuminance = 1.0f;
@@ -506,7 +513,13 @@ void UserInterface::DenoiserSettingsWindow()
         ImGui::SliderFloat("Blur Radius", &m_ui.reblurSettings.diffuseSettings.blurRadius, 0.f, 64.f);
         ImGui::SliderFloat("Adaptive Radius Scale", &m_ui.reblurSettings.diffuseSettings.maxAdaptiveRadiusScale, 0.f, 10.f);
         ImGui::Checkbox("Anti-Firefly", &m_ui.reblurSettings.diffuseSettings.antifirefly);
-        ImGui::Checkbox("Skip pre-blur", &m_ui.reblurSettings.diffuseSettings.skipPreBlur);
+        ImGui::Checkbox("Pre-pass", &m_ui.reblurSettings.diffuseSettings.usePrePass);
+        if (m_showAdvancedDenoisingSettings)
+        {
+            ImGui::SliderFloat("History Clamping Box Scale", &m_ui.reblurSettings.diffuseSettings.historyClampingColorBoxSigmaScale, 0.f, 3.f);
+            ImGui::SliderFloat("Stabilization Amount", &m_ui.reblurSettings.diffuseSettings.stabilizationStrength, 0.f, 1.f);
+            ImGui::SliderFloat("Normal Weight Strictness", &m_ui.reblurSettings.diffuseSettings.normalWeightStrictness, 0.f, 1.f);
+        }
         ImGui::Separator();
 
         ImGui::Checkbox("Enable Intensity Anti-Lag", &m_ui.reblurSettings.diffuseSettings.antilagIntensitySettings.enable);
@@ -533,8 +546,11 @@ void UserInterface::DenoiserSettingsWindow()
         m_ui.reblurSettings.specularSettings.maxFastAccumulatedFrameNum = m_ui.reblurSettings.diffuseSettings.maxFastAccumulatedFrameNum;
         m_ui.reblurSettings.specularSettings.blurRadius = m_ui.reblurSettings.diffuseSettings.blurRadius;
         m_ui.reblurSettings.specularSettings.maxAdaptiveRadiusScale = m_ui.reblurSettings.diffuseSettings.maxAdaptiveRadiusScale;
+        m_ui.reblurSettings.specularSettings.historyClampingColorBoxSigmaScale = m_ui.reblurSettings.diffuseSettings.historyClampingColorBoxSigmaScale;
+        m_ui.reblurSettings.specularSettings.stabilizationStrength = m_ui.reblurSettings.diffuseSettings.stabilizationStrength;
+        m_ui.reblurSettings.specularSettings.normalWeightStrictness = m_ui.reblurSettings.diffuseSettings.normalWeightStrictness;
         m_ui.reblurSettings.specularSettings.antifirefly = m_ui.reblurSettings.diffuseSettings.antifirefly;
-        m_ui.reblurSettings.specularSettings.skipPreBlur = m_ui.reblurSettings.diffuseSettings.skipPreBlur;
+        m_ui.reblurSettings.specularSettings.usePrePass = m_ui.reblurSettings.diffuseSettings.usePrePass;
 
         if (m_showAdvancedDenoisingSettings)
         {

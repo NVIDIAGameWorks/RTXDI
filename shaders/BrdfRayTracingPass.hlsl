@@ -299,15 +299,15 @@ void RayGen()
         if (useReLAX)
         {
             u_DiffuseLighting[lightingTexturePos] = RELAX_FrontEnd_PackRadiance(diffuse, diffuseHitT);
-            u_SpecularLighting[lightingTexturePos] = RELAX_FrontEnd_PackRadiance(specular, specularHitT, surface.roughness);
+            u_SpecularLighting[lightingTexturePos] = RELAX_FrontEnd_PackRadiance(specular, specularHitT);
         }
         else
         {
             float diffNormDist = REBLUR_FrontEnd_GetNormHitDist(diffuseHitT, surface.viewDepth, g_Const.reblurDiffHitDistParams);
-            u_DiffuseLighting[lightingTexturePos] = REBLUR_FrontEnd_PackRadiance(diffuse, diffNormDist, surface.viewDepth, g_Const.reblurDiffHitDistParams);
+            u_DiffuseLighting[lightingTexturePos] = REBLUR_FrontEnd_PackRadiance(diffuse, diffNormDist);
             
             float specNormDist = REBLUR_FrontEnd_GetNormHitDist(specularHitT, surface.viewDepth, g_Const.reblurSpecHitDistParams, surface.roughness);
-            u_SpecularLighting[lightingTexturePos] = REBLUR_FrontEnd_PackRadiance(specular, specNormDist, surface.viewDepth, g_Const.reblurSpecHitDistParams, surface.roughness);
+            u_SpecularLighting[lightingTexturePos] = REBLUR_FrontEnd_PackRadiance(specular, specNormDist);
         }
     }
     else

@@ -117,15 +117,15 @@ void StoreRestirShadingOutput(
         if (useReLAX)
         {
             u_DiffuseLighting[lightingTexturePos] = RELAX_FrontEnd_PackRadiance(diffuse, lightDistance);
-            u_SpecularLighting[lightingTexturePos] = RELAX_FrontEnd_PackRadiance(specular, lightDistance, surface.roughness);
+            u_SpecularLighting[lightingTexturePos] = RELAX_FrontEnd_PackRadiance(specular, lightDistance);
         }
         else
         {
             float diffNormDist = REBLUR_FrontEnd_GetNormHitDist(lightDistance, surface.viewDepth, g_Const.reblurDiffHitDistParams);
-            u_DiffuseLighting[lightingTexturePos] = REBLUR_FrontEnd_PackRadiance(diffuse, diffNormDist, surface.viewDepth, g_Const.reblurDiffHitDistParams);
+            u_DiffuseLighting[lightingTexturePos] = REBLUR_FrontEnd_PackRadiance(diffuse, diffNormDist);
             
             float specNormDist = REBLUR_FrontEnd_GetNormHitDist(lightDistance, surface.viewDepth, g_Const.reblurSpecHitDistParams, surface.roughness);
-            u_SpecularLighting[lightingTexturePos] = REBLUR_FrontEnd_PackRadiance(specular, specNormDist, surface.viewDepth, g_Const.reblurSpecHitDistParams, surface.roughness);
+            u_SpecularLighting[lightingTexturePos] = REBLUR_FrontEnd_PackRadiance(specular, specNormDist);
         }
     }
     else

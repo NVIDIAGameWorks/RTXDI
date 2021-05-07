@@ -39,7 +39,7 @@ Additional contents delivered through packman:
 
 To build the sample app with NRD (NVIDIA Real-Time Denoiser) integration, follow these steps to build and install NRD *before* building RTXDI SDK:
 
-1. Get the NRD 2.0 source code from the [GitHub repository](https://github.com/NVIDIAGameWorks/RayTracingDenoiser/) (accessing the repository requires approval through the [NVIDIA Developer website](https://developer.nvidia.com/nvidia-rt-denoiser)).
+1. Get the NRD 2.1.1 source code from the [GitHub repository](https://github.com/NVIDIAGameWorks/RayTracingDenoiser/) (accessing the repository requires approval through the [NVIDIA Developer website](https://developer.nvidia.com/nvidia-rt-denoiser)).
 2. Build NRD using the following batch files in its directory: `1-Deploy.bat`, `2-Build.bat`, `4b-Prepare NRD SDK.bat`. That will put all the necessary SDK files into the `_NRD_SDK` folder.
 3. Copy that `_NRD_SDK` folder into the RTXDI SDK folder, next to `src`, and rename it to `NRD`. Then CMake should find the NRD SDK paths automatically. Alternatively, specify all the paths manually using the `NRD_INCLUDE_DIR`, `NRD_LIB_DIR`, and `NRD_SHADERS_DIR` CMake variables.
 

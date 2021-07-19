@@ -20,6 +20,7 @@
 #include <rtxdi/ResamplingFunctions.hlsli>
 
 #ifdef WITH_NRD
+#define COMPILER_DXC
 #include <NRD.hlsl>
 #endif
 
@@ -56,7 +57,7 @@ void RayGen()
 
     if (g_Const.enableInitialVisibility && RTXDI_IsValidReservoir(reservoir))
     {
-        if (!RAB_GetConservativeVisibility(surface, lightSample, false))
+        if (!RAB_GetConservativeVisibility(surface, lightSample))
         {
             RTXDI_StoreVisibilityInReservoir(reservoir, 0, true);
         }
@@ -96,6 +97,7 @@ void RayGen()
             RTXDI_GetReservoirSampleUV(reservoir));
 
         ShadeSurfaceWithLightSample(reservoir, surface, lightSample, diffuse, specular, lightDistance);
+        specular = DemodulateSpecular(surface, specular);
     }
 
     RTXDI_StoreReservoir(reservoir, params, u_LightReservoirs, GlobalIndex, g_Const.shadeInputBufferIndex);

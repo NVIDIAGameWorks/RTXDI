@@ -16,17 +16,7 @@ set_target_properties(${project} PROPERTIES
 	RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO "${CMAKE_SOURCE_DIR}/bin")
 
 
-if (NRD_INCLUDE_DIR AND NRD_LIB_DIR)
+if (TARGET NRD)
 	target_compile_definitions(${project} PRIVATE WITH_NRD=1)
-	target_include_directories(${project} PRIVATE ${NRD_INCLUDE_DIR})
-	if (WIN32)
-		target_link_libraries(${project} "${NRD_LIB_DIR}/NRD.lib")
-
-		add_custom_command(TARGET ${project} POST_BUILD
-	    	COMMAND ${CMAKE_COMMAND} -E copy_if_different
-	        "${NRD_LIB_DIR}/NRD.dll"
-	        $<TARGET_FILE_DIR:${project}>)
-	else()
-		target_link_libraries(${project} "${NRD_LIB_DIR}/libNRD.so")
-	endif()
+	target_link_libraries(${project} NRD)
 endif()

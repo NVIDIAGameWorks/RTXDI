@@ -10,7 +10,7 @@
 
 #include "ShaderParameters.h"
 #include "HelperFunctions.hlsli"
-#include <donut/shaders/atmospheric.hlsli>
+#include <donut/shaders/sky.hlsli>
 #include <donut/shaders/vulkan.hlsli>
 
 VK_PUSH_CONSTANT ConstantBuffer<RenderEnvironmentMapConstants> g_Const : register(b0);
@@ -24,13 +24,9 @@ void main(uint2 GlobalIndex : SV_DispatchThreadId)
 
     float cosElevation;
     float3 direction = equirectUVToDirection(uv, cosElevation);
+    float angularSizeOfPixel = g_Const.invTextureSize.y * M_PI;
 
-    AtmosphereColorsType atmosphereColors = CalculateAtmosphericScattering(
-        direction.xzy,
-        g_Const.directionToSun.xzy,
-        g_Const.lightIntensity,
-        g_Const.angularSizeOfLight);
-    
-    float3 color = atmosphereColors.RayleighColor + atmosphereColors.MieColor;
+    float3 color = ProceduralSky(g_Const.params, direction, angularSizeOfPixel * 4);
+
     u_EnvironmentMap[GlobalIndex] = float4(color, 0);
 }

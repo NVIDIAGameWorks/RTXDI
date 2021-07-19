@@ -33,7 +33,7 @@ namespace donut::engine {
 }
 
 namespace donut::app {
-    class FPSCamera;
+    class FirstPersonCamera;
 }
 
 enum class RenderingMode : uint32_t
@@ -72,13 +72,14 @@ struct UIData
     bool freezeRandom = false;
     bool rasterizeGBuffer = false;
     bool useRayQuery = true;
-    float exposureBias = -0.5f;
+    bool enableBloom = true;
+    float exposureBias = -1.0f;
 
     uint32_t numAccumulatedFrames = 1;
 
     RenderingMode renderingMode = RenderingMode::ReStirDirectOnly;
-    bool animateLights = true;
-    bool animateMeshes = true;
+    bool enableAnimations = true;
+    float animationSpeed = 1.f;
     int environmentMapDirty = 0; // 1 -> needs to be rendered; 2 -> passes/textures need to be created
     int environmentMapIndex = -1;
     bool environmentMapImportanceSampling = true;
@@ -115,12 +116,11 @@ struct UIData
     std::shared_ptr<Profiler> profiler;
 
     std::shared_ptr<SampleScene> scene;
-    donut::app::FPSCamera* camera = nullptr;
+    donut::app::FirstPersonCamera* camera = nullptr;
 
     std::vector<std::shared_ptr<donut::engine::IesProfile>> iesProfiles;
-    std::shared_ptr<donut::engine::BindlessScene> bindlessScene;
 
-    int selectedMaterialIndex = -1;
+    std::shared_ptr<donut::engine::Material> selectedMaterial;
 
     UIData();
 };

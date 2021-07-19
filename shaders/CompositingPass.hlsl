@@ -15,6 +15,7 @@
 #include "GBufferHelpers.hlsli"
 
 #ifdef WITH_NRD
+#define COMPILER_DXC
 #include <NRD.hlsl>
 #endif
 
@@ -25,8 +26,8 @@ RWTexture2D<float4> u_MotionVectors : register(u1);
 
 Texture2D<float> t_GBufferDepth : register(t0);
 Texture2D<uint> t_GBufferNormals : register(t1);
-Texture2D<uint> t_GBufferBaseColor : register(t2);
-Texture2D<uint> t_GBufferMetalRough : register(t3);
+Texture2D<uint> t_GBufferDiffuseAlbedo : register(t2);
+Texture2D<uint> t_GBufferSpecularRough : register(t3);
 Texture2D<float4> t_GBufferEmissive : register(t4);
 Texture2D t_Diffuse : register(t5);
 Texture2D t_Specular : register(t6);
@@ -43,8 +44,8 @@ void main(uint2 globalIdx : SV_DispatchThreadID)
     float depth = t_GBufferDepth[globalIdx];
     if (depth != 0)
     {
-        float3 baseColor = Unpack_R8G8B8_UFLOAT(t_GBufferBaseColor[globalIdx]);
-        float2 metal_rough = Unpack_R16G16_UFLOAT(t_GBufferMetalRough[globalIdx]);
+        float3 diffuseAlbedo = Unpack_R11G11B10_UFLOAT(t_GBufferDiffuseAlbedo[globalIdx]);
+        float3 specularF0 = Unpack_R8G8B8A8_Gamma_UFLOAT(t_GBufferSpecularRough[globalIdx]).rgb;
         float3 emissive = t_GBufferEmissive[globalIdx].rgb;
 
         float4 diffuse_illumination;
@@ -63,15 +64,8 @@ void main(uint2 globalIdx : SV_DispatchThreadID)
             specular_illumination = t_Specular[globalIdx].rgba;
         }
 
-        float3 albedo = 1;
-        float3 baseReflectivity = 1;
-        if(g_Const.enableTextures)
-        {
-            getReflectivity(metal_rough.x, baseColor, albedo, baseReflectivity);
-        }
-
-        compositedColor = diffuse_illumination.rgb * albedo;
-        compositedColor += specular_illumination.rgb * baseReflectivity;
+        compositedColor = diffuse_illumination.rgb * diffuseAlbedo;
+        compositedColor += specular_illumination.rgb * max(0.01, specularF0);
         compositedColor += emissive.rgb;
     }
     else

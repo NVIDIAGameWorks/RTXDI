@@ -12,15 +12,14 @@
 #include "RtxdiResources.h"
 #include "SampleScene.h"
 
-#include <algorithm>
-
 #include <donut/engine/ShaderFactory.h>
 #include <donut/engine/CommonRenderPasses.h>
-#include <donut/engine/View.h>
-#include <donut/engine/BindlessScene.h>
 #include <donut/core/log.h>
 #include <nvrhi/utils.h>
 #include <rtxdi/RTXDI.h>
+
+#include <algorithm>
+#include <utility>
 
 using namespace donut::math;
 #include "../shaders/ShaderParameters.h"
@@ -32,13 +31,13 @@ PrepareLightsPass::PrepareLightsPass(
     nvrhi::IDevice* device, 
     std::shared_ptr<ShaderFactory> shaderFactory, 
     std::shared_ptr<CommonRenderPasses> commonPasses,
-    std::shared_ptr<donut::engine::BindlessScene> bindlessScene,
+    std::shared_ptr<donut::engine::Scene> scene,
     nvrhi::IBindingLayout* bindlessLayout)
     : m_Device(device)
-    , m_ShaderFactory(shaderFactory)
-    , m_CommonPasses(commonPasses)
-    , m_BindlessScene(bindlessScene)
     , m_BindlessLayout(bindlessLayout)
+    , m_ShaderFactory(std::move(shaderFactory))
+    , m_CommonPasses(std::move(commonPasses))
+    , m_Scene(std::move(scene))
 {
     nvrhi::BindingLayoutDesc bindingLayoutDesc;
     bindingLayoutDesc.visibility = nvrhi::ShaderType::Compute;
@@ -80,9 +79,9 @@ void PrepareLightsPass::CreateBindingSet(RtxdiResources& resources)
         nvrhi::BindingSetItem::Texture_UAV(2, resources.LocalLightPdfTexture),
         nvrhi::BindingSetItem::StructuredBuffer_SRV(0, resources.TaskBuffer),
         nvrhi::BindingSetItem::StructuredBuffer_SRV(1, resources.PrimitiveLightBuffer),
-        nvrhi::BindingSetItem::StructuredBuffer_SRV(2, m_BindlessScene->GetInstanceBuffer()),
-        nvrhi::BindingSetItem::StructuredBuffer_SRV(3, m_BindlessScene->GetGeometryBuffer()),
-        nvrhi::BindingSetItem::StructuredBuffer_SRV(4, m_BindlessScene->GetMaterialBuffer()),
+        nvrhi::BindingSetItem::StructuredBuffer_SRV(2, m_Scene->GetInstanceBuffer()),
+        nvrhi::BindingSetItem::StructuredBuffer_SRV(3, m_Scene->GetGeometryBuffer()),
+        nvrhi::BindingSetItem::StructuredBuffer_SRV(4, m_Scene->GetMaterialBuffer()),
         nvrhi::BindingSetItem::Sampler(0, m_CommonPasses->m_AnisotropicWrapSampler)
     };
 
@@ -91,21 +90,24 @@ void PrepareLightsPass::CreateBindingSet(RtxdiResources& resources)
     m_PrimitiveLightBuffer = resources.PrimitiveLightBuffer;
     m_LightIndexMappingBuffer = resources.LightIndexMappingBuffer;
     m_LocalLightPdfTexture = resources.LocalLightPdfTexture;
-    m_MaxLightsInBuffer = uint32_t(resources.LightDataBuffer->GetDesc().byteSize / (sizeof(PolymorphicLightInfo) * 2));
+    m_MaxLightsInBuffer = uint32_t(resources.LightDataBuffer->getDesc().byteSize / (sizeof(PolymorphicLightInfo) * 2));
 }
 
-void PrepareLightsPass::CountLightsInScene(const donut::engine::IMeshSet& meshSet, uint32_t& numEmissiveMeshes, uint32_t& numEmissiveTriangles)
+void PrepareLightsPass::CountLightsInScene(uint32_t& numEmissiveMeshes, uint32_t& numEmissiveTriangles)
 {
     numEmissiveMeshes = 0;
     numEmissiveTriangles = 0;
 
-    const std::vector<MeshInstance*>& instances = meshSet.GetMeshInstances();
-    for (MeshInstance* pInstance : instances)
+    const auto& instances = m_Scene->GetSceneGraph()->GetMeshInstances();
+    for (const auto& instance : instances)
     {
-        if (any(pInstance->mesh->material->emissiveColor != 0.f))
+        for (const auto& geometry : instance->GetMesh()->geometries)
         {
-            numEmissiveMeshes += 1;
-            numEmissiveTriangles += pInstance->mesh->numIndices / 3;
+            if (any(geometry->material->emissiveColor != 0.f))
+            {
+                numEmissiveMeshes += 1;
+                numEmissiveTriangles += geometry->numIndices / 3;
+            }
         }
     }
 }
@@ -193,30 +195,30 @@ static bool ConvertLight(const donut::engine::Light& light, PolymorphicLightInfo
     switch (light.GetLightType())
     {
     case LightType_Directional: {
-        auto directional = static_cast<const donut::engine::DirectionalLight&>(light);
+        auto& directional = static_cast<const donut::engine::DirectionalLight&>(light);
         float halfAngularSizeRad = 0.5f * dm::radians(directional.angularSize);
         float solidAngle = float(2 * dm::PI_d * (1.0 - cos(halfAngularSizeRad)));
         float3 radiance = directional.color * directional.irradiance / solidAngle;
 
         polymorphic.colorTypeAndFlags = (uint32_t)PolymorphicLightType::kDirectional << kPolymorphicLightTypeShift;
         packLightColor(radiance, polymorphic);
-        polymorphic.direction1 = packNormalizedVector(normalize(directional.direction));
+        polymorphic.direction1 = packNormalizedVector(float3(normalize(directional.GetDirection())));
         // Can't pass cosines of small angles reliably with fp16
         polymorphic.scalars = fp32ToFp16(halfAngularSizeRad) | (fp32ToFp16(solidAngle) << 16);
         return true;
     }
     case LightType_Spot: {
-        auto spot = static_cast<const SpotLightWithProfile&>(light);
-        float surfaceArea = 4.f * dm::PI_f * square(spot.radius);
-        float3 radiance = spot.color * spot.flux / surfaceArea;
+        auto& spot = static_cast<const SpotLightWithProfile&>(light);
+        float projectedArea = dm::PI_f * square(spot.radius);
+        float3 radiance = spot.color * spot.intensity / projectedArea;
         float softness = saturate(1.f - spot.innerAngle / spot.outerAngle);
 
         polymorphic.colorTypeAndFlags = (uint32_t)PolymorphicLightType::kSphere << kPolymorphicLightTypeShift;
         polymorphic.colorTypeAndFlags |= kPolymorphicLightShapingEnableBit;
         packLightColor(radiance, polymorphic);
-        polymorphic.center = spot.position;
+        polymorphic.center = float3(spot.GetPosition());
         polymorphic.scalars = fp32ToFp16(spot.radius);
-        polymorphic.primaryAxis = packNormalizedVector(normalize(spot.direction));
+        polymorphic.primaryAxis = packNormalizedVector(float3(normalize(spot.GetDirection())));
         polymorphic.cosConeAngleAndSoftness = fp32ToFp16(cosf(dm::radians(spot.outerAngle)));
         polymorphic.cosConeAngleAndSoftness |= fp32ToFp16(softness) << 16;
 
@@ -229,19 +231,19 @@ static bool ConvertLight(const donut::engine::Light& light, PolymorphicLightInfo
         return true;
     }
     case LightType_Point: {
-        auto point = static_cast<const donut::engine::PointLight&>(light);
-        float surfaceArea = 4.f * dm::PI_f * square(point.radius);
-        float3 radiance = point.color * point.flux / surfaceArea;
+        auto& point = static_cast<const donut::engine::PointLight&>(light);
+        float projectedArea = dm::PI_f * square(point.radius);
+        float3 radiance = point.color * point.intensity / projectedArea;
 
         polymorphic.colorTypeAndFlags = (uint32_t)PolymorphicLightType::kSphere << kPolymorphicLightTypeShift;
         packLightColor(radiance, polymorphic);
-        polymorphic.center = point.position;
+        polymorphic.center = float3(point.GetPosition());
         polymorphic.scalars = fp32ToFp16(point.radius);
 
         return true;
     }
     case LightType_Environment: {
-        auto env = static_cast<const EnvironmentLight&>(light);
+        auto& env = static_cast<const EnvironmentLight&>(light);
 
         if (env.textureIndex < 0)
             return false;
@@ -256,49 +258,48 @@ static bool ConvertLight(const donut::engine::Light& light, PolymorphicLightInfo
         return true;
     }
     case LightType_Cylinder: {
-        auto cylinder = static_cast<const CylinderLight&>(light);
+        auto& cylinder = static_cast<const CylinderLight&>(light);
         float surfaceArea = 2.f * dm::PI_f * cylinder.radius * cylinder.length;
         float3 radiance = cylinder.color * cylinder.flux / surfaceArea;
 
         polymorphic.colorTypeAndFlags = (uint32_t)PolymorphicLightType::kCylinder << kPolymorphicLightTypeShift;
         packLightColor(radiance, polymorphic); 
-        polymorphic.center = cylinder.center;
+        polymorphic.center = float3(cylinder.GetPosition());
         polymorphic.scalars = fp32ToFp16(cylinder.radius) | (fp32ToFp16(cylinder.length) <<  16);
-        polymorphic.direction1 = packNormalizedVector(normalize(cylinder.axis));
+        polymorphic.direction1 = packNormalizedVector(float3(normalize(cylinder.GetDirection())));
 
         return true;
     }
     case LightType_Disk: {
-        auto disk = static_cast<const DiskLight&>(light);
+        auto& disk = static_cast<const DiskLight&>(light);
         float surfaceArea = 2.f * dm::PI_f * dm::square(disk.radius);
         float3 radiance = disk.color * disk.flux / surfaceArea;
 
         polymorphic.colorTypeAndFlags = (uint32_t)PolymorphicLightType::kDisk << kPolymorphicLightTypeShift;
         packLightColor(radiance, polymorphic);
-        polymorphic.center = disk.center;
+        polymorphic.center = float3(disk.GetPosition());
         polymorphic.scalars = fp32ToFp16(disk.radius);
-        polymorphic.direction1 = packNormalizedVector(normalize(disk.normal));
+        polymorphic.direction1 = packNormalizedVector(float3(normalize(disk.GetDirection())));
 
         return true;
     }
     case LightType_Rect: {
-        auto rect = static_cast<const RectLight&>(light);
+        auto& rect = static_cast<const RectLight&>(light);
         float surfaceArea = rect.width * rect.height;
         float3 radiance = rect.color * rect.flux / surfaceArea;
 
-        float3 normal = normalize(rect.normal);
-        float3 up = float3(0.f, 1.f, 0.f);
-        float3 right;
-        if (fabsf(normal.y) < 1.0f)
-            right = normalize(cross(up, normal));
-        else
-            right = float3(1.f, 0.f, 0.f);
-        right = rotation(normal, dm::radians(rect.rotation)).transformVector(right);
-        up = normalize(cross(normal, right));
+        auto node = rect.GetNode();
+        affine3 localToWorld = affine3::identity();
+        if (node)
+            localToWorld = node->GetLocalToWorldTransformFloat();
+
+        float3 right = normalize(localToWorld.m_linear.row0);
+        float3 up = normalize(localToWorld.m_linear.row1);
+        float3 normal = normalize(-localToWorld.m_linear.row2);
 
         polymorphic.colorTypeAndFlags = (uint32_t)PolymorphicLightType::kRect << kPolymorphicLightTypeShift;
         packLightColor(radiance, polymorphic);
-        polymorphic.center = rect.center;
+        polymorphic.center = float3(rect.GetPosition());
         polymorphic.scalars = fp32ToFp16(rect.width) | (fp32ToFp16(rect.height) << 16);
         polymorphic.direction1 = packNormalizedVector(normalize(right));
         polymorphic.direction2 = packNormalizedVector(normalize(up));
@@ -328,7 +329,6 @@ static int isInfiniteLight(const donut::engine::Light& light)
 void PrepareLightsPass::Process(
     nvrhi::ICommandList* commandList, 
     const rtxdi::Context& context,
-    const donut::engine::IMeshSet& meshSet,
     const std::vector<std::shared_ptr<donut::engine::Light>>& sceneLights,
     bool enableImportanceSampledEnvironmentLight,
     rtxdi::FrameParameters& outFrameParameters)
@@ -341,31 +341,39 @@ void PrepareLightsPass::Process(
     std::vector<PolymorphicLightInfo> primitiveLightInfos;
     uint32_t lightBufferOffset = 0;
 
-    const std::vector<MeshInstance*>& instances = meshSet.GetMeshInstances();
-    for (const MeshInstance* pInstance : instances)
+    const auto& instances = m_Scene->GetSceneGraph()->GetMeshInstances();
+    for (const auto& instance : instances)
     {
-        if (!any(pInstance->mesh->material->emissiveColor != 0.f))
+        const auto& mesh = instance->GetMesh();
+        for (size_t geometryIndex = 0; geometryIndex < mesh->geometries.size(); ++geometryIndex)
         {
-            // remove the info about this instance, just in case it was emissive and now it's not
-            m_InstanceLightBufferOffsets.erase(pInstance);
-            continue;
+            const auto& geometry = mesh->geometries[geometryIndex];
+
+            if (!any(geometry->material->emissiveColor != 0.f))
+            {
+                // remove the info about this instance, just in case it was emissive and now it's not
+                m_InstanceLightBufferOffsets.erase(instance.get());
+                continue;
+            }
+
+            // find the previous offset of this instance in the light buffer
+            auto pOffset = m_InstanceLightBufferOffsets.find(instance.get());
+
+            assert(geometryIndex < 0xfff);
+
+            PrepareLightsTask task;
+            task.instanceAndGeometryIndex = (instance->GetInstanceIndex() << 12) | uint32_t(geometryIndex & 0xfff);
+            task.lightBufferOffset = lightBufferOffset;
+            task.triangleCount = geometry->numIndices / 3;
+            task.previousLightBufferOffset = (pOffset != m_InstanceLightBufferOffsets.end()) ? int(pOffset->second) : -1;
+
+            // record the current offset of this instance for use on the next frame
+            m_InstanceLightBufferOffsets[instance.get()] = lightBufferOffset;
+
+            lightBufferOffset += task.triangleCount;
+
+            tasks.push_back(task);
         }
-
-        // find the previous offset of this instance in the light buffer
-        auto pOffset = m_InstanceLightBufferOffsets.find(pInstance);
-
-        PrepareLightsTask task;
-        task.instanceIndex = pInstance->globalInstanceIndex;
-        task.lightBufferOffset = lightBufferOffset;
-        task.triangleCount = pInstance->mesh->numIndices / 3;
-        task.previousLightBufferOffset = (pOffset != m_InstanceLightBufferOffsets.end()) ? pOffset->second : -1;
-
-        // record the current offset of this instance for use on the next frame
-        m_InstanceLightBufferOffsets[pInstance] = lightBufferOffset;
-
-        lightBufferOffset += task.triangleCount;
-
-        tasks.push_back(task);
     }
 
     outFrameParameters.firstLocalLight = 0;
@@ -389,7 +397,7 @@ void PrepareLightsPass::Process(
         auto pOffset = m_PrimitiveLightBufferOffsets.find(pLight.get());
 
         PrepareLightsTask task;
-        task.instanceIndex = TASK_PRIMITIVE_LIGHT_BIT | uint32_t(primitiveLightInfos.size());
+        task.instanceAndGeometryIndex = TASK_PRIMITIVE_LIGHT_BIT | uint32_t(primitiveLightInfos.size());
         task.lightBufferOffset = lightBufferOffset;
         task.triangleCount = 1; // technically zero, but we need to allocate 1 thread in the grid to process this light
         task.previousLightBufferOffset = (pOffset != m_PrimitiveLightBufferOffsets.end()) ? pOffset->second : -1;
@@ -431,7 +439,7 @@ void PrepareLightsPass::Process(
 
     nvrhi::ComputeState state;
     state.pipeline = m_ComputePipeline;
-    state.bindings = { m_BindingSet, m_BindlessScene->GetDescriptorTable() };
+    state.bindings = { m_BindingSet, m_Scene->GetDescriptorTable() };
     commandList->setComputeState(state);
 
     PrepareLightsConstants constants;

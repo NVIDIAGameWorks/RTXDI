@@ -1169,7 +1169,7 @@ RTXDI_Reservoir RTXDI_TemporalResampling(
 #if RTXDI_ALLOWED_BIAS_CORRECTION >= RTXDI_BIAS_CORRECTION_RAY_TRACED
             if (tparams.biasCorrectionMode == RTXDI_BIAS_CORRECTION_RAY_TRACED && temporalP > 0)
             {
-                if (!RAB_GetConservativeVisibility(temporalSurface, selectedLightSample, true))
+                if (!RAB_GetTemporalConservativeVisibility(surface, temporalSurface, selectedLightSample))
                 {
                     temporalP = 0;
                 }
@@ -1361,7 +1361,7 @@ RTXDI_Reservoir RTXDI_SpatialResampling(
 #if RTXDI_ALLOWED_BIAS_CORRECTION >= RTXDI_BIAS_CORRECTION_RAY_TRACED
                 if (sparams.biasCorrectionMode == RTXDI_BIAS_CORRECTION_RAY_TRACED && ps > 0)
                 {
-                    if (!RAB_GetConservativeVisibility(neighborSurface, selectedLightSample, false))
+                    if (!RAB_GetConservativeVisibility(neighborSurface, selectedLightSample))
                     {
                         ps = 0;
                     }
@@ -1662,7 +1662,13 @@ RTXDI_Reservoir RTXDI_SpatioTemporalResampling(
 #if RTXDI_ALLOWED_BIAS_CORRECTION >= RTXDI_BIAS_CORRECTION_RAY_TRACED
                     if (stparams.biasCorrectionMode == RTXDI_BIAS_CORRECTION_RAY_TRACED && ps > 0)
                     {
-                        if (!RAB_GetConservativeVisibility(neighborSurface, selectedLightSample, true))
+                        RAB_Surface fallbackSurface;
+                        if (i == 0 && foundTemporalSurface)
+                            fallbackSurface = surface;
+                        else
+                            fallbackSurface = neighborSurface;
+
+                        if (!RAB_GetTemporalConservativeVisibility(fallbackSurface, neighborSurface, selectedLightSample))
                         {
                             ps = 0;
                         }

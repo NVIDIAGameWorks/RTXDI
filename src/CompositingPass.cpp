@@ -14,7 +14,7 @@
 
 #include <donut/engine/ShaderFactory.h>
 #include <donut/engine/View.h>
-#include <donut/engine/BindlessScene.h>
+#include <donut/engine/Scene.h>
 #include <donut/engine/CommonRenderPasses.h>
 #include <donut/core/log.h>
 #include <nvrhi/utils.h>
@@ -31,13 +31,13 @@ CompositingPass::CompositingPass(
     nvrhi::IDevice* device, 
     std::shared_ptr<ShaderFactory> shaderFactory,
     std::shared_ptr<donut::engine::CommonRenderPasses> commonPasses,
-    std::shared_ptr<donut::engine::BindlessScene> bindlessScene,
+    std::shared_ptr<donut::engine::Scene> scene,
     nvrhi::IBindingLayout* bindlessLayout)
     : m_Device(device)
     , m_BindlessLayout(bindlessLayout)
     , m_ShaderFactory(std::move(shaderFactory))
     , m_CommonPasses(std::move(commonPasses))
-    , m_BindlessScene(std::move(bindlessScene))
+    , m_Scene(std::move(scene))
 {
     m_ConstantBuffer = m_Device->createBuffer(nvrhi::utils::CreateVolatileConstantBufferDesc(sizeof(CompositingConstants), "CompositingConstants", 16));
 
@@ -82,8 +82,8 @@ void CompositingPass::CreateBindingSet(const RenderTargets& renderTargets)
         // GBuffer bindings --- CAUTION: these items are addressed below to swap the even and odd frames
         nvrhi::BindingSetItem::Texture_SRV(0, renderTargets.Depth),
         nvrhi::BindingSetItem::Texture_SRV(1, renderTargets.GBufferNormals),
-        nvrhi::BindingSetItem::Texture_SRV(2, renderTargets.GBufferBaseColor),
-        nvrhi::BindingSetItem::Texture_SRV(3, renderTargets.GBufferMetalRough),
+        nvrhi::BindingSetItem::Texture_SRV(2, renderTargets.GBufferDiffuseAlbedo),
+        nvrhi::BindingSetItem::Texture_SRV(3, renderTargets.GBufferSpecularRough),
         nvrhi::BindingSetItem::Texture_SRV(4, renderTargets.GBufferEmissive),
 
         nvrhi::BindingSetItem::Texture_SRV(5, renderTargets.DiffuseLighting),
@@ -100,8 +100,8 @@ void CompositingPass::CreateBindingSet(const RenderTargets& renderTargets)
 
     bindingSetDesc.bindings[0].resourceHandle = renderTargets.PrevDepth;
     bindingSetDesc.bindings[1].resourceHandle = renderTargets.PrevGBufferNormals;
-    bindingSetDesc.bindings[2].resourceHandle = renderTargets.PrevGBufferBaseColor;
-    bindingSetDesc.bindings[3].resourceHandle = renderTargets.PrevGBufferMetalRough;
+    bindingSetDesc.bindings[2].resourceHandle = renderTargets.PrevGBufferDiffuseAlbedo;
+    bindingSetDesc.bindings[3].resourceHandle = renderTargets.PrevGBufferSpecularRough;
 
     m_BindingSetOdd = m_Device->createBindingSet(bindingSetDesc, m_BindingLayout);
 }
@@ -128,7 +128,7 @@ void CompositingPass::Render(
     commandList->writeBuffer(m_ConstantBuffer, &constants, sizeof(constants));
 
     nvrhi::ComputeState state;
-    state.bindings = { m_BindingSetEven, m_BindlessScene->GetDescriptorTable() };
+    state.bindings = { m_BindingSetEven, m_Scene->GetDescriptorTable() };
     state.pipeline = m_ComputePipeline;
     commandList->setComputeState(state);
 

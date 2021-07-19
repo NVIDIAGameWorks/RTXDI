@@ -18,7 +18,7 @@
 
 namespace donut::engine
 {
-    class BindlessScene;
+    class Scene;
     class CommonRenderPasses;
     class IView;
     class ShaderFactory;
@@ -57,7 +57,7 @@ private:
 
     std::shared_ptr<donut::engine::ShaderFactory> m_ShaderFactory;
     std::shared_ptr<donut::engine::CommonRenderPasses> m_CommonPasses;
-    std::shared_ptr<donut::engine::BindlessScene> m_BindlessScene;
+    std::shared_ptr<donut::engine::Scene> m_Scene;
     std::shared_ptr<Profiler> m_Profiler;
 
 public:
@@ -66,7 +66,7 @@ public:
         nvrhi::IDevice* device,
         std::shared_ptr<donut::engine::ShaderFactory> shaderFactory,
         std::shared_ptr<donut::engine::CommonRenderPasses> commonPasses,
-        std::shared_ptr<donut::engine::BindlessScene> bindlessScene,
+        std::shared_ptr<donut::engine::Scene> scene,
         std::shared_ptr<Profiler> profiler,
         nvrhi::IBindingLayout* bindlessLayout);
     
@@ -101,14 +101,14 @@ private:
 
     std::shared_ptr<donut::engine::ShaderFactory> m_ShaderFactory;
     std::shared_ptr<donut::engine::CommonRenderPasses> m_CommonPasses;
-    std::shared_ptr<donut::engine::BindlessScene> m_BindlessScene;
+    std::shared_ptr<donut::engine::Scene> m_Scene;
     std::shared_ptr<Profiler> m_Profiler;
 public:
     RasterizedGBufferPass(
         nvrhi::IDevice* device,
         std::shared_ptr<donut::engine::ShaderFactory> shaderFactory,
         std::shared_ptr<donut::engine::CommonRenderPasses> commonPasses,
-        std::shared_ptr<donut::engine::BindlessScene> bindlessScene,
+        std::shared_ptr<donut::engine::Scene> scene,
         std::shared_ptr<Profiler> profiler,
         nvrhi::IBindingLayout* bindlessLayout);
 
@@ -121,6 +121,5 @@ public:
         const donut::engine::IView& view,
         const donut::engine::IView& viewPrev,
         const RenderTargets& renderTargets,
-        const SampleScene& scene,
         const GBufferSettings& settings);
 };

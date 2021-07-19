@@ -21,7 +21,7 @@
 
 namespace donut::engine
 {
-    class BindlessScene;
+    class Scene;
     class CommonRenderPasses;
     class IView;
     class ShaderFactory;
@@ -79,7 +79,7 @@ private:
 
     std::shared_ptr<donut::engine::ShaderFactory> m_ShaderFactory;
     std::shared_ptr<donut::engine::CommonRenderPasses> m_CommonPasses;
-    std::shared_ptr<donut::engine::BindlessScene> m_BindlessScene;
+    std::shared_ptr<donut::engine::Scene> m_Scene;
     std::shared_ptr<Profiler> m_Profiler;
 
     void CreateComputePass(ComputePass& pass, const char* shaderName, const std::vector<donut::engine::ShaderMacro>& macros);
@@ -150,7 +150,7 @@ public:
         nvrhi::IDevice* device,
         std::shared_ptr<donut::engine::ShaderFactory> shaderFactory,
         std::shared_ptr<donut::engine::CommonRenderPasses> commonPasses,
-        std::shared_ptr<donut::engine::BindlessScene> bindlessScene,
+        std::shared_ptr<donut::engine::Scene> scene,
         std::shared_ptr<Profiler> profiler,
         nvrhi::IBindingLayout* bindlessLayout);
 

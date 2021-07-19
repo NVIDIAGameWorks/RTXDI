@@ -15,6 +15,7 @@
 #include <NRD.h>
 #include <nvrhi/nvrhi.h>
 #include <unordered_map>
+#include <donut/engine/BindingCache.h>
 
 class RenderTargets;
 
@@ -43,9 +44,7 @@ private:
     std::vector<nvrhi::SamplerHandle> m_Samplers;
     std::vector<nvrhi::TextureHandle> m_PermanentTextures;
     std::vector<nvrhi::TextureHandle> m_TransientTextures;
-    std::unordered_map<size_t, nvrhi::BindingSetHandle> m_BindingSetCache;
-
-    nvrhi::IBindingSet* GetOrCreateBindingSet(const nvrhi::BindingSetDesc& desc, nvrhi::IBindingLayout* layout);
+    donut::engine::BindingCache m_BindingCache;
 
 public:
     NrdIntegration(nvrhi::IDevice* device, nrd::Method method);

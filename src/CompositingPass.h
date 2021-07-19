@@ -15,8 +15,8 @@
 
 namespace donut::engine
 {
+    class Scene;
     class CommonRenderPasses;
-    class BindlessScene;
     class ShaderFactory;
     class IView;
 }
@@ -40,14 +40,14 @@ private:
 
     std::shared_ptr<donut::engine::ShaderFactory> m_ShaderFactory;
     std::shared_ptr<donut::engine::CommonRenderPasses> m_CommonPasses;
-    std::shared_ptr<donut::engine::BindlessScene> m_BindlessScene;
+    std::shared_ptr<donut::engine::Scene> m_Scene;
 
 public:
     CompositingPass(
         nvrhi::IDevice* device,
         std::shared_ptr<donut::engine::ShaderFactory> shaderFactory,
         std::shared_ptr<donut::engine::CommonRenderPasses> commonPasses,
-        std::shared_ptr<donut::engine::BindlessScene> bindlessScene,
+        std::shared_ptr<donut::engine::Scene> scene,
         nvrhi::IBindingLayout* bindlessLayout);
 
     void CreatePipeline();

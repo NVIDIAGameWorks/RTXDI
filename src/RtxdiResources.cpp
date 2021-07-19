@@ -24,11 +24,14 @@ RtxdiResources::RtxdiResources(
     uint32_t maxPrimitiveLights,
     uint32_t environmentMapWidth,
     uint32_t environmentMapHeight)
+    : m_MaxEmissiveMeshes(maxEmissiveMeshes)
+    , m_MaxEmissiveTriangles(maxEmissiveTriangles)
+    , m_MaxPrimitiveLights(maxPrimitiveLights)
 {
     nvrhi::BufferDesc taskBufferDesc;
     taskBufferDesc.byteSize = sizeof(PrepareLightsTask) * (maxEmissiveMeshes + maxPrimitiveLights);
     taskBufferDesc.structStride = sizeof(PrepareLightsTask);
-    taskBufferDesc.initialState = nvrhi::ResourceStates::SHADER_RESOURCE;
+    taskBufferDesc.initialState = nvrhi::ResourceStates::ShaderResource;
     taskBufferDesc.keepInitialState = true;
     taskBufferDesc.debugName = "TaskBuffer";
     taskBufferDesc.canHaveUAVs = true;
@@ -38,7 +41,7 @@ RtxdiResources::RtxdiResources(
     nvrhi::BufferDesc primitiveLightBufferDesc;
     primitiveLightBufferDesc.byteSize = sizeof(PolymorphicLightInfo) * maxPrimitiveLights;
     primitiveLightBufferDesc.structStride = sizeof(PolymorphicLightInfo);
-    primitiveLightBufferDesc.initialState = nvrhi::ResourceStates::SHADER_RESOURCE;
+    primitiveLightBufferDesc.initialState = nvrhi::ResourceStates::ShaderResource;
     primitiveLightBufferDesc.keepInitialState = true;
     primitiveLightBufferDesc.debugName = "PrimitiveLightBuffer";
     PrimitiveLightBuffer = device->createBuffer(primitiveLightBufferDesc);
@@ -48,7 +51,7 @@ RtxdiResources::RtxdiResources(
     risBufferDesc.byteSize = sizeof(uint32_t) * 2 * std::max(context.GetRisBufferElementCount(), 1u); // RG32_UINT per element
     risBufferDesc.format = nvrhi::Format::RG32_UINT;
     risBufferDesc.canHaveTypedViews = true;
-    risBufferDesc.initialState = nvrhi::ResourceStates::SHADER_RESOURCE;
+    risBufferDesc.initialState = nvrhi::ResourceStates::ShaderResource;
     risBufferDesc.keepInitialState = true;
     risBufferDesc.debugName = "RisBuffer";
     risBufferDesc.canHaveUAVs = true;
@@ -67,7 +70,7 @@ RtxdiResources::RtxdiResources(
     nvrhi::BufferDesc lightBufferDesc;
     lightBufferDesc.byteSize = sizeof(PolymorphicLightInfo) * lightBufferElements;
     lightBufferDesc.structStride = sizeof(PolymorphicLightInfo);
-    lightBufferDesc.initialState = nvrhi::ResourceStates::SHADER_RESOURCE;
+    lightBufferDesc.initialState = nvrhi::ResourceStates::ShaderResource;
     lightBufferDesc.keepInitialState = true;
     lightBufferDesc.debugName = "LightDataBuffer";
     lightBufferDesc.canHaveUAVs = true;
@@ -78,7 +81,7 @@ RtxdiResources::RtxdiResources(
     lightIndexMappingBufferDesc.byteSize = sizeof(uint32_t) * lightBufferElements;
     lightIndexMappingBufferDesc.format = nvrhi::Format::R32_UINT;
     lightIndexMappingBufferDesc.canHaveTypedViews = true;
-    lightIndexMappingBufferDesc.initialState = nvrhi::ResourceStates::SHADER_RESOURCE;
+    lightIndexMappingBufferDesc.initialState = nvrhi::ResourceStates::ShaderResource;
     lightIndexMappingBufferDesc.keepInitialState = true;
     lightIndexMappingBufferDesc.debugName = "LightIndexMappingBuffer";
     lightIndexMappingBufferDesc.canHaveUAVs = true;
@@ -90,7 +93,7 @@ RtxdiResources::RtxdiResources(
     neighborOffsetBufferDesc.format = nvrhi::Format::RG8_SNORM;
     neighborOffsetBufferDesc.canHaveTypedViews = true;
     neighborOffsetBufferDesc.debugName = "NeighborOffsets";
-    neighborOffsetBufferDesc.initialState = nvrhi::ResourceStates::SHADER_RESOURCE;
+    neighborOffsetBufferDesc.initialState = nvrhi::ResourceStates::ShaderResource;
     neighborOffsetBufferDesc.keepInitialState = true;
     NeighborOffsetsBuffer = device->createBuffer(neighborOffsetBufferDesc);
 
@@ -98,7 +101,7 @@ RtxdiResources::RtxdiResources(
     nvrhi::BufferDesc lightReservoirBufferDesc;
     lightReservoirBufferDesc.byteSize = sizeof(RTXDI_PackedReservoir) * context.GetReservoirBufferElementCount() * 2; // Use 2 reservoir buffers for our pipeline
     lightReservoirBufferDesc.structStride = sizeof(RTXDI_PackedReservoir);
-    lightReservoirBufferDesc.initialState = nvrhi::ResourceStates::UNORDERED_ACCESS;
+    lightReservoirBufferDesc.initialState = nvrhi::ResourceStates::UnorderedAccess;
     lightReservoirBufferDesc.keepInitialState = true;
     lightReservoirBufferDesc.debugName = "LightReservoirBuffer";
     lightReservoirBufferDesc.canHaveUAVs = true;
@@ -111,7 +114,7 @@ RtxdiResources::RtxdiResources(
     environmentPdfDesc.mipLevels = uint32_t(ceilf(::log2f(float(std::max(environmentPdfDesc.width, environmentPdfDesc.height))))); // Stop at 2x1 or 2x2
     environmentPdfDesc.isUAV = true;
     environmentPdfDesc.debugName = "EnvironmentPdf";
-    environmentPdfDesc.initialState = nvrhi::ResourceStates::SHADER_RESOURCE;
+    environmentPdfDesc.initialState = nvrhi::ResourceStates::ShaderResource;
     environmentPdfDesc.keepInitialState = true;
     environmentPdfDesc.format = nvrhi::Format::R16_FLOAT;
     EnvironmentPdfTexture = device->createTexture(environmentPdfDesc);
@@ -121,7 +124,7 @@ RtxdiResources::RtxdiResources(
     assert(localLightPdfDesc.width * localLightPdfDesc.height >= maxLocalLights);
     localLightPdfDesc.isUAV = true;
     localLightPdfDesc.debugName = "LocalLightPdf";
-    localLightPdfDesc.initialState = nvrhi::ResourceStates::SHADER_RESOURCE;
+    localLightPdfDesc.initialState = nvrhi::ResourceStates::ShaderResource;
     localLightPdfDesc.keepInitialState = true;
     localLightPdfDesc.format = nvrhi::Format::R32_FLOAT; // Use FP32 here to allow a wide range of flux values, esp. when downsampled.
     LocalLightPdfTexture = device->createTexture(localLightPdfDesc);

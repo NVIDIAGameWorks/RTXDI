@@ -10,6 +10,8 @@
 
 #pragma pack_matrix(row_major)
 
+#define ENABLE_METAL_ROUGH_RECONSTRUCTION 1
+
 #include "ShaderParameters.h"
 #include "SceneGeometry.hlsli"
 #include "GBufferHelpers.hlsli"
@@ -18,8 +20,8 @@ ConstantBuffer<GBufferConstants> g_Const : register(b0);
 VK_PUSH_CONSTANT ConstantBuffer<PerPassConstants> g_PerPassConstants : register(b1);
 
 RWTexture2D<float> u_Depth : register(u0);
-RWTexture2D<uint> u_BaseColor : register(u1);
-RWTexture2D<uint> u_MetalRough : register(u2);
+RWTexture2D<uint> u_DiffuseAlbedo : register(u1);
+RWTexture2D<uint> u_SpecularRough : register(u2);
 RWTexture2D<uint> u_Normals : register(u3);
 RWTexture2D<uint> u_GeoNormals : register(u4);
 RWTexture2D<float4> u_Emissive : register(u5);
@@ -37,13 +39,14 @@ SamplerState s_MaterialSampler : register(s0);
 
 void shadeSurface(
     uint2 pixelPosition, 
-    uint instanceIndex, 
+    uint instanceIndex,
+    uint geometryIndex,
     uint primitiveIndex, 
     float2 rayBarycentrics, 
     float3 viewDirection, 
     float maxGlassHitT)
 {
-    GeometrySample gs = getGeometryFromHit(instanceIndex, primitiveIndex, rayBarycentrics, 
+    GeometrySample gs = getGeometryFromHit(instanceIndex, geometryIndex, primitiveIndex, rayBarycentrics, 
         GeomAttr_All, t_InstanceData, t_GeometryData, t_MaterialConstants);
     
     RayDesc ray_0 = setupPrimaryRay(pixelPosition, g_Const.view);
@@ -71,49 +74,63 @@ void shadeSurface(
         ms.roughness = g_Const.roughnessOverride;
 
     if (g_Const.metalnessOverride >= 0)
+    {
         ms.metalness = g_Const.metalnessOverride;
+        getReflectivity(ms.metalness, ms.baseColor, ms.diffuseAlbedo, ms.specularF0);
+    }
 
     float viewDepth = 0;
     float3 motion = getMotionVector(g_Const.view, g_Const.viewPrev, 
-        gs.instance, gs.objectSpacePosition, viewDepth);
+        gs.instance, gs.objectSpacePosition, gs.prevObjectSpacePosition, viewDepth);
 
     u_Depth[pixelPosition] = viewDepth;
-    u_BaseColor[pixelPosition] = Pack_R8G8B8_UFLOAT(ms.baseColor);
-    u_MetalRough[pixelPosition] = Pack_R16G16_UFLOAT(float2(ms.metalness, ms.roughness));
+    u_DiffuseAlbedo[pixelPosition] = Pack_R11G11B10_UFLOAT(ms.diffuseAlbedo);
+    u_SpecularRough[pixelPosition] = Pack_R8G8B8A8_Gamma_UFLOAT(float4(ms.specularF0, ms.roughness));
     u_Normals[pixelPosition] = ndirToOctUnorm32(ms.shadingNormal);
     u_GeoNormals[pixelPosition] = ndirToOctUnorm32(gs.flatNormal);
-    u_Emissive[pixelPosition] = float4(ms.emissive, maxGlassHitT);
+    u_Emissive[pixelPosition] = float4(ms.emissiveColor, maxGlassHitT);
     u_MotionVectors[pixelPosition] = float4(motion, 0);
     u_NormalRoughness[pixelPosition] = float4(ms.shadingNormal * 0.5 + 0.5, ms.roughness);
 
     if (all(g_Const.materialReadbackPosition == int2(pixelPosition)))
     {
-        u_RayCountBuffer[g_Const.materialReadbackBufferIndex] = gs.geometry.materialIndex;
+        u_RayCountBuffer[g_Const.materialReadbackBufferIndex] = gs.geometry.materialIndex + 1;
     }
 }
 
-static const int MaterialType_Glass = 1234; // Some value outside of the original enum
-
-int evaluateNonOpaqueMaterials(uint instanceID, uint primitiveIndex, float2 rayBarycentrics)
+int evaluateNonOpaqueMaterials(uint instanceID, uint geometryIndex, uint primitiveIndex, float2 rayBarycentrics)
 {
-    GeometrySample gs = getGeometryFromHit(instanceID, primitiveIndex, rayBarycentrics, 
+    GeometrySample gs = getGeometryFromHit(instanceID, geometryIndex, primitiveIndex, rayBarycentrics, 
         GeomAttr_TexCoord, t_InstanceData, t_GeometryData, t_MaterialConstants);
     
-    int materialType = (gs.material.flags & MaterialFlags_MaterialType_Mask) >> MaterialFlags_MaterialType_Shift;
-
-    if (materialType == MaterialType_Opaque)
-        return MaterialType_Opaque;
-
-    if (gs.material.diffuseTextureIndex < 0 && materialType == MaterialType_AlphaTested)
-        return MaterialType_Opaque;
-
-    MaterialSample ms = sampleGeometryMaterial(gs, 0, 0, 0, MatAttr_BaseColor, 
+    MaterialSample ms = sampleGeometryMaterial(gs, 0, 0, 0, MatAttr_BaseColor | MatAttr_Transmission, 
         s_MaterialSampler, g_Const.normalMapScale);
 
-    if (ms.roughness <= 0.1 && materialType == MaterialType_Transparent)
-        return MaterialType_Glass;
+    bool alphaMask = ms.opacity >= gs.material.alphaCutoff;
+
+    if (gs.material.domain == MaterialDomain_AlphaTested && alphaMask)
+        return MaterialDomain_Opaque;
+
+    if (gs.material.domain == MaterialDomain_AlphaBlended && ms.opacity >= 0.5)
+        return MaterialDomain_Opaque; // no support for blending
     
-    return (ms.opacity > 0.5) ? MaterialType_Opaque : MaterialType_Transparent;
+    if (gs.material.domain == MaterialDomain_Transmissive ||
+        (gs.material.domain == MaterialDomain_TransmissiveAlphaTested && alphaMask) ||
+        gs.material.domain == MaterialDomain_TransmissiveAlphaBlended)
+    {
+        float throughput = ms.transmission;
+
+        if ((gs.material.flags & MaterialFlags_UseSpecularGlossModel) == 0)
+            throughput *= (1.0 - ms.metalness) * max(ms.baseColor.r, max(ms.baseColor.g, ms.baseColor.b));
+
+        if (gs.material.domain == MaterialDomain_TransmissiveAlphaBlended)
+            throughput *= (1.0 - ms.opacity);
+
+        if (throughput == 0)
+            return MaterialDomain_Opaque;
+    }
+
+    return gs.material.domain;
 }
 
 struct RayPayload
@@ -121,19 +138,22 @@ struct RayPayload
     float minGlassRayT;
     float committedRayT;
     uint instanceID;
+    uint geometryIndex;
     uint primitiveIndex;
     float2 barycentrics;
 };
 
-bool anyHitLogic(inout RayPayload payload, uint instanceID, uint primitiveIndex, float2 rayBarycentrics, float rayT)
+bool anyHitLogic(inout RayPayload payload, uint instanceID, uint geometryIndex, uint primitiveIndex, float2 rayBarycentrics, float rayT)
 {
-    int evaluatedMaterialType = evaluateNonOpaqueMaterials(instanceID, primitiveIndex, rayBarycentrics);
+    int evaluatedMaterialDomain = evaluateNonOpaqueMaterials(instanceID, geometryIndex, primitiveIndex, rayBarycentrics);
 
-    if (evaluatedMaterialType == MaterialType_Glass)
+    if (evaluatedMaterialDomain == MaterialDomain_Transmissive || 
+        evaluatedMaterialDomain == MaterialDomain_TransmissiveAlphaTested || 
+        evaluatedMaterialDomain == MaterialDomain_TransmissiveAlphaBlended)
     {
         payload.minGlassRayT = min(payload.minGlassRayT, rayT);
     }
-    else if(evaluatedMaterialType == MaterialType_Opaque)
+    else if(evaluatedMaterialDomain == MaterialDomain_Opaque)
     {
         return true;
     }
@@ -157,6 +177,7 @@ void ClosestHit(inout RayPayload payload : SV_RayPayload, in Attributes attrib :
 {
     payload.committedRayT = RayTCurrent();
     payload.instanceID = InstanceID();
+    payload.geometryIndex = GeometryIndex();
     payload.primitiveIndex = PrimitiveIndex();
     payload.barycentrics = attrib.uv;
 }
@@ -164,7 +185,7 @@ void ClosestHit(inout RayPayload payload : SV_RayPayload, in Attributes attrib :
 [shader("anyhit")]
 void AnyHit(inout RayPayload payload : SV_RayPayload, in Attributes attrib : SV_IntersectionAttributes)
 {
-    if (!anyHitLogic(payload, InstanceID(), PrimitiveIndex(), attrib.uv, RayTCurrent()))
+    if (!anyHitLogic(payload, InstanceID(), GeometryIndex(), PrimitiveIndex(), attrib.uv, RayTCurrent()))
         IgnoreHit();
 }
 #endif
@@ -216,7 +237,8 @@ void RayGen()
         {
             if (anyHitLogic(payload, 
                 rayQuery.CandidateInstanceID(),
-                rayQuery.CandidatePrimitiveIndex(), 
+                rayQuery.CandidateGeometryIndex(),
+                rayQuery.CandidatePrimitiveIndex(),
                 rayQuery.CandidateTriangleBarycentrics(),
                 rayQuery.CandidateTriangleRayT()))
             {
@@ -228,6 +250,7 @@ void RayGen()
     if (rayQuery.CommittedStatus() == COMMITTED_TRIANGLE_HIT)
     {
         payload.instanceID = rayQuery.CommittedInstanceID();
+        payload.geometryIndex = rayQuery.CommittedGeometryIndex();
         payload.primitiveIndex = rayQuery.CommittedPrimitiveIndex();
         payload.barycentrics = rayQuery.CommittedTriangleBarycentrics();
         payload.committedRayT = rayQuery.CommittedRayT();
@@ -247,6 +270,7 @@ void RayGen()
         shadeSurface(
             pixelPosition,
             payload.instanceID,
+            payload.geometryIndex,
             payload.primitiveIndex,
             payload.barycentrics,
             ray.Direction,
@@ -256,8 +280,8 @@ void RayGen()
     }
 
     u_Depth[pixelPosition] = 0;
-    u_BaseColor[pixelPosition] = 0;
-    u_MetalRough[pixelPosition] = 0;
+    u_DiffuseAlbedo[pixelPosition] = 0;
+    u_SpecularRough[pixelPosition] = 0;
     u_Normals[pixelPosition] = 0;
     u_GeoNormals[pixelPosition] = 0;
     u_Emissive[pixelPosition] = float4(0, 0, 0, maxGlassHitT);

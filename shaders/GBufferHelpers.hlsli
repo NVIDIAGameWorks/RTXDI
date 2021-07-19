@@ -11,7 +11,7 @@
 RayDesc setupPrimaryRay(uint2 pixelPosition, PlanarViewConstants view)
 {
     float2 uv = (float2(pixelPosition) + 0.5) * view.viewportSizeInv;
-    float4 clipPos = float4(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0, 0.5, 1);
+    float4 clipPos = float4(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0, (1.0 / 256.0), 1);
     float4 worldPos = mul(clipPos, view.matClipToWorld);
     worldPos.xyz /= worldPos.w;
 
@@ -28,10 +28,11 @@ float3 getMotionVector(
     PlanarViewConstants viewPrev,
     InstanceData instance,
     float3 objectSpacePosition,
+    float3 prevObjectSpacePosition,
     out float o_viewDepth)
 {
     float3 worldSpacePosition = mul(instance.transform, float4(objectSpacePosition, 1.0)).xyz;
-    float3 prevWorldSpacePosition = mul(instance.prevTransform, float4(objectSpacePosition, 1.0)).xyz;
+    float3 prevWorldSpacePosition = mul(instance.prevTransform, float4(prevObjectSpacePosition, 1.0)).xyz;
 
     float4 clipPos = mul(float4(worldSpacePosition, 1.0), view.matWorldToClip);
     clipPos.xyz /= clipPos.w;
@@ -72,48 +73,4 @@ float2 getEnvironmentMotionVector(
     motion += view.pixelOffset - viewPrev.pixelOffset;
 
     return motion;
-}
-
-// Smart bent normal for ray tracing
-// See appendix A.3 in https://arxiv.org/pdf/1705.01263.pdf
-float3 getBentNormal(float3 geometryNormal, float3 shadingNormal, float3 viewDirection)
-{
-    // Flip the normal in case we're looking at the geometry from its back side
-    if (dot(geometryNormal, viewDirection) > 0)
-    {
-        geometryNormal = -geometryNormal;
-        shadingNormal = -shadingNormal;
-    }
-
-    // Specular reflection in shading normal
-    float3 R = reflect(viewDirection, shadingNormal);
-    float a = dot(geometryNormal, R);
-    if (a < 0) // Perturb normal
-    {
-        float b = max(0.001, dot(shadingNormal, geometryNormal));
-        return normalize(-viewDirection + normalize(R - shadingNormal * a / b));
-    }
-
-    return shadingNormal;
-}
-
-float3 computeRayIntersectionBarycentrics(float3 vertices[3], float3 rayOrigin, float3 rayDirection)
-{
-    float3 edge1 = vertices[1] - vertices[0];
-    float3 edge2 = vertices[2] - vertices[0];
-
-    float3 pvec = cross(rayDirection, edge2);
-
-    float det = dot(edge1, pvec);
-    float inv_det = 1.0f / det;
-
-    float3 tvec = rayOrigin - vertices[0];
-
-    float alpha = dot(tvec, pvec) * inv_det;
-
-    float3 qvec = cross(tvec, edge1);
-
-    float beta = dot(rayDirection, qvec) * inv_det;
-
-    return float3(1.f - alpha - beta, alpha, beta);
 }

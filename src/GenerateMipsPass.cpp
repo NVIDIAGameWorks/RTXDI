@@ -29,7 +29,7 @@ GenerateMipsPass::GenerateMipsPass(
 {
     donut::log::info("Initializing GenerateMipsPass...");
 
-    const auto& destinationDesc = m_DestinationTexture->GetDesc();
+    const auto& destinationDesc = m_DestinationTexture->getDesc();
 
     nvrhi::BindingSetDesc bindingSetDesc;
     bindingSetDesc.bindings = {
@@ -68,7 +68,7 @@ void GenerateMipsPass::Process(nvrhi::ICommandList* commandList)
 {
     commandList->beginMarker("GenerateMips");
     
-    const auto& destDesc = m_DestinationTexture->GetDesc();
+    const auto& destDesc = m_DestinationTexture->getDesc();
 
     constexpr uint32_t mipLevelsPerPass = 5;
     uint32_t width = destDesc.width;

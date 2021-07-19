@@ -1,9 +1,9 @@
-media/
+media*/
 bin/
 dxc/
 donut-*/
 build*/
-NRD/
 .vs
+.vscode
 *.sublime-project
 *.sublime-workspace

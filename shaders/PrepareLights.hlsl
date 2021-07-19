@@ -12,6 +12,7 @@
 
 #include <donut/shaders/bindless.h>
 #include <donut/shaders/vulkan.hlsli>
+#include <donut/shaders/packing.hlsli>
 #include <rtxdi/RtxdiMath.hlsli>
 #include "ShaderParameters.h"
 
@@ -77,27 +78,26 @@ void main(uint dispatchThreadId : SV_DispatchThreadID, uint groupThreadId : SV_G
         return;
 
     uint triangleIdx = dispatchThreadId - task.lightBufferOffset;
-    bool isPrimitiveLight = (task.instanceIndex & TASK_PRIMITIVE_LIGHT_BIT) != 0;
+    bool isPrimitiveLight = (task.instanceAndGeometryIndex & TASK_PRIMITIVE_LIGHT_BIT) != 0;
     
     PolymorphicLightInfo lightInfo = (PolymorphicLightInfo)0;
 
     if (!isPrimitiveLight)
     {
-        InstanceData instance = t_InstanceData[task.instanceIndex];
-        GeometryData geometry = t_GeometryData[instance.geometryIndex];
+        InstanceData instance = t_InstanceData[task.instanceAndGeometryIndex >> 12];
+        GeometryData geometry = t_GeometryData[instance.firstGeometryIndex + task.instanceAndGeometryIndex & 0xfff];
         MaterialConstants material = t_MaterialConstants[geometry.materialIndex];
 
         ByteAddressBuffer indexBuffer = t_BindlessBuffers[NonUniformResourceIndex(geometry.indexBufferIndex)];
-        ByteAddressBuffer positionBuffer = t_BindlessBuffers[NonUniformResourceIndex(geometry.positionBufferIndex)];
-        ByteAddressBuffer texcoordBuffer = t_BindlessBuffers[NonUniformResourceIndex(geometry.texcoordBufferIndex)];
+        ByteAddressBuffer vertexBuffer = t_BindlessBuffers[NonUniformResourceIndex(geometry.vertexBufferIndex)];
         
-        uint3 indices = indexBuffer.Load3(geometry.indexBufferOffset + triangleIdx * c_SizeOfTriangleIndices);
+        uint3 indices = indexBuffer.Load3(geometry.indexOffset + triangleIdx * c_SizeOfTriangleIndices);
 
         float3 positions[3];
 
-        positions[0] = asfloat(positionBuffer.Load3(geometry.positionBufferOffset + indices[0] * c_SizeOfPosition));
-        positions[1] = asfloat(positionBuffer.Load3(geometry.positionBufferOffset + indices[1] * c_SizeOfPosition));
-        positions[2] = asfloat(positionBuffer.Load3(geometry.positionBufferOffset + indices[2] * c_SizeOfPosition));
+        positions[0] = asfloat(vertexBuffer.Load3(geometry.positionOffset + indices[0] * c_SizeOfPosition));
+        positions[1] = asfloat(vertexBuffer.Load3(geometry.positionOffset + indices[1] * c_SizeOfPosition));
+        positions[2] = asfloat(vertexBuffer.Load3(geometry.positionOffset + indices[2] * c_SizeOfPosition));
         
         positions[0] = mul(instance.transform, float4(positions[0], 1)).xyz;
         positions[1] = mul(instance.transform, float4(positions[1], 1)).xyz;
@@ -105,15 +105,15 @@ void main(uint dispatchThreadId : SV_DispatchThreadID, uint groupThreadId : SV_G
 
         float3 radiance = material.emissiveColor;
 
-        if (material.emissiveTextureIndex >= 0 && geometry.texcoordBufferIndex >= 0)
+        if (material.emissiveTextureIndex >= 0 && geometry.texCoord1Offset != ~0u)
         {
             Texture2D emissiveTexture = t_BindlessTextures[NonUniformResourceIndex(material.emissiveTextureIndex)];
 
             // Load the vertex UVs
             float2 uvs[3];
-            uvs[0] = asfloat(texcoordBuffer.Load2(geometry.texcoordBufferOffset + indices[0] * c_SizeOfTexcoord));
-            uvs[1] = asfloat(texcoordBuffer.Load2(geometry.texcoordBufferOffset + indices[1] * c_SizeOfTexcoord));
-            uvs[2] = asfloat(texcoordBuffer.Load2(geometry.texcoordBufferOffset + indices[2] * c_SizeOfTexcoord));
+            uvs[0] = asfloat(vertexBuffer.Load2(geometry.texCoord1Offset + indices[0] * c_SizeOfTexcoord));
+            uvs[1] = asfloat(vertexBuffer.Load2(geometry.texCoord1Offset + indices[1] * c_SizeOfTexcoord));
+            uvs[2] = asfloat(vertexBuffer.Load2(geometry.texCoord1Offset + indices[2] * c_SizeOfTexcoord));
 
             // Calculate the triangle edges and edge lengths in UV space
             float2 edges[3];
@@ -176,7 +176,7 @@ void main(uint dispatchThreadId : SV_DispatchThreadID, uint groupThreadId : SV_G
     }
     else
     {
-        uint primitiveLightIndex = task.instanceIndex & ~TASK_PRIMITIVE_LIGHT_BIT;
+        uint primitiveLightIndex = task.instanceAndGeometryIndex & ~TASK_PRIMITIVE_LIGHT_BIT;
         lightInfo = t_PrimitiveLights[primitiveLightIndex];
     }
 

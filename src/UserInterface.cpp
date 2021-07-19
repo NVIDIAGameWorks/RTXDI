@@ -37,8 +37,8 @@
 #include "SampleScene.h"
 
 #include <donut/engine/IesProfile.h>
-#include <donut/engine/BindlessScene.h>
 #include <donut/app/Camera.h>
+#include <donut/app/UserInterfaceUtils.h>
 
 #include <json/writer.h>
 
@@ -48,8 +48,9 @@ UIData::UIData()
 {
     rtxdiContextParams.ReGIR.Mode = rtxdi::ReGIRMode::Onion;
     
-    taaParams.newFrameWeight = 0.02f;
-    taaParams.maxRadiance = 50.f;
+    taaParams.newFrameWeight = 0.04f;
+    taaParams.maxRadiance = 200.f;
+    taaParams.clampingFactor = 1.3f;
 
 #ifdef WITH_NRD
     SetDefaultDenoiserSettings();
@@ -74,7 +75,7 @@ void UIData::SetDefaultDenoiserSettings()
     reblurSettings.diffuseSettings.antilagHitDistanceSettings.sensitivityToDarkness = 0.5f;
     reblurSettings.diffuseSettings.antilagHitDistanceSettings.enable = true;
     reblurSettings.diffuseSettings.maxAccumulatedFrameNum = 31;
-    reblurSettings.diffuseSettings.maxFastAccumulatedFrameNum = 3;
+    reblurSettings.diffuseSettings.maxFastAccumulatedFrameNum = 1;
     reblurSettings.diffuseSettings.blurRadius = 10.0f;
     reblurSettings.diffuseSettings.maxAdaptiveRadiusScale = 5.0f;
     reblurSettings.diffuseSettings.historyClampingColorBoxSigmaScale = 1.0f;
@@ -99,8 +100,8 @@ void UIData::SetDefaultDenoiserSettings()
 
     relaxSettings.diffuseMaxAccumulatedFrameNum = 31;
     relaxSettings.specularMaxAccumulatedFrameNum = 31;
-    relaxSettings.diffuseMaxFastAccumulatedFrameNum = 3;
-    relaxSettings.specularMaxFastAccumulatedFrameNum = 3;
+    relaxSettings.diffuseMaxFastAccumulatedFrameNum = 1;
+    relaxSettings.specularMaxFastAccumulatedFrameNum = 1;
     relaxSettings.historyClampingColorBoxSigmaScale = 1.0f;
     relaxSettings.disocclusionFixEdgeStoppingNormalPower = 1.0f;
     relaxSettings.disocclusionFixNumFramesToFix = 1;
@@ -110,38 +111,12 @@ void UIData::SetDefaultDenoiserSettings()
 }
 #endif
 
-static bool ImGui_Direction(dm::float3& dir, bool negative = false)
-{
-    dm::float3 normalizedDir = normalize(dir);
-    if (negative) normalizedDir = -normalizedDir;
-
-    float azimuth = atan2f(normalizedDir.z, normalizedDir.x);
-    float elevation = asinf(normalizedDir.y);
-
-    bool changed = false;
-    changed |= ImGui::SliderAngle("Azimuth", &azimuth, -180.f, 180.f);
-    changed |= ImGui::SliderAngle("Elevation", &elevation, -90.f, 90.f);
-
-    if (changed)
-    {
-        dir.y = sinf(elevation);
-        dir.x = cosf(azimuth) * cosf(elevation);
-        dir.z = sinf(azimuth) * cosf(elevation);
-
-        if (negative)
-            dir = -dir;
-    }
-
-    return changed;
-}
-
-
 
 UserInterface::UserInterface(app::DeviceManager* deviceManager, vfs::IFileSystem& rootFS, UIData& ui)
     : ImGui_Renderer(deviceManager)
     , m_ui(ui)
 {
-    m_FontOpenSans = LoadFont(rootFS, "/media/Donut/OpenSansFont/OpenSans-Regular.ttf", 17.f);
+    m_FontOpenSans = LoadFont(rootFS, "/media/fonts/OpenSans/OpenSans-Regular.ttf", 17.f);
 
     m_Preset = QualityPreset::Medium;
     ApplyPreset();
@@ -171,10 +146,11 @@ void UserInterface::GeneralSettingsWindow()
 
     ImGui::Checkbox("Tone mapping", &m_ui.enableToneMapping);
     ImGui::Checkbox("Temporal AA", &m_ui.enableTAA);
+    ImGui::Checkbox("Bloom", &m_ui.enableBloom);
 
-    if (GetDevice()->queryFeatureSupport(nvrhi::Feature::TraceRayInline))
+    if (GetDevice()->queryFeatureSupport(nvrhi::Feature::RayQuery))
     {
-        if (GetDevice()->queryFeatureSupport(nvrhi::Feature::RayTracing))
+        if (GetDevice()->queryFeatureSupport(nvrhi::Feature::RayTracingPipeline))
         {
             m_ui.reloadShaders |= ImGui::Checkbox("RayQuery", &m_ui.useRayQuery);
         }
@@ -236,6 +212,7 @@ void UserInterface::ApplyPreset()
         m_ui.lightingSettings.numDisocclusionBoostSamples = 2;
         m_ui.lightingSettings.discardInvisibleSamples = true;
         m_ui.lightingSettings.reuseFinalVisibility = true;
+        m_ui.lightingSettings.enableBoilingFilter = true;
         break;
 
     case QualityPreset::Medium:
@@ -250,6 +227,7 @@ void UserInterface::ApplyPreset()
         m_ui.lightingSettings.numDisocclusionBoostSamples = 8;
         m_ui.lightingSettings.discardInvisibleSamples = true;
         m_ui.lightingSettings.reuseFinalVisibility = true;
+        m_ui.lightingSettings.enableBoilingFilter = true;
         break;
 
     case QualityPreset::Unbiased:
@@ -264,6 +242,7 @@ void UserInterface::ApplyPreset()
         m_ui.lightingSettings.numDisocclusionBoostSamples = 8;
         m_ui.lightingSettings.discardInvisibleSamples = false;
         m_ui.lightingSettings.reuseFinalVisibility = false;
+        m_ui.lightingSettings.enableBoilingFilter = false;
         break;
 
     case QualityPreset::Ultra:
@@ -278,6 +257,7 @@ void UserInterface::ApplyPreset()
         m_ui.lightingSettings.numDisocclusionBoostSamples = 16;
         m_ui.lightingSettings.discardInvisibleSamples = false;
         m_ui.lightingSettings.reuseFinalVisibility = false;
+        m_ui.lightingSettings.enableBoilingFilter = false;
         break;
 
     case QualityPreset::Reference:
@@ -288,6 +268,7 @@ void UserInterface::ApplyPreset()
         m_ui.lightingSettings.enableReGIR = false;
         m_ui.lightingSettings.enableTemporalResampling = false;
         m_ui.lightingSettings.enableSpatialResampling = false;
+        m_ui.lightingSettings.enableBoilingFilter = false;
         break;
 
     default: ;
@@ -345,7 +326,7 @@ void UserInterface::SamplingSettingsWindow()
             {
                 samplingSettingsChanged |= ImGui::Checkbox("Enable Temporal Resampling", &m_ui.lightingSettings.enableTemporalResampling);
             }
-            samplingSettingsChanged |= ImGui::Checkbox("Enable Previous Frame TLAS", &m_ui.lightingSettings.enablePreviousTLAS);
+            samplingSettingsChanged |= ImGui::Checkbox("Enable Previous Frame TLAS/BLAS", &m_ui.lightingSettings.enablePreviousTLAS);
             samplingSettingsChanged |= ImGui::Combo("Temporal Bias Correction", (int*)&m_ui.lightingSettings.temporalBiasCorrection, "Off\0Basic\0Ray Traced\0");
             if (m_showAdvancedSamplingSettings)
             {
@@ -618,9 +599,13 @@ void UserInterface::SceneSettingsWindow()
     ImGui::PopItemWidth();
 
     ImGui::SliderFloat("Normal Map Scale", &m_ui.gbufferSettings.normalMapScale, 0.f, 1.f);
-
-    ImGui::Checkbox("Animate Lights", &m_ui.animateLights);
-    ImGui::Checkbox("Animate Meshes", &m_ui.animateMeshes);
+    
+    ImGui::Checkbox("##enableAnimations", &m_ui.enableAnimations);
+    ImGui::SameLine();
+    ImGui::PushItemWidth(89.f);
+    ImGui::SliderFloat("Animation Speed", &m_ui.animationSpeed, 0.f, 2.f);
+    ImGui::PopItemWidth();
+    
     m_ui.resetAccumulation |= ImGui::Checkbox("Alpha-Tested Geometry", &m_ui.gbufferSettings.enableAlphaTestedGeometry);
     m_ui.resetAccumulation |= ImGui::Checkbox("Transparent Geometry", &m_ui.gbufferSettings.enableTransparentGeometry);
 
@@ -680,34 +665,30 @@ void UserInterface::SceneSettingsWindow()
     }
 
     ImGui::Separator();
-    if (m_ui.selectedMaterialIndex > 0 && m_ui.selectedMaterialIndex < int(m_ui.scene->GetMaterials().size()) + 1)
+    if (m_ui.selectedMaterial)
     {
-        engine::Material* selectedMaterial = m_ui.scene->GetMaterials()[m_ui.selectedMaterialIndex - 1];
-        ImGui::Text("%s", selectedMaterial->name.c_str());
+        ImGui::Text("%s", m_ui.selectedMaterial->name.c_str());
 
-        bool materialChanged = false;
-        float roughness = 1.f - selectedMaterial->shininess;
-        materialChanged |= ImGui::SliderFloat("Roughness", &roughness, 0.f, 1.f);
-        selectedMaterial->shininess = 1.f - roughness;
-        materialChanged |= ImGui::SliderFloat("Opacity", &selectedMaterial->opacity, 0.f, 1.f);
-        materialChanged |= ImGui::ColorEdit3("Base Color", &selectedMaterial->diffuseColor.x);
+        ImGui::PushItemWidth(200.f);
+        bool materialChanged = donut::app::MaterialEditor(m_ui.selectedMaterial.get(), false);
+        ImGui::PopItemWidth();
 
         if (materialChanged)
-            m_ui.bindlessScene->UpdateMaterial(selectedMaterial);
+            m_ui.selectedMaterial->dirty = true;
     }
     else
         ImGui::Text("Use RMB to select materials");
     
     ImGui::Separator();
-    if (ImGui::BeginCombo("Select Light", m_SelectedLight ? m_SelectedLight->name.c_str() : "(None)"))
+    if (ImGui::BeginCombo("Select Light", m_SelectedLight ? m_SelectedLight->GetName().c_str() : "(None)"))
     {
-        for (const auto& light : m_ui.scene->Lights)
+        for (const auto& light : m_ui.scene->GetSceneGraph()->GetLights())
         {
             if (light->GetLightType() == LightType_Environment)
                 continue;
 
             bool selected = m_SelectedLight == light;
-            ImGui::Selectable(light->name.c_str(), &selected);
+            ImGui::Selectable(light->GetName().c_str(), &selected);
             if (selected)
             {
                 m_SelectedLight = light;
@@ -719,31 +700,20 @@ void UserInterface::SceneSettingsWindow()
 
     if (m_SelectedLight)
     {
+        ImGui::PushItemWidth(200.f);
         switch (m_SelectedLight->GetLightType())
         {
         case LightType_Directional:
         {
             engine::DirectionalLight& dirLight = static_cast<engine::DirectionalLight&>(*m_SelectedLight);
-            bool sunLightChanged = false;
-            sunLightChanged |= ImGui_Direction(dirLight.direction, true);
-            sunLightChanged |= ImGui::SliderFloat("Angular Size", &dirLight.angularSize, 0.01f, 10.f);
-            if (sunLightChanged)
+            if (app::LightEditor_Directional(dirLight))
                 m_ui.environmentMapDirty = 1;
-            // ImGui::SliderFloat("Irradiance", &dirLight.irradiance, 0.f, 100.f);
             break;
         }
         case LightType_Spot:
         {
             SpotLightWithProfile& spotLight = static_cast<SpotLightWithProfile&>(*m_SelectedLight);
-            ImGui_Direction(spotLight.direction, true);
-            ImGui::PushItemWidth(150.f);
-            ImGui::DragFloat3("Position", &spotLight.position.x, 0.01f);
-            ImGui::PopItemWidth();
-            ImGui::SliderFloat("Radius", &spotLight.radius, 0.01f, 1.f, "%.3f", ImGuiSliderFlags_Logarithmic);
-            ImGui::SliderFloat("Flux", &spotLight.flux, 0.f, 100.f);
-            ImGui::SliderFloat("Inner Angle", &spotLight.innerAngle, 0.f, 90.f);
-            ImGui::SliderFloat("Outer Angle", &spotLight.outerAngle, 0.f, 90.f);
-            ImGui::ColorEdit3("Color", &spotLight.color.x);
+            app::LightEditor_Spot(spotLight);
 
             ImGui::PushItemWidth(150.f);
             if (ImGui::BeginCombo("IES Profile", spotLight.profileName.empty() ? "(none)" : spotLight.profileName.c_str()))
@@ -776,28 +746,23 @@ void UserInterface::SceneSettingsWindow()
 
             if (ImGui::Button("Place Here"))
             {
-                spotLight.position = m_ui.camera->GetPosition();
-                spotLight.direction = m_ui.camera->GetDir();
+                spotLight.SetPosition(dm::double3(m_ui.camera->GetPosition()));
+                spotLight.SetDirection(dm::double3(m_ui.camera->GetDir()));
             }
             ImGui::SameLine();
             if (ImGui::Button("Camera to Light"))
             {
-                m_ui.camera->LookAt(spotLight.position, spotLight.position + spotLight.direction);
+                m_ui.camera->LookAt(dm::float3(spotLight.GetPosition()), dm::float3(spotLight.GetPosition() + spotLight.GetDirection()));
             }
             break;
         }
         case LightType_Point:
         {
             engine::PointLight& pointLight = static_cast<engine::PointLight&>(*m_SelectedLight);
-            ImGui::PushItemWidth(150.f);
-            ImGui::DragFloat3("Position", &pointLight.position.x, 0.01f);
-            ImGui::PopItemWidth();
-            ImGui::SliderFloat("Radius", &pointLight.radius, 0.01f, 1.f, "%.3f", ImGuiSliderFlags_Logarithmic);
-            ImGui::SliderFloat("Flux", &pointLight.flux, 0.f, 100.f);
-            ImGui::ColorEdit3("Color", &pointLight.color.x);
+            app::LightEditor_Point(pointLight);
             if (ImGui::Button("Place Here"))
             {
-                pointLight.position = m_ui.camera->GetPosition();
+                pointLight.SetPosition(dm::double3(m_ui.camera->GetPosition()));
             }
             break;
         }
@@ -805,16 +770,20 @@ void UserInterface::SceneSettingsWindow()
         {
             CylinderLight& cylinderLight = static_cast<CylinderLight&>(*m_SelectedLight);
             ImGui::PushItemWidth(150.f);
-            ImGui::DragFloat3("Center", &cylinderLight.center.x, 0.01f);
+            dm::float3 position = dm::float3(cylinderLight.GetPosition());
+            if (ImGui::DragFloat3("Center", &position.x, 0.01f))
+                cylinderLight.SetPosition(dm::double3(position));
             ImGui::PopItemWidth();
-            ImGui_Direction(cylinderLight.axis);
+            dm::double3 direction = cylinderLight.GetDirection();
+            if (app::AzimuthElevationSliders(direction, true))
+                cylinderLight.SetDirection(direction);
             ImGui::SliderFloat("Radius", &cylinderLight.radius, 0.01f, 1.f, "%.3f", ImGuiSliderFlags_Logarithmic);
             ImGui::SliderFloat("Length", &cylinderLight.length, 0.01f, 10.f, "%.3f", ImGuiSliderFlags_Logarithmic);
             ImGui::SliderFloat("Flux", &cylinderLight.flux, 0.f, 100.f);
             ImGui::ColorEdit3("Color", &cylinderLight.color.x);
             if (ImGui::Button("Place Here"))
             {
-                cylinderLight.center = m_ui.camera->GetPosition();
+                cylinderLight.SetPosition(dm::double3(m_ui.camera->GetPosition()));
             }
             break;
         }
@@ -822,16 +791,20 @@ void UserInterface::SceneSettingsWindow()
         {
             DiskLight& diskLight = static_cast<DiskLight&>(*m_SelectedLight);
             ImGui::PushItemWidth(150.f);
-            ImGui::DragFloat3("Center", &diskLight.center.x, 0.01f);
+            dm::float3 position = dm::float3(diskLight.GetPosition());
+            if (ImGui::DragFloat3("Center", &position.x, 0.01f))
+                diskLight.SetPosition(dm::double3(position));
             ImGui::PopItemWidth();
-            ImGui_Direction(diskLight.normal);
+            dm::double3 direction = diskLight.GetDirection();
+            if (app::AzimuthElevationSliders(direction, true))
+                diskLight.SetDirection(direction);
             ImGui::SliderFloat("Radius", &diskLight.radius, 0.01f, 1.f, "%.3f", ImGuiSliderFlags_Logarithmic);
             ImGui::SliderFloat("Flux", &diskLight.flux, 0.f, 100.f);
             ImGui::ColorEdit3("Color", &diskLight.color.x);
             if (ImGui::Button("Place Here"))
             {
-                diskLight.center = m_ui.camera->GetPosition();
-                diskLight.normal = m_ui.camera->GetDir();
+                diskLight.SetPosition(dm::double3(m_ui.camera->GetPosition()));
+                diskLight.SetDirection(dm::double3(m_ui.camera->GetDir()));
             }
             break;
         }
@@ -839,18 +812,21 @@ void UserInterface::SceneSettingsWindow()
         {
             RectLight& rectLight = static_cast<RectLight&>(*m_SelectedLight);
             ImGui::PushItemWidth(150.f);
-            ImGui::DragFloat3("Center", &rectLight.center.x, 0.01f);
+            dm::float3 position = dm::float3(rectLight.GetPosition());
+            if (ImGui::DragFloat3("Center", &position.x, 0.01f))
+                rectLight.SetPosition(dm::double3(position));
             ImGui::PopItemWidth();
-            ImGui_Direction(rectLight.normal);
+            dm::double3 direction = rectLight.GetDirection();
+            if (app::AzimuthElevationSliders(direction, true))
+                rectLight.SetDirection(direction);
             ImGui::SliderFloat("Width", &rectLight.width, 0.01f, 1.f, "%.3f", ImGuiSliderFlags_Logarithmic);
             ImGui::SliderFloat("Height", &rectLight.height, 0.01f, 1.f, "%.3f", ImGuiSliderFlags_Logarithmic);
-            ImGui::SliderFloat("Rotation", &rectLight.rotation, -90.f, 90.f);
             ImGui::SliderFloat("Flux", &rectLight.flux, 0.f, 100.f);
             ImGui::ColorEdit3("Color", &rectLight.color.x);
             if (ImGui::Button("Place Here"))
             {
-                rectLight.center = m_ui.camera->GetPosition();
-                rectLight.normal = m_ui.camera->GetDir();
+                rectLight.SetPosition(dm::double3(m_ui.camera->GetPosition()));
+                rectLight.SetDirection(dm::double3(m_ui.camera->GetDir()));
             }
             break;
         }
@@ -860,6 +836,7 @@ void UserInterface::SceneSettingsWindow()
         {
             CopySelectedLight();
         }
+        ImGui::PopItemWidth();
     }
 }
 

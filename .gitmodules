@@ -1,3 +1,6 @@
 [submodule "donut"]
 	path = donut
-	url = https://gitlab-master.nvidia.com/nvrhi/donut.git
+	url = https://github.com/NVIDIAGameWorks/donut.git
+[submodule "NRD"]
+	path = NRD
+	url = https://github.com/NVIDIAGameWorks/RayTracingDenoiser.git

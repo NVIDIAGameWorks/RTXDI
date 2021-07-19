@@ -32,7 +32,12 @@ struct RAB_LightInfo
 
 };
 
-bool RAB_GetConservativeVisibility(RAB_Surface surface, RAB_LightSample lightSample, bool usePreviousFrameScene)
+bool RAB_GetConservativeVisibility(RAB_Surface surface, RAB_LightSample lightSample)
+{
+    return true;
+}
+
+bool RAB_GetTemporalConservativeVisibility(RAB_Surface currentSurface, RAB_Surface previousSurface, RAB_LightSample lightSample)
 {
     return true;
 }

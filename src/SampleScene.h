@@ -13,10 +13,6 @@
 #include <donut/engine/Scene.h>
 #include <donut/engine/KeyframeAnimation.h>
 
-namespace donut::engine {
-    class BindlessScene;
-}
-
 constexpr int LightType_Environment = 1000;
 constexpr int LightType_Cylinder = 1001;
 constexpr int LightType_Disk = 1002;
@@ -28,8 +24,9 @@ public:
     std::string profileName;
     int profileTextureIndex = -1;
 
-    void Load(Json::Value& node) override;
+    void Load(const Json::Value& node) override;
     void Store(Json::Value& node) const override;
+    [[nodiscard]] std::shared_ptr<SceneGraphLeaf> Clone() override;
 };
 
 class EnvironmentLight : public donut::engine::Light
@@ -40,88 +37,94 @@ public:
     float rotation = 0.f;
 
     [[nodiscard]] int GetLightType() const override { return LightType_Environment; }
+    [[nodiscard]] std::shared_ptr<SceneGraphLeaf> Clone() override;
 };
 
 class CylinderLight : public donut::engine::Light
 {
 public:
-    dm::float3 center = 0.f;
-    dm::float3 axis = dm::float3(0.f, 0.f, 1.f);
     float length = 1.f;
     float radius = 1.f;
     float flux = 1.f;
 
-    void Load(Json::Value& node) override;
+    void Load(const Json::Value& node) override;
     void Store(Json::Value& node) const override;
     [[nodiscard]] int GetLightType() const override { return LightType_Cylinder; }
+    [[nodiscard]] std::shared_ptr<SceneGraphLeaf> Clone() override;
 };
 
 class DiskLight : public donut::engine::Light
 {
 public:
-    dm::float3 center = 0.f;
-    dm::float3 normal = dm::float3(0.f, 0.f, 1.f);
     float radius = 1.f;
     float flux = 1.f;
 
-    void Load(Json::Value& node) override;
+    void Load(const Json::Value& node) override;
     void Store(Json::Value& node) const override;
     [[nodiscard]] int GetLightType() const override { return LightType_Disk; }
+    [[nodiscard]] std::shared_ptr<SceneGraphLeaf> Clone() override;
 };
 
 class RectLight : public donut::engine::Light
 {
 public:
-    dm::float3 center = 0.f;
-    dm::float3 normal = dm::float3(0.f, 0.f, 1.f);
-    float rotation = 0.f;
     float width = 1.f;
     float height = 1.f;
     float flux = 1.f;
 
-    void Load(Json::Value& node) override;
+    void Load(const Json::Value& node) override;
     void Store(Json::Value& node) const override;
     [[nodiscard]] int GetLightType() const override { return LightType_Rect; }
+    [[nodiscard]] std::shared_ptr<SceneGraphLeaf> Clone() override;
+};
+
+class SampleMesh : public donut::engine::MeshInfo
+{
+public:
+    using MeshInfo::MeshInfo;
+
+    nvrhi::rt::AccelStructHandle prevAccelStruct;
+};
+
+class SampleSceneTypeFactory : public donut::engine::SceneTypeFactory
+{
+public:
+    std::shared_ptr<donut::engine::SceneGraphLeaf> CreateLeaf(const std::string& type) override;
+    std::shared_ptr<donut::engine::MeshInfo> CreateMesh() override;
 };
 
 class SampleScene : public donut::engine::Scene
 {
 private:
-    donut::engine::animation::Track<donut::engine::animation::View> m_CameraPath;
-
     nvrhi::rt::AccelStructHandle m_TopLevelAS;
     nvrhi::rt::AccelStructHandle m_PrevTopLevelAS;
-    nvrhi::rt::TopLevelAccelStructDesc m_TlasDesc;
+    std::vector<nvrhi::rt::InstanceDesc> m_TlasInstances;
+    std::shared_ptr<donut::engine::SceneGraphAnimation> m_BenchmarkAnimation;
+    std::shared_ptr<donut::engine::PerspectiveCamera> m_BenchmarkCamera;
 
-    struct AnimatedMaterial
-    {
-        donut::engine::Material* material = nullptr;
-        dm::float3 radiance{};
-    };
+    bool m_CanUpdateTLAS = false;
+    bool m_CanUpdatePrevTLAS = false;
 
-    std::vector<AnimatedMaterial> m_AnimatedMaterials;
-    std::vector<donut::engine::MeshInstance*> m_RotatingFans;
-    std::vector<donut::engine::MeshInstance*> m_RotatingSphereParts;
-    int m_WallclockTimeMs = 0;
+    double m_WallclockTime = 0;
 
     std::vector<std::string> m_EnvironmentMaps;
 
 protected:
-    std::shared_ptr<donut::engine::Light> CreateLight(const std::string& type) override;
-    void LoadCustomData(Json::Value& rootNode, donut::engine::TextureCache& textureCache, concurrency::task_group& taskGroup, bool& success) override;
+    bool LoadCustomData(Json::Value& rootNode, tf::Executor* executor) override;
 
 public:
     using Scene::Scene;
 
-    bool Load(const std::filesystem::path& jsonFileName, donut::engine::TextureCache& textureCache) override;
+    bool LoadWithExecutor(const std::filesystem::path& jsonFileName, tf::Executor* executor) override;
 
-    [[nodiscard]] float GetCameraPathDuration() const;
-    bool InterpolateCameraPath(float time, dm::float3& position, dm::float3& direction);
-
+    const donut::engine::SceneGraphAnimation* GetBenchmarkAnimation() const { return m_BenchmarkAnimation.get(); }
+    const donut::engine::PerspectiveCamera* GetBenchmarkCamera() const { return m_BenchmarkCamera.get(); }
+    
     void BuildMeshBLASes(nvrhi::IDevice* device);
+    void UpdateSkinnedMeshBLASes(nvrhi::ICommandList* commandList, uint32_t frameIndex);
     void BuildTopLevelAccelStruct(nvrhi::ICommandList* commandList);
     void NextFrame();
-    void Animate(float  fElapsedTimeSeconds, bool animateLights, bool animateMeshes, donut::engine::BindlessScene& bindlessScene);
+    void Animate(float  fElapsedTimeSeconds);
 
     nvrhi::rt::IAccelStruct* GetTopLevelAS() const { return m_TopLevelAS; }
     nvrhi::rt::IAccelStruct* GetPrevTopLevelAS() const { return m_PrevTopLevelAS; }

@@ -12,9 +12,7 @@
 #include "RenderTargets.h"
 #include "SampleScene.h"
 
-#include <donut/engine/BindlessScene.h>
 #include <donut/engine/CommonRenderPasses.h>
-#include <donut/engine/SceneTypes.h>
 #include <donut/engine/ShaderFactory.h>
 #include <donut/engine/View.h>
 #include <nvrhi/utils.h>
@@ -31,20 +29,20 @@ GlassPass::GlassPass(
     nvrhi::IDevice* device,
     std::shared_ptr<donut::engine::ShaderFactory> shaderFactory,
     std::shared_ptr<donut::engine::CommonRenderPasses> commonPasses,
-    std::shared_ptr<donut::engine::BindlessScene> bindlessScene,
+    std::shared_ptr<donut::engine::Scene> scene,
     std::shared_ptr<Profiler> profiler,
     nvrhi::IBindingLayout* bindlessLayout)
     : m_Device(device)
     , m_ShaderFactory(shaderFactory)
     , m_CommonPasses(commonPasses)
-    , m_BindlessScene(bindlessScene)
+    , m_Scene(scene)
     , m_BindlessLayout(bindlessLayout)
     , m_Profiler(profiler)
 {
     m_ConstantBuffer = m_Device->createBuffer(nvrhi::utils::CreateVolatileConstantBufferDesc(sizeof(GlassConstants), "GlassConstants", 16));
 
     nvrhi::BindingLayoutDesc globalBindingLayoutDesc;
-    globalBindingLayoutDesc.visibility = nvrhi::ShaderType::Compute;
+    globalBindingLayoutDesc.visibility = nvrhi::ShaderType::Compute | nvrhi::ShaderType::AllRayTracing;
     globalBindingLayoutDesc.bindings = {
         nvrhi::BindingLayoutItem::RayTracingAccelStruct(0),
         nvrhi::BindingLayoutItem::StructuredBuffer_SRV(1),
@@ -77,9 +75,9 @@ void GlassPass::CreateBindingSet(
         nvrhi::BindingSetDesc bindingSetDesc;
         bindingSetDesc.bindings = {
             nvrhi::BindingSetItem::RayTracingAccelStruct(0, currentFrame ? topLevelAS : prevTopLevelAS),
-            nvrhi::BindingSetItem::StructuredBuffer_SRV(1, m_BindlessScene->GetInstanceBuffer()),
-            nvrhi::BindingSetItem::StructuredBuffer_SRV(2, m_BindlessScene->GetGeometryBuffer()),
-            nvrhi::BindingSetItem::StructuredBuffer_SRV(3, m_BindlessScene->GetMaterialBuffer()),
+            nvrhi::BindingSetItem::StructuredBuffer_SRV(1, m_Scene->GetInstanceBuffer()),
+            nvrhi::BindingSetItem::StructuredBuffer_SRV(2, m_Scene->GetGeometryBuffer()),
+            nvrhi::BindingSetItem::StructuredBuffer_SRV(3, m_Scene->GetMaterialBuffer()),
             nvrhi::BindingSetItem::Texture_SRV(4, renderTargets.GBufferEmissive),
             nvrhi::BindingSetItem::Sampler(0, m_CommonPasses->m_LinearWrapSampler),
             nvrhi::BindingSetItem::Sampler(1, m_CommonPasses->m_LinearWrapSampler),
@@ -123,7 +121,7 @@ void GlassPass::Render(
     pushConstants.rayCountBufferIndex = ProfilerSection::Glass;
 
     m_Pass.Execute(commandList, view.GetViewExtent().width(), view.GetViewExtent().height(), 
-        m_BindingSet, m_BindlessScene->GetDescriptorTable(), &pushConstants, sizeof(pushConstants));
+        m_BindingSet, m_Scene->GetDescriptorTable(), &pushConstants, sizeof(pushConstants));
 
     commandList->endMarker();
 }

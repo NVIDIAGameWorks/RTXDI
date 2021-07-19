@@ -45,7 +45,7 @@ void RayGen()
 
     if (g_Const.enableInitialVisibility && RTXDI_IsValidReservoir(reservoir))
     {
-        if (!RAB_GetConservativeVisibility(surface, lightSample, false))
+        if (!RAB_GetConservativeVisibility(surface, lightSample))
         {
             RTXDI_StoreVisibilityInReservoir(reservoir, 0, true);
         }

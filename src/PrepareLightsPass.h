@@ -10,18 +10,18 @@
 
 #pragma once
 
-#include <donut/engine/SceneTypes.h>
-#include <donut/core/math/math.h>
+#include <donut/engine/SceneGraph.h>
 #include <nvrhi/nvrhi.h>
 #include <rtxdi/RTXDI.h>
 #include <memory>
+#include <unordered_map>
 
 
 namespace donut::engine
 {
     class CommonRenderPasses;
     class ShaderFactory;
-    class BindlessScene;
+    class Scene;
     class Light;
 }
 
@@ -47,7 +47,7 @@ private:
     
     std::shared_ptr<donut::engine::ShaderFactory> m_ShaderFactory;
     std::shared_ptr<donut::engine::CommonRenderPasses> m_CommonPasses;
-    std::shared_ptr<donut::engine::BindlessScene> m_BindlessScene;
+    std::shared_ptr<donut::engine::Scene> m_Scene;
 
     std::unordered_map<const donut::engine::MeshInstance*, uint32_t> m_InstanceLightBufferOffsets;
     std::unordered_map<const donut::engine::Light*, uint32_t> m_PrimitiveLightBufferOffsets;
@@ -57,17 +57,16 @@ public:
         nvrhi::IDevice* device,
         std::shared_ptr<donut::engine::ShaderFactory> shaderFactory,
         std::shared_ptr<donut::engine::CommonRenderPasses> commonPasses,
-        std::shared_ptr<donut::engine::BindlessScene> bindlessScene,
+        std::shared_ptr<donut::engine::Scene> scene,
         nvrhi::IBindingLayout* bindlessLayout);
 
     void CreatePipeline();
     void CreateBindingSet(RtxdiResources& resources);
-    void CountLightsInScene(const donut::engine::IMeshSet& meshSet, uint32_t& numEmissiveMeshes, uint32_t& numEmissiveTriangles);
+    void CountLightsInScene(uint32_t& numEmissiveMeshes, uint32_t& numEmissiveTriangles);
     
     void Process(
         nvrhi::ICommandList* commandList, 
         const rtxdi::Context& context, 
-        const donut::engine::IMeshSet& meshSet, 
         const std::vector<std::shared_ptr<donut::engine::Light>>& sceneLights,
         bool enableImportanceSampledEnvironmentLight,
         rtxdi::FrameParameters& outFrameParameters);

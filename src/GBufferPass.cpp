@@ -13,7 +13,7 @@
 #include "Profiler.h"
 #include "SampleScene.h"
 
-#include <donut/engine/BindlessScene.h>
+#include <donut/engine/Scene.h>
 #include <donut/engine/CommonRenderPasses.h>
 #include <donut/engine/FramebufferFactory.h>
 #include <donut/engine/ShaderFactory.h>
@@ -33,20 +33,20 @@ RaytracedGBufferPass::RaytracedGBufferPass(
     nvrhi::IDevice* device,
     std::shared_ptr<donut::engine::ShaderFactory> shaderFactory,
     std::shared_ptr<donut::engine::CommonRenderPasses> commonPasses,
-    std::shared_ptr<donut::engine::BindlessScene> bindlessScene,
+    std::shared_ptr<donut::engine::Scene> scene,
     std::shared_ptr<Profiler> profiler,
     nvrhi::IBindingLayout* bindlessLayout)
     : m_Device(device)
     , m_BindlessLayout(bindlessLayout)
     , m_ShaderFactory(std::move(shaderFactory))
     , m_CommonPasses(std::move(commonPasses))
-    , m_BindlessScene(std::move(bindlessScene))
+    , m_Scene(std::move(scene))
     , m_Profiler(std::move(profiler))
 {
     m_ConstantBuffer = m_Device->createBuffer(nvrhi::utils::CreateVolatileConstantBufferDesc(sizeof(GBufferConstants), "GBufferPassConstants", 16));
 
     nvrhi::BindingLayoutDesc globalBindingLayoutDesc;
-    globalBindingLayoutDesc.visibility = nvrhi::ShaderType::Compute;
+    globalBindingLayoutDesc.visibility = nvrhi::ShaderType::Compute | nvrhi::ShaderType::AllRayTracing;
     globalBindingLayoutDesc.bindings = {
         nvrhi::BindingLayoutItem::Texture_UAV(0),
         nvrhi::BindingLayoutItem::Texture_UAV(1),
@@ -85,8 +85,8 @@ void RaytracedGBufferPass::CreateBindingSet(
         nvrhi::BindingSetDesc bindingSetDesc;
         bindingSetDesc.bindings = {
             nvrhi::BindingSetItem::Texture_UAV(0, currentFrame ? renderTargets.Depth : renderTargets.PrevDepth),
-            nvrhi::BindingSetItem::Texture_UAV(1, currentFrame ? renderTargets.GBufferBaseColor : renderTargets.PrevGBufferBaseColor),
-            nvrhi::BindingSetItem::Texture_UAV(2, currentFrame ? renderTargets.GBufferMetalRough : renderTargets.PrevGBufferMetalRough),
+            nvrhi::BindingSetItem::Texture_UAV(1, currentFrame ? renderTargets.GBufferDiffuseAlbedo : renderTargets.PrevGBufferDiffuseAlbedo),
+            nvrhi::BindingSetItem::Texture_UAV(2, currentFrame ? renderTargets.GBufferSpecularRough : renderTargets.PrevGBufferSpecularRough),
             nvrhi::BindingSetItem::Texture_UAV(3, currentFrame ? renderTargets.GBufferNormals : renderTargets.PrevGBufferNormals),
             nvrhi::BindingSetItem::Texture_UAV(4, currentFrame ? renderTargets.GBufferGeoNormals : renderTargets.PrevGBufferGeoNormals),
             nvrhi::BindingSetItem::Texture_UAV(5, renderTargets.GBufferEmissive),
@@ -97,9 +97,9 @@ void RaytracedGBufferPass::CreateBindingSet(
             nvrhi::BindingSetItem::ConstantBuffer(0, m_ConstantBuffer),
             nvrhi::BindingSetItem::PushConstants(1, sizeof(PerPassConstants)),
             nvrhi::BindingSetItem::RayTracingAccelStruct(0, currentFrame ? topLevelAS : prevTopLevelAS),
-            nvrhi::BindingSetItem::StructuredBuffer_SRV(1, m_BindlessScene->GetInstanceBuffer()),
-            nvrhi::BindingSetItem::StructuredBuffer_SRV(2, m_BindlessScene->GetGeometryBuffer()),
-            nvrhi::BindingSetItem::StructuredBuffer_SRV(3, m_BindlessScene->GetMaterialBuffer()),
+            nvrhi::BindingSetItem::StructuredBuffer_SRV(1, m_Scene->GetInstanceBuffer()),
+            nvrhi::BindingSetItem::StructuredBuffer_SRV(2, m_Scene->GetGeometryBuffer()),
+            nvrhi::BindingSetItem::StructuredBuffer_SRV(3, m_Scene->GetMaterialBuffer()),
             nvrhi::BindingSetItem::Sampler(0, m_CommonPasses->m_AnisotropicWrapSampler)
         };
 
@@ -140,7 +140,7 @@ void RaytracedGBufferPass::Render(
         view.GetViewExtent().width(), 
         view.GetViewExtent().height(), 
         m_BindingSet, 
-        m_BindlessScene->GetDescriptorTable(),
+        m_Scene->GetDescriptorTable(),
         &pushConstants,
         sizeof(pushConstants));
 
@@ -156,14 +156,14 @@ RasterizedGBufferPass::RasterizedGBufferPass(
     nvrhi::IDevice* device,
     std::shared_ptr<donut::engine::ShaderFactory> shaderFactory,
     std::shared_ptr<donut::engine::CommonRenderPasses> commonPasses,
-    std::shared_ptr<donut::engine::BindlessScene> bindlessScene,
+    std::shared_ptr<donut::engine::Scene> scene,
     std::shared_ptr<Profiler> profiler,
     nvrhi::IBindingLayout* bindlessLayout)
     : m_Device(device)
     , m_BindlessLayout(bindlessLayout)
     , m_ShaderFactory(std::move(shaderFactory))
     , m_CommonPasses(std::move(commonPasses))
-    , m_BindlessScene(std::move(bindlessScene))
+    , m_Scene(std::move(scene))
     , m_Profiler(std::move(profiler))
 {
     m_ConstantBuffer = m_Device->createBuffer(nvrhi::utils::CreateVolatileConstantBufferDesc(sizeof(GBufferConstants), "GBufferPassConstants", 16));
@@ -172,7 +172,7 @@ RasterizedGBufferPass::RasterizedGBufferPass(
     globalBindingLayoutDesc.visibility = nvrhi::ShaderType::Vertex | nvrhi::ShaderType::Pixel;
     globalBindingLayoutDesc.bindings = {
         nvrhi::BindingLayoutItem::VolatileConstantBuffer(0),
-        nvrhi::BindingLayoutItem::PushConstants(1, sizeof(uint32_t)),
+        nvrhi::BindingLayoutItem::PushConstants(1, sizeof(uint2)),
         nvrhi::BindingLayoutItem::StructuredBuffer_SRV(0),
         nvrhi::BindingLayoutItem::StructuredBuffer_SRV(1),
         nvrhi::BindingLayoutItem::StructuredBuffer_SRV(2),
@@ -189,10 +189,10 @@ void RasterizedGBufferPass::CreateBindingSet()
 
     bindingSetDesc.bindings = {
         nvrhi::BindingSetItem::ConstantBuffer(0, m_ConstantBuffer),
-        nvrhi::BindingSetItem::PushConstants(1, sizeof(uint32_t)),
-        nvrhi::BindingSetItem::StructuredBuffer_SRV(0, m_BindlessScene->GetInstanceBuffer()),
-        nvrhi::BindingSetItem::StructuredBuffer_SRV(1, m_BindlessScene->GetGeometryBuffer()),
-        nvrhi::BindingSetItem::StructuredBuffer_SRV(2, m_BindlessScene->GetMaterialBuffer()),
+        nvrhi::BindingSetItem::PushConstants(1, sizeof(uint2)),
+        nvrhi::BindingSetItem::StructuredBuffer_SRV(0, m_Scene->GetInstanceBuffer()),
+        nvrhi::BindingSetItem::StructuredBuffer_SRV(1, m_Scene->GetGeometryBuffer()),
+        nvrhi::BindingSetItem::StructuredBuffer_SRV(2, m_Scene->GetMaterialBuffer()),
         nvrhi::BindingSetItem::Sampler(0, m_CommonPasses->m_AnisotropicWrapSampler)
     };
 
@@ -210,11 +210,11 @@ void RasterizedGBufferPass::CreatePipeline(const RenderTargets& renderTargets)
     pipelineDesc.bindingLayouts = { m_BindingLayout, m_BindlessLayout };
     pipelineDesc.VS = m_ShaderFactory->CreateShader("app/RasterizedGBuffer.hlsl", "vs_main", nullptr, nvrhi::ShaderType::Vertex);
     pipelineDesc.PS = m_ShaderFactory->CreateShader("app/RasterizedGBuffer.hlsl", "ps_main", &macros, nvrhi::ShaderType::Pixel);
-    pipelineDesc.primType = nvrhi::PrimitiveType::TRIANGLE_LIST;
+    pipelineDesc.primType = nvrhi::PrimitiveType::TriangleList;
     pipelineDesc.renderState.rasterState.frontCounterClockwise = true;
-    pipelineDesc.renderState.rasterState.cullMode = nvrhi::RasterState::CULL_BACK;
-    pipelineDesc.renderState.depthStencilState.depthEnable = true;
-    pipelineDesc.renderState.depthStencilState.depthFunc = nvrhi::DepthStencilState::COMPARISON_GREATER;
+    pipelineDesc.renderState.rasterState.cullMode = nvrhi::RasterCullMode::Back;
+    pipelineDesc.renderState.depthStencilState.depthTestEnable = true;
+    pipelineDesc.renderState.depthStencilState.depthFunc = nvrhi::ComparisonFunc::Greater;
 
     auto* framebuffer = renderTargets.GBufferFramebuffer->GetFramebuffer(nvrhi::AllSubresources);
 
@@ -222,7 +222,7 @@ void RasterizedGBufferPass::CreatePipeline(const RenderTargets& renderTargets)
 
     macros[0].definition = "1"; // ALPHA_TESTED
     pipelineDesc.PS = m_ShaderFactory->CreateShader("app/RasterizedGBuffer.hlsl", "ps_main", &macros, nvrhi::ShaderType::Pixel);
-    pipelineDesc.renderState.rasterState.cullMode = nvrhi::RasterState::CULL_NONE;
+    pipelineDesc.renderState.rasterState.cullMode = nvrhi::RasterCullMode::None;
 
     m_AlphaTestedPipeline = m_Device->createGraphicsPipeline(pipelineDesc, framebuffer);
 }
@@ -232,7 +232,6 @@ void RasterizedGBufferPass::Render(
     const donut::engine::IView& view,
     const donut::engine::IView& viewPrev,
     const RenderTargets& renderTargets,
-    const SampleScene& scene,
     const GBufferSettings& settings)
 {
     commandList->beginMarker("GBufferFill");
@@ -249,7 +248,7 @@ void RasterizedGBufferPass::Render(
     constants.normalMapScale = settings.normalMapScale;
     commandList->writeBuffer(m_ConstantBuffer, &constants, sizeof(constants));
 
-    const auto& instances = scene.GetMeshInstances();
+    const auto& instances = m_Scene->GetSceneGraph()->GetMeshInstances();
 
     const auto viewFrustum = view.GetViewFrustum();
 
@@ -260,7 +259,7 @@ void RasterizedGBufferPass::Render(
 
         nvrhi::GraphicsState state;
         state.pipeline = alphaTested ? m_AlphaTestedPipeline : m_OpaquePipeline;
-        state.bindings = { m_BindingSet, m_BindlessScene->GetDescriptorTable() };
+        state.bindings = { m_BindingSet, m_Scene->GetDescriptorTable() };
         state.framebuffer = renderTargets.GBufferFramebuffer->GetFramebuffer(nvrhi::AllSubresources);
         state.viewport = view.GetViewportState();
         commandList->setGraphicsState(state);
@@ -268,20 +267,32 @@ void RasterizedGBufferPass::Render(
         nvrhi::DrawArguments args{};
         args.instanceCount = 1;
 
-        for (const auto* instance : instances)
+        for (const auto& instance : instances)
         {
-            const auto materialDomain = instance->mesh->material->domain;
+            const auto& mesh = instance->GetMesh();
+            const auto node = instance->GetNode();
+
+            if (!node)
+                continue;
             
-            if ((materialDomain == MD_OPAQUE) == alphaTested)
+            if (!viewFrustum.intersectsWith(node->GetGlobalBoundingBox()))
                 continue;
 
-            if (!viewFrustum.intersectsWith(instance->transformedBounds))
-                continue;
+            for (size_t geometryIndex = 0; geometryIndex < mesh->geometries.size(); geometryIndex++)
+            {
+                const auto& geometry = mesh->geometries[geometryIndex];
+                const auto materialDomain = geometry->material->domain;
 
-            commandList->setPushConstants(&instance->globalInstanceIndex, sizeof(uint32_t));
+                if ((materialDomain == MaterialDomain::Opaque) == alphaTested)
+                    continue;
 
-            args.vertexCount = instance->mesh->numIndices;
-            commandList->draw(args);
+                uint2 pushConstants = uint2(instance->GetInstanceIndex(), uint32_t(geometryIndex));
+
+                commandList->setPushConstants(&pushConstants, sizeof(pushConstants));
+
+                args.vertexCount = geometry->numIndices;
+                commandList->draw(args);
+            }
         }
     }
 

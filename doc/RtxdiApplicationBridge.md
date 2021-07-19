@@ -127,14 +127,19 @@ Samples a polymorphic light relative to the given receiver surface. For most lig
 
 ### `RAB_GetConservativeVisibility`
 
-`bool RAB_GetConservativeVisibility(RAB_Surface surface, RAB_LightSample lightSample, bool usePreviousFrameScene)`
+`bool RAB_GetConservativeVisibility(RAB_Surface surface, RAB_LightSample lightSample)`
 
 Traces a visibility ray that returns approximate, conservative visibility between the surface and the light sample. Conservative means if unsure, assume the light is visible. For example, conservative visibility can skip alpha-tested or translucent surfaces, which may provide significant performance gains. However, significant differences between this conservative visibility and the final one will result in more noise. 
 
-When `usePreviousFrameScene` is `true`, use the previous frame TLAS to compute the visibility. If the previous frame TLAS is unavailable, the implementation can use the current frame TLAS, but doing so will bias the lighting results around moving occluders, making them darker.
+This function is used in the spatial resampling functions for ray traced bias correction. The initial samples should also be kept or discarded based on visibility computed in the same way to keep the results unbiased.
 
-This function is used in the temporal and spatial resampling functions for ray traced bias correction. The initial samples should also be kept or discarded based on visibility computed in the same way to keep the results unbiased.
+### `RAB_GetTemporalConservativeVisibility`
 
+`bool RAB_GetTemporalConservativeVisibility(RAB_Surface currentSurface, RAB_Surface previousSurface, RAB_LightSample lightSample)`
+
+Same visibility ray tracing as [`RAB_GetConservativeVisibility`](#rab_getconservativevisibility) but for surfaces and light samples originating from the previous frame.
+
+When the previous frame TLAS and BLAS data is available, the implementation should use that previous data and the `previousSurface` parameter. When the previous acceleration structures are not available, the implementation should use the `currentSurface` parameter, but that will make the results temporarily biased and, in some cases, more noisy. Specifically, the fused spatio-temporal resampling algorithm will produce very noisy results on animated objects.
 
 ## Misc Functions
 

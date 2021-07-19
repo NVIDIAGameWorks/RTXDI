@@ -25,13 +25,13 @@ public:
     nvrhi::TextureHandle DeviceDepth;
     nvrhi::TextureHandle Depth;
     nvrhi::TextureHandle PrevDepth;
-    nvrhi::TextureHandle GBufferBaseColor;
-    nvrhi::TextureHandle GBufferMetalRough;
+    nvrhi::TextureHandle GBufferDiffuseAlbedo;
+    nvrhi::TextureHandle GBufferSpecularRough;
     nvrhi::TextureHandle GBufferNormals;
     nvrhi::TextureHandle GBufferGeoNormals;
     nvrhi::TextureHandle GBufferEmissive;
-    nvrhi::TextureHandle PrevGBufferBaseColor;
-    nvrhi::TextureHandle PrevGBufferMetalRough;
+    nvrhi::TextureHandle PrevGBufferDiffuseAlbedo;
+    nvrhi::TextureHandle PrevGBufferSpecularRough;
     nvrhi::TextureHandle PrevGBufferNormals;
     nvrhi::TextureHandle PrevGBufferGeoNormals;
     nvrhi::TextureHandle MotionVectors;
@@ -49,6 +49,7 @@ public:
     nvrhi::TextureHandle AccumulatedColor;
     
     std::shared_ptr<donut::engine::FramebufferFactory> LdrFramebuffer;
+    std::shared_ptr<donut::engine::FramebufferFactory> ResolvedFramebuffer;
     std::shared_ptr<donut::engine::FramebufferFactory> GBufferFramebuffer;
     std::shared_ptr<donut::engine::FramebufferFactory> PrevGBufferFramebuffer;
 

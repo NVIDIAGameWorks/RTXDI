@@ -60,10 +60,9 @@ bool ShadeSurfaceWithLightSample(
         L /= lightDistance;
 
         float3 V = normalize(g_Const.view.cameraDirectionOrPosition.xyz - surface.worldPos);
-
-        float F0 = lerp(0.05, 1.0, surface.metalness);
+        
         float d = Lambert(surface.normal, -L);
-        float s = GGX(V, L, surface.normal, surface.roughness, F0);
+        float3 s = GGX_times_NdotL(V, L, surface.normal, surface.roughness, surface.specularF0);
 
         s *= EvaluateSpecularSampledLightingWeight(surface, L, lightSample.solidAnglePdf);
 
@@ -72,6 +71,11 @@ bool ShadeSurfaceWithLightSample(
     }
 
     return needToStore;
+}
+
+float3 DemodulateSpecular(RAB_Surface surface, float3 specular)
+{
+    return specular / max(0.01, surface.specularF0);
 }
 
 

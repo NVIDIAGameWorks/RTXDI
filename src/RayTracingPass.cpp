@@ -61,15 +61,15 @@ bool RayTracingPass::Init(
     nvrhi::rt::PipelineDesc rtPipelineDesc;
     rtPipelineDesc.globalBindingLayouts = { bindingLayout, bindlessLayout };
     rtPipelineDesc.shaders = {
-        { "", ShaderLibrary->GetShader("RayGen", nvrhi::ShaderType::RayGeneration), nullptr },
-        { "", ShaderLibrary->GetShader("Miss", nvrhi::ShaderType::Miss), nullptr }
+        { "", ShaderLibrary->getShader("RayGen", nvrhi::ShaderType::RayGeneration), nullptr },
+        { "", ShaderLibrary->getShader("Miss", nvrhi::ShaderType::Miss), nullptr }
     };
 
     rtPipelineDesc.hitGroups = {
         {
             "HitGroup",
-            ShaderLibrary->GetShader("ClosestHit", nvrhi::ShaderType::ClosestHit),
-            ShaderLibrary->GetShader("AnyHit", nvrhi::ShaderType::AnyHit),
+            ShaderLibrary->getShader("ClosestHit", nvrhi::ShaderType::ClosestHit),
+            ShaderLibrary->getShader("AnyHit", nvrhi::ShaderType::AnyHit),
             nullptr, // intersectionShader
             nullptr, // localBindingLayout
             false // isProceduralPrimitive
@@ -77,20 +77,20 @@ bool RayTracingPass::Init(
     };
 
     rtPipelineDesc.maxAttributeSize = 8;
-    rtPipelineDesc.maxPayloadSize = 32;
+    rtPipelineDesc.maxPayloadSize = 36;
     rtPipelineDesc.maxRecursionDepth = 1;
 
     RayTracingPipeline = device->createRayTracingPipeline(rtPipelineDesc);
     if (!RayTracingPipeline)
         return false;
 
-    ShaderTable = RayTracingPipeline->CreateShaderTable();
+    ShaderTable = RayTracingPipeline->createShaderTable();
     if (!ShaderTable)
         return false;
 
-    ShaderTable->SetRayGenerationShader("RayGen");
-    ShaderTable->AddMissShader("Miss");
-    ShaderTable->AddHitGroup("HitGroup");
+    ShaderTable->setRayGenerationShader("RayGen");
+    ShaderTable->addMissShader("Miss");
+    ShaderTable->addHitGroup("HitGroup");
 
     return true;
 }

@@ -11,6 +11,8 @@
 #pragma pack_matrix(row_major)
 
 #define SCENE_GEOMETRY_PIXEL_SHADER
+#define ENABLE_METAL_ROUGH_RECONSTRUCTION 1
+
 #include "ShaderParameters.h"
 #include "SceneGeometry.hlsli"
 #include "GBufferHelpers.hlsli"
@@ -18,6 +20,7 @@
 struct InstanceConstants
 {
     uint instance;
+    uint geometryIndex;
 };
 
 ConstantBuffer<GBufferConstants> g_Const : register(b0);
@@ -39,22 +42,23 @@ void vs_main(
 #ifdef SPIRV
     ,
     out float3 o_objectPos : OBJECTPOS,
+    out float3 o_prevObjectPos : PREV_OBJECTPOS,
     out float2 o_texcoord : TEXCOORD,
     out float3 o_normal : NORMAL,
-    out float3 o_tangent : TANGENT,
-    out float3 o_bitangent : BITANGENT
+    out float4 o_tangent : TANGENT
 #endif
     )
 {
     InstanceData instance = t_InstanceData[g_Instance.instance];
-    GeometryData geometry = t_GeometryData[instance.geometryIndex];
+    GeometryData geometry = t_GeometryData[instance.firstGeometryIndex + g_Instance.geometryIndex];
 
     ByteAddressBuffer indexBuffer = t_BindlessBuffers[NonUniformResourceIndex(geometry.indexBufferIndex)];
-    ByteAddressBuffer positionBuffer = t_BindlessBuffers[NonUniformResourceIndex(geometry.positionBufferIndex)];
+    ByteAddressBuffer vertexBuffer = t_BindlessBuffers[NonUniformResourceIndex(geometry.vertexBufferIndex)];
 
-    uint index = indexBuffer.Load(geometry.indexBufferOffset + i_vertexID * 4);
+    uint index = indexBuffer.Load(geometry.indexOffset + i_vertexID * 4);
 
-    float3 objectSpacePosition = asfloat(positionBuffer.Load3(geometry.positionBufferOffset + index * c_SizeOfPosition));
+    float3 objectSpacePosition = asfloat(vertexBuffer.Load3(geometry.positionOffset + index * c_SizeOfPosition));
+    float3 prevObjectSpacePosition;
 
     float3 worldSpacePosition = mul(instance.transform, float4(objectSpacePosition, 1.0)).xyz;
     float4 clipSpacePosition = mul(float4(worldSpacePosition, 1.0), g_Const.view.matWorldToClip);
@@ -62,26 +66,34 @@ void vs_main(
     o_position = clipSpacePosition;
 
 #ifdef SPIRV
-    ByteAddressBuffer texcoordBuffer = t_BindlessBuffers[NonUniformResourceIndex(geometry.texcoordBufferIndex)];
-    ByteAddressBuffer normalBuffer = t_BindlessBuffers[NonUniformResourceIndex(geometry.normalBufferIndex)];
-    ByteAddressBuffer tangentBuffer = t_BindlessBuffers[NonUniformResourceIndex(geometry.tangentBufferIndex)];
-    ByteAddressBuffer bitangentBuffer = t_BindlessBuffers[NonUniformResourceIndex(geometry.bitangentBufferIndex)];
-    
     o_objectPos = objectSpacePosition;
+    if (geometry.prevPositionOffset != ~0u)
+        o_prevObjectPos = asfloat(vertexBuffer.Load3(geometry.prevPositionOffset + index * c_SizeOfPosition));
+    else
+        o_prevObjectPos = o_objectPos;
 
-    o_texcoord = asfloat(texcoordBuffer.Load2(geometry.texcoordBufferOffset + index * c_SizeOfTexcoord));
+    if (geometry.texCoord1Offset != ~0u)
+        o_texcoord = asfloat(vertexBuffer.Load2(geometry.texCoord1Offset + index * c_SizeOfTexcoord));
+    else
+        o_texcoord = 0;
 
-    o_normal = Unpack_RGB8_SNORM(normalBuffer.Load(geometry.normalBufferOffset + index * c_SizeOfNormal));
-    o_normal = mul(instance.transform, float4(o_normal, 0.0)).xyz;
-    o_normal = normalize(o_normal);
+    if (geometry.normalOffset != ~0u)
+    {
+        o_normal = Unpack_RGB8_SNORM(vertexBuffer.Load(geometry.normalOffset + index * c_SizeOfNormal));
+        o_normal = mul(instance.transform, float4(o_normal, 0.0)).xyz;
+        o_normal = normalize(o_normal);
+    }
+    else
+        o_normal = 0;
 
-    o_tangent = Unpack_RGB8_SNORM(tangentBuffer.Load(geometry.tangentBufferOffset + index * c_SizeOfNormal));
-    o_tangent = mul(instance.transform, float4(o_tangent, 0.0)).xyz;
-    o_tangent = normalize(o_tangent);
-
-    o_bitangent = Unpack_RGB8_SNORM(bitangentBuffer.Load(geometry.bitangentBufferOffset + index * c_SizeOfNormal));
-    o_bitangent = mul(instance.transform, float4(o_bitangent, 0.0)).xyz;
-    o_bitangent = normalize(o_bitangent);
+    if (geometry.tangentOffset != ~0u)
+    {
+        o_tangent = Unpack_RGBA8_SNORM(vertexBuffer.Load(geometry.tangentOffset + index * c_SizeOfNormal));
+        o_tangent.xyz = mul(instance.transform, float4(o_tangent.xyz, 0.0)).xyz;
+        o_tangent.xyz = normalize(o_tangent.xyz);
+    }
+    else
+        o_tangent = 0;
 #endif
 }
 
@@ -93,16 +105,16 @@ void ps_main(
     nointerpolation in uint i_primitiveID : SV_PrimitiveID,
 #ifdef SPIRV
     in float3 i_objectPos : OBJECTPOS,
+    in float3 i_prevObjectPos : PREV_OBJECTPOS,
     in float2 i_texcoord : TEXCOORD,
     in float3 i_normal : NORMAL,
-    in float3 i_tangent : TANGENT,
-    in float3 i_bitangent : BITANGENT,
+    in float4 i_tangent : TANGENT,
 #else
     in float3 i_bary : SV_Barycentrics,
 #endif
     out float o_viewDepth : SV_Target0,
-    out uint o_baseColor : SV_Target1,
-    out uint o_metalRough : SV_Target2,
+    out uint o_diffuseAlbedo : SV_Target1,
+    out uint o_specularRough : SV_Target2,
     out uint o_normal : SV_Target3,
     out uint o_geoNormal : SV_Target4,
     out float4 o_emissive : SV_Target5,
@@ -113,26 +125,43 @@ void ps_main(
 #ifdef SPIRV
     GeometrySample gs = (GeometrySample)0;
     gs.instance = t_InstanceData[g_Instance.instance];
-    gs.geometry = t_GeometryData[gs.instance.geometryIndex];
+    gs.geometry = t_GeometryData[gs.instance.firstGeometryIndex + g_Instance.geometryIndex];
     gs.material = t_MaterialConstants[gs.geometry.materialIndex];
 
     gs.texcoord = i_texcoord;
     gs.objectSpacePosition = i_objectPos;
+    gs.prevObjectSpacePosition = i_prevObjectPos;
     gs.geometryNormal = normalize(i_normal);
-    gs.tangent = normalize(i_tangent);
-    gs.bitangent = normalize(i_bitangent);
+    gs.tangent.xyz = normalize(i_tangent.xyz);
+    gs.tangent.w = i_tangent.w;
 #else
-    GeometrySample gs = getGeometryFromHit(g_Instance.instance, i_primitiveID, i_bary.yz,
+    GeometrySample gs = getGeometryFromHit(g_Instance.instance, g_Instance.geometryIndex, i_primitiveID, i_bary.yz,
         GeomAttr_All, t_InstanceData, t_GeometryData, t_MaterialConstants);
 #endif
 
     MaterialSample ms = sampleGeometryMaterial(gs, MatAttr_All, s_MaterialSampler, g_Const.normalMapScale);
     
 #if ALPHA_TESTED
-    int materialType = (gs.material.flags & MaterialFlags_MaterialType_Mask) >> MaterialFlags_MaterialType_Shift;
-    if (materialType == MaterialType_Transparent || materialType == MaterialType_AlphaTested)
+    bool alphaMask = (ms.opacity >= gs.material.alphaCutoff);
+
+    if (gs.material.domain == MaterialDomain_AlphaTested && !alphaMask)
+        discard;
+    else if (gs.material.domain == MaterialDomain_AlphaBlended)
+        clip(ms.opacity - 0.5); // no support for blending
+    else if (gs.material.domain == MaterialDomain_Transmissive ||
+        (gs.material.domain == MaterialDomain_TransmissiveAlphaTested && alphaMask) ||
+        gs.material.domain == MaterialDomain_TransmissiveAlphaBlended)
     {
-        clip(ms.opacity - 0.5);
+        float throughput = ms.transmission;
+
+        if ((gs.material.flags & MaterialFlags_UseSpecularGlossModel) == 0)
+            throughput *= (1.0 - ms.metalness) * max(ms.baseColor.r, max(ms.baseColor.g, ms.baseColor.b));
+
+        if (gs.material.domain == MaterialDomain_TransmissiveAlphaBlended)
+            throughput *= (1.0 - ms.opacity);
+
+        if (throughput != 0)
+            discard;
     }
 #endif
 
@@ -149,18 +178,21 @@ void ps_main(
         ms.roughness = g_Const.roughnessOverride;
 
     if (g_Const.metalnessOverride >= 0)
+    {
         ms.metalness = g_Const.metalnessOverride;
+        getReflectivity(ms.metalness, ms.baseColor, ms.diffuseAlbedo, ms.specularF0);
+    }
 
     float viewDepth = 0;
     float3 motion = getMotionVector(g_Const.view, g_Const.viewPrev, 
-        gs.instance, gs.objectSpacePosition, viewDepth);
+        gs.instance, gs.objectSpacePosition, gs.prevObjectSpacePosition, viewDepth);
 
     o_viewDepth = viewDepth;
-    o_baseColor = Pack_R8G8B8_UFLOAT(ms.baseColor);
-    o_metalRough = Pack_R16G16_UFLOAT(float2(ms.metalness, ms.roughness));
+    o_diffuseAlbedo = Pack_R11G11B10_UFLOAT(ms.diffuseAlbedo);
+    o_specularRough = Pack_R8G8B8A8_Gamma_UFLOAT(float4(ms.specularF0, ms.roughness));
     o_normal = ndirToOctUnorm32(ms.shadingNormal);
     o_geoNormal = ndirToOctUnorm32(gs.flatNormal);
-    o_emissive = float4(ms.emissive, viewDistance); // viewDistance is here to enable glass ray tracing on all pixels
+    o_emissive = float4(ms.emissiveColor, viewDistance); // viewDistance is here to enable glass ray tracing on all pixels
     o_motion = float4(motion, 0);
     o_normalRough = float4(ms.shadingNormal * 0.5 + 0.5, ms.roughness);
 }

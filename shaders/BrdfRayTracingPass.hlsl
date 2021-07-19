@@ -15,8 +15,11 @@
 #include <rtxdi/ResamplingFunctions.hlsli>
 
 #ifdef WITH_NRD
+#define COMPILER_DXC
 #include <NRD.hlsl>
 #endif
+
+#include "ShadingHelpers.hlsli"
 
 static const float c_MaxIndirectRadiance = 10;
 
@@ -51,34 +54,50 @@ void RayGen()
     Rand.x = RAB_GetNextRandom(rng);
     Rand.y = RAB_GetNextRandom(rng);
 
-    float F0 = lerp(0.05, 1.0, surface.metalness);
     float3 V = normalize(g_Const.view.cameraDirectionOrPosition.xyz - surface.worldPos);
 
-    float surfaceFresnel = Schlick_Fresnel(F0, saturate(dot(surface.normal, V)));
-
-    bool isSpecularRay = RAB_GetNextRandom(rng) < surfaceFresnel;
-    float BRDF_over_PDF;
-
-    if(isSpecularRay)
+    float3 specularDirection;
+    float3 specular_BRDF_over_PDF;
     {
         float3 Ve = float3(dot(V, tangent), dot(V, bitangent), dot(V, surface.normal));
-        float3 Ne = sampleGGX_VNDF(Ve, surface.roughness, Rand);
-        float3 N = normalize(Ne.x * tangent + Ne.y * bitangent + Ne.z * surface.normal);
-        ray.Direction = reflect(-V, N);
+        float3 He = sampleGGX_VNDF(Ve, surface.roughness, Rand);
+        float3 H = normalize(He.x * tangent + He.y * bitangent + He.z * surface.normal);
+        specularDirection = reflect(-V, H);
 
-        float NoV = saturate(dot(N, V));
-        float F = Schlick_Fresnel(F0, NoV);
+        float HoV = saturate(dot(H, V));
+        float NoV = saturate(dot(surface.normal, V));
+        float3 F = Schlick_Fresnel(surface.specularF0, HoV);
         float G1 = (NoV > 0) ? G1_Smith(surface.roughness, NoV) : 0;
-        BRDF_over_PDF = F * G1;
-        BRDF_over_PDF *= 1.0 / surfaceFresnel;
+        specular_BRDF_over_PDF = F * G1;
     }
-    else
+
+    float3 diffuseDirection;
+    float diffuse_BRDF_over_PDF;
     {
         float solidAnglePdf;
         float3 localDirection = sampleCosHemisphere(Rand, solidAnglePdf);
-        ray.Direction = tangent * localDirection.x + bitangent * localDirection.y + surface.normal * localDirection.z;
-        BRDF_over_PDF = c_pi;
-        BRDF_over_PDF *= 1.0 / (1.0 - surfaceFresnel);
+        diffuseDirection = tangent * localDirection.x + bitangent * localDirection.y + surface.normal * localDirection.z;
+        diffuse_BRDF_over_PDF = 1.0;
+    }
+
+    float specular_PDF = saturate(calcLuminance(specular_BRDF_over_PDF) /
+        calcLuminance(specular_BRDF_over_PDF + diffuse_BRDF_over_PDF * surface.diffuseAlbedo));
+
+    if (g_Const.enableBrdfMIS && !g_Const.enableBrdfIndirect)
+        specular_PDF = 1.0;
+
+    bool isSpecularRay = RAB_GetNextRandom(rng) < specular_PDF;
+
+    float3 BRDF_over_PDF;
+    if (isSpecularRay)
+    {
+        ray.Direction = specularDirection;
+        BRDF_over_PDF = specular_BRDF_over_PDF / specular_PDF;
+    }
+    else
+    {
+        ray.Direction = diffuseDirection;
+        BRDF_over_PDF = diffuse_BRDF_over_PDF / (1.0 - specular_PDF);
     }
 
     if (dot(surface.geoNormal, ray.Direction) <= 0.0)
@@ -106,7 +125,8 @@ void RayGen()
         {
             if (considerTransparentMaterial(
                 rayQuery.CandidateInstanceID(),
-                rayQuery.CandidatePrimitiveIndex(), 
+                rayQuery.CandidateGeometryIndex(),
+                rayQuery.CandidatePrimitiveIndex(),
                 rayQuery.CandidateTriangleBarycentrics(),
                 payload.throughput))
             {
@@ -140,17 +160,18 @@ void RayGen()
 
         GeometrySample gs = getGeometryFromHit(
             payload.instanceID,
+            payload.geometryIndex,
             payload.primitiveIndex,
             payload.barycentrics,
             GeomAttr_Normal | GeomAttr_TexCoord | GeomAttr_Position,
             t_InstanceData, t_GeometryData, t_MaterialConstants);
         
         MaterialSample ms = sampleGeometryMaterial(gs, 0, 0, 0,
-            MatAttr_BaseColor | MatAttr_Emissive, s_MaterialSampler);
+            MatAttr_BaseColor | MatAttr_Emissive | MatAttr_MetalRough, s_MaterialSampler);
 
         if (g_Const.enableBrdfMIS)
         {
-            if (isSpecularRay && any(ms.emissive > 0))
+            if (isSpecularRay && any(ms.emissiveColor > 0))
             {
                 float3 worldSpacePositions[3];
                 worldSpacePositions[0] = mul(gs.instance.transform, float4(gs.vertexPositions[0], 1.0)).xyz;
@@ -168,12 +189,12 @@ void RayGen()
 
                 float misWeight = 1.0 - EvaluateSpecularSampledLightingWeight(surface, ray.Direction, solidAnglePdf);
 
-                radiance += ms.emissive * misWeight;
+                radiance += ms.emissiveColor * misWeight;
             }
         }
         else
         {
-            radiance += ms.emissive;
+            radiance += ms.emissiveColor;
         }
 
         if (g_Const.enableBrdfIndirect)
@@ -183,9 +204,9 @@ void RayGen()
             secondarySurface.viewDepth = 1.0; // don't care
             secondarySurface.normal = (dot(gs.geometryNormal, ray.Direction) < 0) ? gs.geometryNormal : -gs.geometryNormal;
             secondarySurface.geoNormal = secondarySurface.normal;
-            secondarySurface.baseColor = ms.baseColor;
-            secondarySurface.metalness = 0.0; // use a simplified shading model for secondary hits
-            secondarySurface.roughness = 1.0;
+            secondarySurface.diffuseAlbedo = ms.diffuseAlbedo;
+            secondarySurface.specularF0 = ms.specularF0;
+            secondarySurface.roughness = ms.roughness;
 
             const RTXDI_ResamplingRuntimeParameters params = g_Const.runtimeParams;
 
@@ -205,22 +226,14 @@ void RayGen()
                 lightSampleScale *= c_MaxIndirectRadiance / indirectLuminance;
 
             float3 indirectDiffuse = 0;
-            if (lightSampleScale > 0)
-            {
-                float3 lightVisibility = GetFinalVisibility(secondarySurface, lightSample);
-
-                float3 L = normalize(lightSample.position - secondarySurface.worldPos);
-
-                indirectDiffuse = lightSample.radiance * lightSampleScale;
-                indirectDiffuse *= lightVisibility;
-                indirectDiffuse *= Lambert(secondarySurface.normal, -L);
-                indirectDiffuse *= ms.baseColor;
-
-                radiance += indirectDiffuse;
-            }
+            float3 indirectSpecular = 0;
+            float lightDistance = 0;
+            ShadeSurfaceWithLightSample(reservoir, secondarySurface, lightSample, indirectDiffuse, indirectSpecular, lightDistance);
+            
+            radiance += indirectDiffuse * ms.diffuseAlbedo + indirectSpecular;
         }
     }
-    else if (g_Const.enableEnvironmentMap && (isSpecularRay || !g_Const.enableBrdfMIS) && BRDF_over_PDF > 0.0)
+    else if (g_Const.enableEnvironmentMap && (isSpecularRay || !g_Const.enableBrdfMIS) && calcLuminance(BRDF_over_PDF) > 0.0)
     {
         Texture2D environmentLatLongMap = t_BindlessTextures[g_Const.environmentMapTextureIndex];
 
@@ -259,6 +272,8 @@ void RayGen()
     float3 specular = isSpecularRay ? radiance * BRDF_over_PDF : 0.0;
     float diffuseHitT = payload.committedRayT;
     float specularHitT = payload.committedRayT;
+
+    specular = DemodulateSpecular(surface, specular);
 
     uint2 lightingTexturePos = (g_Const.denoiserMode == DENOISER_MODE_REBLUR)
         ? GlobalIndex

@@ -18,10 +18,11 @@
 #include <donut/engine/ShaderFactory.h>
 #include <donut/engine/CommonRenderPasses.h>
 #include <donut/engine/TextureCache.h>
+#include <donut/render/BloomPass.h>
+#include <donut/render/SkyPass.h>
 #include <donut/engine/Scene.h>
 #include <donut/engine/FramebufferFactory.h>
 #include <donut/engine/DescriptorTableManager.h>
-#include <donut/engine/BindlessScene.h>
 #include <donut/engine/View.h>
 #include <donut/engine/IesProfile.h>
 #include <donut/app/DeviceManager.h>
@@ -29,6 +30,10 @@
 #include <donut/core/vfs/VFS.h>
 #include <donut/core/math/math.h>
 #include <nvrhi/utils.h>
+#ifdef DONUT_WITH_TASKFLOW
+#include <taskflow/taskflow.hpp>
+#endif
+
 #include "RenderTargets.h"
 #include "CompositingPass.h"
 #include "AccumulationPass.h"
@@ -68,16 +73,17 @@ private:
     std::shared_ptr<engine::ShaderFactory> m_ShaderFactory;
     std::shared_ptr<SampleScene> m_Scene;
     std::shared_ptr<engine::DescriptorTableManager> m_DescriptorTableManager;
-    std::shared_ptr<engine::BindlessScene> m_BindlessScene;
     std::unique_ptr<render::ToneMappingPass> m_ToneMappingPass;
     std::unique_ptr<render::TemporalAntiAliasingPass> m_TemporalAntiAliasingPass;
+    std::unique_ptr<render::BloomPass> m_BloomPass;
     std::unique_ptr<RenderTargets> m_RenderTargets;
-    app::FPSCamera m_Camera;
+    app::FirstPersonCamera m_Camera;
     engine::PlanarView m_View;
     engine::PlanarView m_ViewPrevious;
     std::shared_ptr<engine::DirectionalLight> m_SunLight;
     std::shared_ptr<EnvironmentLight> m_EnvironmentLight;
     std::shared_ptr<engine::LoadedTexture> m_EnvironmentMap;
+    engine::BindingCache m_BindingCache;
 
     std::unique_ptr<rtxdi::Context> m_RtxdiContext;
     std::unique_ptr<RaytracedGBufferPass> m_GBufferPass;
@@ -93,12 +99,12 @@ private:
     std::unique_ptr<RtxdiResources> m_RtxdiResources;
     std::unique_ptr<engine::IesProfileLoader> m_IesProfileLoader;
     std::shared_ptr<Profiler> m_Profiler;
+    
 #if WITH_NRD
     std::unique_ptr<NrdIntegration> m_NRD;
 #endif
 
     UIData& m_ui;
-    uint m_FrameIndex = 0;
     uint m_FramesSinceAnimation = 0;
     bool m_PreviousViewValid = false;
     time_point<steady_clock> m_PreviousFrameTimeStamp;
@@ -107,11 +113,7 @@ private:
     std::vector<std::shared_ptr<engine::IesProfile>> m_IesProfiles;
     
     dm::float3 m_RegirCenter;
-
-    uint32_t m_SceneEmissiveMeshes = 0;
-    uint32_t m_SceneEmissiveTriangles = 0;
-    uint32_t m_ScenePrimitiveLights = 0;
-
+    
     enum class FrameStepMode
     {
         Disabled,
@@ -124,6 +126,7 @@ private:
 public:
     SceneRenderer(app::DeviceManager* deviceManager, UIData& ui)
         : ApplicationBase(deviceManager)
+        , m_BindingCache(deviceManager->GetDevice())
         , m_ui(ui)
     { 
         m_ui.camera = &m_Camera;
@@ -141,23 +144,11 @@ public:
 
     bool Init()
     {
-        auto nativeFS = std::make_shared<vfs::NativeFileSystem>();
+        std::filesystem::path mediaPath = app::GetDirectoryWithExecutable().parent_path() / "media";
+        std::filesystem::path frameworkShaderPath = app::GetDirectoryWithExecutable() / "shaders/framework" / app::GetShaderTypeName(GetDevice()->getGraphicsAPI());
+        std::filesystem::path appShaderPath = app::GetDirectoryWithExecutable() / "shaders/rtxdi-sample" / app::GetShaderTypeName(GetDevice()->getGraphicsAPI());
 
-        std::filesystem::path mediaPath = app::FindMediaFolder("media");
-        if (mediaPath.empty())
-        {
-            log::fatal("Cannot locate the media folder.\n"
-                "Please make sure that the folder 'media' is present in the application file tree,"
-                "or that the DONUT_MEDIA_PATH environment variable is set correctly.");
-        }
-
-        log::info("Located media folder in %s", mediaPath.string().c_str());
-
-        std::string shaderPlatform = (GetDevice()->getGraphicsAPI() == nvrhi::GraphicsAPI::VULKAN) ? "spirv" : "dxil";
-
-        std::filesystem::path frameworkShaderPath = app::GetDirectoryWithExecutable() / "shaders/framework" / shaderPlatform;
-        std::filesystem::path appShaderPath = app::GetDirectoryWithExecutable() / "shaders/rtxdi-sample" / shaderPlatform;
-
+        log::info("Mounting %s to %s", mediaPath.string().c_str(), "/media");
         log::info("Mounting %s to %s", frameworkShaderPath.string().c_str(), "/shaders/donut");
         log::info("Mounting %s to %s", appShaderPath.string().c_str(), "/shaders/app");
 
@@ -181,37 +172,40 @@ public:
             m_BindlessLayout = GetDevice()->createBindlessLayout(bindlessLayoutDesc);
         }
 
-        std::filesystem::path scenePath = "/media/bistro/bistro-rtxdi.scene.json";
+        std::filesystem::path scenePath = "/media/bistro-rtxdi.scene.json";
 
-        m_TextureCache = std::make_shared<donut::engine::TextureCache>(GetDevice(), m_RootFs);
-        
         m_DescriptorTableManager = std::make_shared<engine::DescriptorTableManager>(GetDevice(), m_BindlessLayout);
-        m_BindlessScene = std::make_shared<engine::BindlessScene>(GetDevice(), m_DescriptorTableManager);
 
-        m_IesProfileLoader = std::make_unique<engine::IesProfileLoader>(GetDevice(), m_ShaderFactory, m_DescriptorTableManager);
+        m_TextureCache = std::make_shared<donut::engine::TextureCache>(GetDevice(), m_RootFs, m_DescriptorTableManager);
         
+        m_IesProfileLoader = std::make_unique<engine::IesProfileLoader>(GetDevice(), m_ShaderFactory, m_DescriptorTableManager);
+
+        auto sceneTypeFactory = std::make_shared<SampleSceneTypeFactory>();
+        m_Scene = std::make_shared<SampleScene>(GetDevice(), *m_ShaderFactory, m_RootFs, m_TextureCache, m_DescriptorTableManager, sceneTypeFactory);
+        m_ui.scene = m_Scene;
+
         SetAsynchronousLoadingEnabled(true);
         BeginLoadingScene(m_RootFs, scenePath);
         GetDeviceManager()->SetVsyncEnabled(true);
 
-        if (!GetDevice()->queryFeatureSupport(nvrhi::Feature::TraceRayInline))
+        if (!GetDevice()->queryFeatureSupport(nvrhi::Feature::RayQuery))
             m_ui.useRayQuery = false;
 
         m_Profiler = std::make_shared<Profiler>(*GetDeviceManager());
         m_ui.profiler = m_Profiler;
 
-        m_CompositingPass = std::make_unique<CompositingPass>(GetDevice(), m_ShaderFactory, m_CommonPasses, m_BindlessScene, m_BindlessLayout);
+        m_CompositingPass = std::make_unique<CompositingPass>(GetDevice(), m_ShaderFactory, m_CommonPasses, m_Scene, m_BindlessLayout);
         m_AccumulationPass = std::make_unique<AccumulationPass>(GetDevice(), m_ShaderFactory);
-        m_GBufferPass = std::make_unique<RaytracedGBufferPass>(GetDevice(), m_ShaderFactory, m_CommonPasses, m_BindlessScene, m_Profiler, m_BindlessLayout);
-        m_RasterizedGBufferPass = std::make_unique<RasterizedGBufferPass>(GetDevice(), m_ShaderFactory, m_CommonPasses, m_BindlessScene, m_Profiler, m_BindlessLayout);
-        m_GlassPass = std::make_unique<GlassPass>(GetDevice(), m_ShaderFactory, m_CommonPasses, m_BindlessScene, m_Profiler, m_BindlessLayout);
-        m_PrepareLightsPass = std::make_unique<PrepareLightsPass>(GetDevice(), m_ShaderFactory, m_CommonPasses, m_BindlessScene, m_BindlessLayout);
-        m_LightingPasses = std::make_unique<LightingPasses>(GetDevice(), m_ShaderFactory, m_CommonPasses, m_BindlessScene, m_Profiler, m_BindlessLayout);
+        m_GBufferPass = std::make_unique<RaytracedGBufferPass>(GetDevice(), m_ShaderFactory, m_CommonPasses, m_Scene, m_Profiler, m_BindlessLayout);
+        m_RasterizedGBufferPass = std::make_unique<RasterizedGBufferPass>(GetDevice(), m_ShaderFactory, m_CommonPasses, m_Scene, m_Profiler, m_BindlessLayout);
+        m_GlassPass = std::make_unique<GlassPass>(GetDevice(), m_ShaderFactory, m_CommonPasses, m_Scene, m_Profiler, m_BindlessLayout);
+        m_PrepareLightsPass = std::make_unique<PrepareLightsPass>(GetDevice(), m_ShaderFactory, m_CommonPasses, m_Scene, m_BindlessLayout);
+        m_LightingPasses = std::make_unique<LightingPasses>(GetDevice(), m_ShaderFactory, m_CommonPasses, m_Scene, m_Profiler, m_BindlessLayout);
 
         LoadShaders();
 
         std::vector<std::string> profileNames;
-        m_RootFs->enumerate("/media/ies-profiles/*.ies", false, profileNames);
+        m_RootFs->enumerateFiles("/media/ies-profiles", { ".ies" }, vfs::enumerate_to_vector(profileNames));
 
         for (const std::string& profileName : profileNames)
         {
@@ -223,7 +217,6 @@ public:
             }
         }
         m_ui.iesProfiles = m_IesProfiles;
-        m_ui.bindlessScene = m_BindlessScene;
 
         m_CommandList = GetDevice()->createCommandList();
 
@@ -232,7 +225,7 @@ public:
 
     void AssignIesProfiles(nvrhi::ICommandList* commandList)
     {
-        for (const auto& light : m_Scene->Lights)
+        for (const auto& light : m_Scene->GetSceneGraph()->GetLights())
         {
             if (light->GetLightType() == LightType_Spot)
             {
@@ -245,7 +238,7 @@ public:
                     continue;
 
                 auto foundProfile = std::find_if(m_IesProfiles.begin(), m_IesProfiles.end(),
-                    [spotLight](auto it) { return it->name == spotLight.profileName; });
+                    [&spotLight](auto it) { return it->name == spotLight.profileName; });
 
                 if (foundProfile != m_IesProfiles.end())
                 {
@@ -261,13 +254,14 @@ public:
     {
         ApplicationBase::SceneLoaded();
 
-        m_Scene->CreateRenderingResources(GetDevice());
-        m_BindlessScene->AddMeshSet(m_Scene.get());
+        m_Scene->FinishedLoading(GetFrameIndex());
 
         m_Camera.LookAt(float3(-7.688f, 2.0f, 5.594f), float3(-7.3341f, 2.0f, 6.5366f));
         m_Camera.SetMoveSpeed(3.f);
 
-        for (const auto& pLight : m_Scene->Lights)
+        const auto& sceneGraph = m_Scene->GetSceneGraph();
+
+        for (const auto& pLight : sceneGraph->GetLights())
         {
             if (pLight->GetLightType() == LightType_Directional)
             {
@@ -277,25 +271,17 @@ public:
         }
 
         m_CommandList->open();
-
         AssignIesProfiles(m_CommandList);
-
-        // Create an environment light
-        m_EnvironmentLight = std::make_shared<EnvironmentLight>();
-        m_EnvironmentLight->name = "Environment";
-        m_Scene->Lights.push_back(m_EnvironmentLight);
-        m_ui.environmentMapDirty = 2;
-        m_ui.environmentMapIndex = 0;
-        
-        m_PrepareLightsPass->CountLightsInScene(*m_Scene, m_SceneEmissiveMeshes, m_SceneEmissiveTriangles);
-        m_ScenePrimitiveLights = uint32_t(m_Scene->Lights.size());
-
-        m_BindlessScene->Bake(m_CommandList);
-
         m_CommandList->close();
         GetDevice()->executeCommandList(m_CommandList);
 
-        // Depends on Bake(...) above
+        // Create an environment light
+        m_EnvironmentLight = std::make_shared<EnvironmentLight>();
+        sceneGraph->AttachLeafNode(sceneGraph->GetRootNode(), m_EnvironmentLight);
+        m_EnvironmentLight->SetName("Environment");
+        m_ui.environmentMapDirty = 2;
+        m_ui.environmentMapIndex = 0;
+        
         m_RasterizedGBufferPass->CreateBindingSet();
 
         m_Scene->BuildMeshBLASes(GetDevice());
@@ -316,12 +302,8 @@ public:
 
     virtual bool LoadScene(std::shared_ptr<vfs::IFileSystem> fs, const std::filesystem::path& sceneFileName) override 
     {
-        std::shared_ptr<SampleScene> scene = std::make_shared<SampleScene>(fs);
-
-        if (scene->Load(sceneFileName, *m_TextureCache))
+        if (m_Scene->Load(sceneFileName))
         {
-            m_Scene = scene;
-            m_ui.scene = scene;
             return true;
         }
 
@@ -355,6 +337,21 @@ public:
             return true;
         }
 
+        if (mods == 0 && key == GLFW_KEY_F5 && action == GLFW_PRESS)
+        {
+            if (m_ui.animationFrame.has_value())
+            {
+                // Stop benchmark if it's running
+                m_ui.animationFrame.reset();
+            }
+            else
+            {
+                // Start benchmark otherwise
+                m_ui.animationFrame = std::optional<int>(0);
+            }
+            return true;
+        }
+        
         m_Camera.KeyboardUpdate(key, scancode, action, mods);
 
         return true;
@@ -389,7 +386,8 @@ public:
 
         m_Camera.Animate(fElapsedTimeSeconds);
 
-        m_Scene->Animate(fElapsedTimeSeconds, m_ui.animateLights, m_ui.animateMeshes, *m_BindlessScene);
+        if (m_ui.enableAnimations)
+            m_Scene->Animate(fElapsedTimeSeconds * m_ui.animationSpeed);
 
         if (m_ToneMappingPass)
             m_ToneMappingPass->AdvanceFrame(fElapsedTimeSeconds);
@@ -397,12 +395,13 @@ public:
 
     virtual void BackBufferResizing() override
     { 
+        m_BindingCache.Clear();
         m_RenderTargets = nullptr;
         m_RtxdiContext = nullptr;
         m_RtxdiResources = nullptr;
-        m_CommonPasses->ResetBindingCache();
         m_TemporalAntiAliasingPass = nullptr;
         m_ToneMappingPass = nullptr;
+        m_BloomPass = nullptr;
 #if WITH_NRD
         m_NRD = nullptr;
 #endif
@@ -412,15 +411,12 @@ public:
     {
         if (m_EnvironmentMap)
         {
-            // Make sure there is no rendering in-flight before we unlod the texture and erase its descriptor.
+            // Make sure there is no rendering in-flight before we unload the texture and erase its descriptor.
             // Decsriptor manipulations are synchronous and immediately affect whatever is executing on the GPU.
             GetDevice()->waitForIdle();
 
             m_TextureCache->UnloadTexture(m_EnvironmentMap);
-
-            if (m_EnvironmentMap->bindlessDescriptorIndex >= 0)
-                m_DescriptorTableManager->ReleaseDescriptor(m_EnvironmentMap->bindlessDescriptorIndex);
-
+            
             m_EnvironmentMap = nullptr;
         }
 
@@ -436,7 +432,7 @@ public:
                 m_TextureCache->ProcessRenderingThreadCommands(*m_CommonPasses, 0.f);
                 m_TextureCache->LoadingFinished();
 
-                m_EnvironmentMap->bindlessDescriptorIndex = m_DescriptorTableManager->CreateDescriptor(nvrhi::BindingSetItem::Texture_SRV(0, m_EnvironmentMap->texture));
+                m_EnvironmentMap->bindlessDescriptor = m_DescriptorTableManager->CreateDescriptorHandle(nvrhi::BindingSetItem::Texture_SRV(0, m_EnvironmentMap->texture));
             }
             else
             {
@@ -448,7 +444,7 @@ public:
         }
     }
 
-    void SetupView(const nvrhi::FramebufferInfo& fbinfo, uint effectiveFrameIndex)
+    void SetupView(const nvrhi::FramebufferInfo& fbinfo, uint effectiveFrameIndex, const engine::PerspectiveCamera* activeCamera)
     {
         nvrhi::Viewport windowViewport(float(fbinfo.width), float(fbinfo.height));
 
@@ -466,9 +462,14 @@ public:
             m_View.SetPixelOffset(0.f);
         }
 
-        m_View.SetMatrices(m_Camera.GetWorldToViewMatrix(), perspProjD3DStyleReverse(radians(60.f), windowViewport.width() / windowViewport.height(), 0.1f));
+        const float aspectRatio = windowViewport.width() / windowViewport.height();
+        if (activeCamera)
+            m_View.SetMatrices(activeCamera->GetWorldToViewMatrix(), perspProjD3DStyleReverse(activeCamera->verticalFov, aspectRatio, activeCamera->zNear));
+        else
+            m_View.SetMatrices(m_Camera.GetWorldToViewMatrix(), perspProjD3DStyleReverse(radians(60.f), aspectRatio, 0.1f));
+        m_View.UpdateCache();
 
-        if (m_FrameIndex == 0)
+        if (m_ViewPrevious.GetViewExtent().width() == 0)
             m_ViewPrevious = m_View;
     }
 
@@ -507,11 +508,18 @@ public:
             ? m_EnvironmentMap->texture.Get()
             : m_RenderEnvironmentMapPass->GetTexture();
 
-        uint2 environmentMapSize = uint2(environmentMap->GetDesc().width, environmentMap->GetDesc().height);
+        uint32_t numEmissiveMeshes, numEmissiveTriangles;
+        m_PrepareLightsPass->CountLightsInScene(numEmissiveMeshes, numEmissiveTriangles);
+        uint32_t numPrimitiveLights = uint32_t(m_Scene->GetSceneGraph()->GetLights().size());
 
-        if (m_RtxdiResources && 
-            environmentMapSize.x != m_RtxdiResources->EnvironmentPdfTexture->GetDesc().width && 
-            environmentMapSize.y != m_RtxdiResources->EnvironmentPdfTexture->GetDesc().height)
+        uint2 environmentMapSize = uint2(environmentMap->getDesc().width, environmentMap->getDesc().height);
+
+        if (m_RtxdiResources && (
+            environmentMapSize.x != m_RtxdiResources->EnvironmentPdfTexture->getDesc().width ||
+            environmentMapSize.y != m_RtxdiResources->EnvironmentPdfTexture->getDesc().height ||
+            numEmissiveMeshes > m_RtxdiResources->GetMaxEmissiveMeshes() ||
+            numEmissiveTriangles > m_RtxdiResources->GetMaxEmissiveTriangles() || 
+            numPrimitiveLights > m_RtxdiResources->GetMaxPrimitiveLights()))
         {
             m_RtxdiResources = nullptr;
         }
@@ -545,12 +553,16 @@ public:
 
         if (!m_RtxdiResources)
         {
+            uint32_t meshAllocationQuantum = 128;
+            uint32_t triangleAllocationQuantum = 1024;
+            uint32_t primitiveAllocationQuantum = 128;
+
             m_RtxdiResources = std::make_unique<RtxdiResources>(
                 GetDevice(), 
                 *m_RtxdiContext, 
-                m_SceneEmissiveMeshes, 
-                m_SceneEmissiveTriangles, 
-                m_ScenePrimitiveLights,
+                (numEmissiveMeshes + meshAllocationQuantum - 1) & ~(meshAllocationQuantum - 1),
+                (numEmissiveTriangles + triangleAllocationQuantum - 1) & ~(triangleAllocationQuantum - 1),
+                (numPrimitiveLights + primitiveAllocationQuantum - 1) & ~(primitiveAllocationQuantum - 1),
                 environmentMapSize.x,
                 environmentMapSize.y);
 
@@ -619,6 +631,11 @@ public:
             exposureResetRequired = true;
         }
 
+        if (!m_BloomPass)
+        {
+            m_BloomPass = std::make_unique<render::BloomPass>(GetDevice(), m_ShaderFactory, m_CommonPasses, m_RenderTargets->ResolvedFramebuffer, m_View);
+        }
+
 #if WITH_NRD
         if (!m_NRD)
         {
@@ -630,7 +647,7 @@ public:
 
     virtual void RenderSplashScreen(nvrhi::IFramebuffer* framebuffer) override
     {
-        nvrhi::ITexture* framebufferTexture = framebuffer->GetDesc().colorAttachments[0].texture;
+        nvrhi::ITexture* framebufferTexture = framebuffer->getDesc().colorAttachments[0].texture;
         m_CommandList->open();
         m_CommandList->clearTextureFloat(framebufferTexture, nvrhi::AllSubresources, nvrhi::Color(0.f));
         m_CommandList->close();
@@ -664,7 +681,7 @@ public:
 
             m_CommandList->open();
 
-            m_CommonPasses->BlitTexture(m_CommandList, framebuffer, m_View.m_Viewport, finalImage);
+            m_CommonPasses->BlitTexture(m_CommandList, framebuffer, finalImage, &m_BindingCache);
 
             m_CommandList->close();
             GetDevice()->executeCommandList(m_CommandList);
@@ -675,16 +692,18 @@ public:
         if (m_FrameStepMode == FrameStepMode::Step)
             m_FrameStepMode = FrameStepMode::Wait;
 
-        uint effectiveFrameIndex = m_ui.freezeRandom ? 0 : m_FrameIndex;
+        const engine::PerspectiveCamera* activeCamera = nullptr;
+        uint effectiveFrameIndex = m_ui.freezeRandom ? 0 : GetFrameIndex();
 
         if (m_ui.animationFrame.has_value())
         {
-            const float animationTime = float(m_ui.animationFrame.value()) * (1.f / 60.f);
-            float3 cameraPosition, cameraDirection;
-
-            if (m_Scene->InterpolateCameraPath(animationTime, cameraPosition, cameraDirection))
+            const float animationTime = float(m_ui.animationFrame.value()) * (1.f / 240.f);
+            
+            auto* animation = m_Scene->GetBenchmarkAnimation();
+            if (animation && animationTime < animation->GetDuration())
             {
-                m_Camera.LookAt(cameraPosition, cameraPosition + cameraDirection);
+                (void)animation->Apply(animationTime);
+                activeCamera = m_Scene->GetBenchmarkCamera();
                 effectiveFrameIndex = m_ui.animationFrame.value();
                 m_ui.animationFrame = effectiveFrameIndex + 1;
             }
@@ -697,7 +716,7 @@ public:
 
         bool exposureResetRequired = false;
 
-        if (m_ui.enableFpsLimit && m_FrameIndex > 0)
+        if (m_ui.enableFpsLimit && GetFrameIndex() > 0)
         {
             uint64_t expectedFrametime = 1000000 / m_ui.fpsLimit;
 
@@ -734,8 +753,10 @@ public:
             LoadEnvironmentMap();
         }
 
-        const auto& fbinfo = framebuffer->GetFramebufferInfo();
-        SetupView(fbinfo, effectiveFrameIndex);
+        m_Scene->RefreshSceneGraph(GetFrameIndex());
+
+        const auto& fbinfo = framebuffer->getFramebufferInfo();
+        SetupView(fbinfo, effectiveFrameIndex, activeCamera);
         SetupRenderPasses(fbinfo, exposureResetRequired);
         if (!m_ui.freezeRegirPosition)
             m_RegirCenter = m_Camera.GetPosition();
@@ -750,7 +771,7 @@ public:
         // Advance the TAA jitter offset at half frame rate if accumulation is used with
         // checkerboard rendering. Otherwise, the jitter pattern resonates with the checkerboard,
         // and stipple patterns appear in the accumulated results.
-        if (!(m_ui.enableAccumulation && (m_RtxdiContext->GetParameters().CheckerboardSamplingMode != rtxdi::CheckerboardMode::Off) && (m_FrameIndex & 1)))
+        if (!(m_ui.enableAccumulation && (m_RtxdiContext->GetParameters().CheckerboardSamplingMode != rtxdi::CheckerboardMode::Off) && (GetFrameIndex() & 1)))
         {
             m_TemporalAntiAliasingPass->AdvanceFrame();
         }
@@ -781,13 +802,24 @@ public:
             m_MaterialReadbackCountdown -= 1;
 
             if (m_MaterialReadbackCountdown == 0)
-                m_ui.selectedMaterialIndex = m_Profiler->GetMaterialReadback();
+            {
+                m_ui.selectedMaterial.reset();
+                int materialIndex = m_Profiler->GetMaterialReadback();
+                for (const auto& material : m_Scene->GetSceneGraph()->GetMaterials())
+                {
+                    if (material->materialID == materialIndex)
+                    {
+                        m_ui.selectedMaterial = material;
+                        break;
+                    }
+                }
+            }
         }
         
         if (m_ui.environmentMapIndex >= 0)
         {
             m_EnvironmentLight->textureIndex = m_EnvironmentMap 
-                ? m_EnvironmentMap->bindlessDescriptorIndex
+                ? m_EnvironmentMap->bindlessDescriptor.Get()
                 : m_RenderEnvironmentMapPass->GetTextureIndex();
             m_EnvironmentLight->radianceScale = ::exp2f(m_ui.environmentIntensityBias);
             m_EnvironmentLight->rotation = m_ui.environmentRotation / 360.f;  //  +/- 0.5
@@ -816,23 +848,27 @@ public:
         m_Profiler->BeginFrame(m_CommandList);
 
         AssignIesProfiles(m_CommandList);
-        m_BindlessScene->WriteMaterialBuffer(m_CommandList);
-        m_BindlessScene->WriteInstanceBuffer(m_CommandList);
+        m_Scene->RefreshBuffers(m_CommandList, GetFrameIndex());
         m_RtxdiResources->InitializeNeighborOffsets(m_CommandList, *m_RtxdiContext);
 
         if (m_FramesSinceAnimation < 2)
         {
             ProfilerScope scope(*m_Profiler, m_CommandList, ProfilerSection::TlasUpdate);
 
+            m_Scene->UpdateSkinnedMeshBLASes(m_CommandList, GetFrameIndex());
             m_Scene->BuildTopLevelAccelStruct(m_CommandList);
         }
-        
+        m_CommandList->compactBottomLevelAccelStructs();
+
         if (m_ui.environmentMapDirty)
         {
             ProfilerScope scope(*m_Profiler, m_CommandList, ProfilerSection::EnvironmentMap);
 
             if (m_ui.environmentMapIndex == 0)
-                m_RenderEnvironmentMapPass->Render(m_CommandList, *m_SunLight);
+            {
+                donut::render::SkyParameters params;
+                m_RenderEnvironmentMapPass->Render(m_CommandList, *m_SunLight, params);
+            }
             
             m_EnvironmentMapPdfMipmapPass->Process(m_CommandList);
 
@@ -845,7 +881,7 @@ public:
             ProfilerScope scope(*m_Profiler, m_CommandList, ProfilerSection::GBufferFill);
 
             if (m_ui.rasterizeGBuffer)
-                m_RasterizedGBufferPass->Render(m_CommandList, m_View, m_ViewPrevious, *m_RenderTargets, *m_Scene, m_ui.gbufferSettings);
+                m_RasterizedGBufferPass->Render(m_CommandList, m_View, m_ViewPrevious, *m_RenderTargets, m_ui.gbufferSettings);
             else
                 m_GBufferPass->Render(m_CommandList, m_View, m_ViewPrevious, m_ui.gbufferSettings);
         }
@@ -864,8 +900,7 @@ public:
             m_PrepareLightsPass->Process(
                 m_CommandList,
                 *m_RtxdiContext,
-                *m_Scene,
-                m_Scene->Lights,
+                m_Scene->GetSceneGraph()->GetLights(),
                 m_EnvironmentMapPdfMipmapPass != nullptr && m_ui.environmentMapImportanceSampling,
                 frameParameters);
         }
@@ -894,7 +929,7 @@ public:
 
 
         LightingPasses::RenderSettings lightingSettings = m_ui.lightingSettings;
-        lightingSettings.enablePreviousTLAS &= m_ui.animateMeshes;
+        lightingSettings.enablePreviousTLAS &= m_ui.enableAnimations;
         lightingSettings.enableAlphaTestedGeometry = m_ui.gbufferSettings.enableAlphaTestedGeometry;
         lightingSettings.enableTransparentGeometry = m_ui.gbufferSettings.enableTransparentGeometry;
 #if WITH_NRD
@@ -947,7 +982,7 @@ public:
                 ? (void*)&m_ui.relaxSettings
                 : (void*)&m_ui.reblurSettings;
 
-            m_NRD->RunDenoiserPasses(m_CommandList, *m_RenderTargets, m_View, m_ViewPrevious, m_FrameIndex, methodSettings);
+            m_NRD->RunDenoiserPasses(m_CommandList, *m_RenderTargets, m_View, m_ViewPrevious, GetFrameIndex(), methodSettings);
             
             m_CommandList->endMarker();
         }
@@ -976,32 +1011,38 @@ public:
         }
         else if (m_ui.enableTAA)
         {
-            // Make the image sharper when the camera is static, reduce ghosting when it's moving
-            m_ui.taaParams.clampingFactor = cameraIsStatic ? 2.f : 1.5f;
-
             m_TemporalAntiAliasingPass->TemporalResolve(m_CommandList, m_ui.taaParams, m_PreviousViewValid, m_View, m_ViewPrevious);
+            
+            if (m_ui.enableBloom)
+            {
+                m_BloomPass->Render(m_CommandList, m_RenderTargets->ResolvedFramebuffer, m_View, m_RenderTargets->ResolvedColor, 32.f, 0.005f);
+            }
 
             finalHdrImage = m_RenderTargets->ResolvedColor;
         }
 
         if(m_ui.enableToneMapping)
         { // Tone mapping
-            if (exposureResetRequired)
-                m_ToneMappingPass->ResetExposure(m_CommandList, 0.05f);
-
             render::ToneMappingParameters ToneMappingParams;
-            ToneMappingParams.minAdaptedLuminance = 0.01f;
-            ToneMappingParams.maxAdaptedLuminance = 0.15f;
+            ToneMappingParams.minAdaptedLuminance = 0.002f;
+            ToneMappingParams.maxAdaptedLuminance = 0.2f;
             ToneMappingParams.exposureBias = m_ui.exposureBias;
-            ToneMappingParams.eyeAdaptationSpeedUp = 1.0f;
-            ToneMappingParams.eyeAdaptationSpeedDown = 0.5f;
+            ToneMappingParams.eyeAdaptationSpeedUp = 2.0f;
+            ToneMappingParams.eyeAdaptationSpeedDown = 1.0f;
+
+            if (exposureResetRequired)
+            {
+                ToneMappingParams.eyeAdaptationSpeedUp = 0.f;
+                ToneMappingParams.eyeAdaptationSpeedDown = 0.f;
+            }
+
             m_ToneMappingPass->SimpleRender(m_CommandList, ToneMappingParams, m_View, finalHdrImage);
             
-            m_CommonPasses->BlitTexture(m_CommandList, framebuffer, m_View.m_Viewport, m_RenderTargets->LdrColor);
+            m_CommonPasses->BlitTexture(m_CommandList, framebuffer, m_RenderTargets->LdrColor, &m_BindingCache);
         }
         else
         {
-            m_CommonPasses->BlitTexture(m_CommandList, framebuffer, m_View.m_Viewport, finalHdrImage);
+            m_CommonPasses->BlitTexture(m_CommandList, framebuffer, finalHdrImage, &m_BindingCache);
         }
         
         m_Profiler->EndFrame(m_CommandList);
@@ -1015,12 +1056,11 @@ public:
             m_MaterialReadbackCountdown = 2; // i.e. in 2 frames read the material index
         }
 
-        if (m_ui.animateMeshes)
+        if (m_ui.enableAnimations)
             m_FramesSinceAnimation = 0;
         else
             m_FramesSinceAnimation++;
-
-        m_FrameIndex++;
+        
         m_ViewPrevious = m_View;
         m_PreviousViewValid = true;
     }
@@ -1053,6 +1093,7 @@ int main()
     deviceParams.enableRayTracingExtensions = true;
     deviceParams.backBufferWidth = 1920;
     deviceParams.backBufferHeight = 1080;
+    deviceParams.vsyncEnabled = true;
 #ifdef _DEBUG
     deviceParams.enableDebugRuntime = true; 
     deviceParams.enableNvrhiValidationLayer = true;
@@ -1070,8 +1111,8 @@ int main()
         return 1;
     }
 
-    bool rayPipelineSupported = deviceManager->GetDevice()->queryFeatureSupport(nvrhi::Feature::RayTracing);
-    bool rayQuerySupported = deviceManager->GetDevice()->queryFeatureSupport(nvrhi::Feature::TraceRayInline);
+    bool rayPipelineSupported = deviceManager->GetDevice()->queryFeatureSupport(nvrhi::Feature::RayTracingPipeline);
+    bool rayQuerySupported = deviceManager->GetDevice()->queryFeatureSupport(nvrhi::Feature::RayQuery);
 
     if (!rayPipelineSupported && !rayQuerySupported)
     {

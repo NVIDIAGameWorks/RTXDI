@@ -39,13 +39,13 @@ between the bridge functions.
 Texture2D<float> t_GBufferDepth : register(t0);
 Texture2D<uint> t_GBufferNormals : register(t1);
 Texture2D<uint> t_GBufferGeoNormals : register(t2);
-Texture2D<uint> t_GBufferBaseColor : register(t3);
-Texture2D<uint> t_GBufferMetalRough : register(t4);
+Texture2D<uint> t_GBufferDiffuseAlbedo : register(t3);
+Texture2D<uint> t_GBufferSpecularRough : register(t4);
 Texture2D<float> t_PrevGBufferDepth : register(t5);
 Texture2D<uint> t_PrevGBufferNormals : register(t6);
 Texture2D<uint> t_PrevGBufferGeoNormals : register(t7);
-Texture2D<uint> t_PrevGBufferBaseColor : register(t8);
-Texture2D<uint> t_PrevGBufferMetalRough : register(t9);
+Texture2D<uint> t_PrevGBufferDiffuseAlbedo : register(t8);
+Texture2D<uint> t_PrevGBufferSpecularRough : register(t9);
 Texture2D<float4> t_MotionVectors : register(t10);
 
 // Scene resources
@@ -88,8 +88,8 @@ struct RAB_Surface
     float viewDepth;
     float3 normal;
     float3 geoNormal;
-    float3 baseColor;
-    float metalness;
+    float3 diffuseAlbedo;
+    float3 specularF0;
     float roughness;
 };
 
@@ -110,6 +110,7 @@ struct RayPayload
     float3 throughput;
     float committedRayT;
     uint instanceID;
+    uint geometryIndex;
     uint primitiveIndex;
     float2 barycentrics;
 };
@@ -127,33 +128,43 @@ RayDesc setupVisibilityRay(RAB_Surface surface, RAB_LightSample lightSample)
     return ray;
 }
 
-bool considerTransparentMaterial(uint instanceIndex, uint triangleIndex, float2 rayBarycentrics, inout float3 throughput)
+bool considerTransparentMaterial(uint instanceIndex, uint geometryIndex, uint triangleIndex, float2 rayBarycentrics, inout float3 throughput)
 {
     GeometrySample gs = getGeometryFromHit(
         instanceIndex,
+        geometryIndex,
         triangleIndex,
         rayBarycentrics,
         GeomAttr_TexCoord,
         t_InstanceData, t_GeometryData, t_MaterialConstants);
+    
+    MaterialSample ms = sampleGeometryMaterial(gs, 0, 0, 0,
+        MatAttr_BaseColor | MatAttr_Transmission, s_MaterialSampler);
 
-    int materialType = (gs.material.flags & MaterialFlags_MaterialType_Mask) >> MaterialFlags_MaterialType_Shift;
+    bool alphaMask = ms.opacity >= gs.material.alphaCutoff;
 
-    if (gs.material.diffuseTextureIndex < 0)
+    if (gs.material.domain == MaterialDomain_AlphaTested)
+        return alphaMask;
+
+    if (gs.material.domain == MaterialDomain_AlphaBlended)
     {
-        throughput *= (1.0 - gs.material.opacity) * gs.material.diffuseColor;
-        return (materialType == MaterialType_AlphaTested);
+        throughput *= (1.0 - ms.opacity);
+        return false;
     }
 
-    MaterialSample ms = sampleGeometryMaterial(gs, 0, 0, 0,
-        MatAttr_BaseColor, s_MaterialSampler);
-
-    if (materialType == MaterialType_AlphaTested)
-        return (ms.opacity > 0.5);
-
-    if (materialType == MaterialType_Transparent)
+    if (gs.material.domain == MaterialDomain_Transmissive || 
+        (gs.material.domain == MaterialDomain_TransmissiveAlphaTested && alphaMask) || 
+        gs.material.domain == MaterialDomain_TransmissiveAlphaBlended)
     {
-        throughput *= (1.0 - ms.opacity) * gs.material.diffuseColor;
-        return false;
+        throughput *= ms.transmission;
+
+        if (ms.hasMetalRoughParams)
+            throughput *= (1.0 - ms.metalness) * ms.baseColor;
+
+        if (gs.material.domain == MaterialDomain_TransmissiveAlphaBlended)
+            throughput *= (1.0 - ms.opacity);
+
+        return all(throughput == 0);
     }
 
     return false;
@@ -175,6 +186,7 @@ void ClosestHit(inout RayPayload payload : SV_RayPayload, in RayAttributes attri
 {
     payload.committedRayT = RayTCurrent();
     payload.instanceID = InstanceID();
+    payload.geometryIndex = GeometryIndex();
     payload.primitiveIndex = PrimitiveIndex();
     payload.barycentrics = attrib.uv;
 }
@@ -182,29 +194,19 @@ void ClosestHit(inout RayPayload payload : SV_RayPayload, in RayAttributes attri
 [shader("anyhit")]
 void AnyHit(inout RayPayload payload : SV_RayPayload, in RayAttributes attrib : SV_IntersectionAttributes)
 {
-    if (!considerTransparentMaterial(InstanceID(), PrimitiveIndex(), attrib.uv, payload.throughput))
+    if (!considerTransparentMaterial(InstanceID(), GeometryIndex(), PrimitiveIndex(), attrib.uv, payload.throughput))
         IgnoreHit();
 }
 #endif
 
-// Traces a cheap visibility ray that returns approximate, conservative visibility
-// between the surface and the light sample. Conservative means if unsure, assume the light is visible.
-// Significant differences between this conservative visibility and the final one will result in more noise.
-// When usePreviousFrameScene is true, use the previous frame BVH/TLAS, if it's available, otherwise use the current one.
-// This function is used in the temporal and spatial resampling functions for ray traced bias correction.
-bool RAB_GetConservativeVisibility(RAB_Surface surface, RAB_LightSample lightSample, bool usePreviousFrameScene)
+bool GetConservativeVisibility(RaytracingAccelerationStructure accelStruct, RAB_Surface surface, RAB_LightSample lightSample)
 {
     RayDesc ray = setupVisibilityRay(surface, lightSample);
-
-    bool usePreviousTLAS = usePreviousFrameScene && g_Const.enablePreviousTLAS;
 
 #if USE_RAY_QUERY
     RayQuery<RAY_FLAG_CULL_NON_OPAQUE | RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH> rayQuery;
 
-    if(usePreviousTLAS)
-        rayQuery.TraceRayInline(PrevSceneBVH, RAY_FLAG_NONE, INSTANCE_MASK_OPAQUE, ray);
-    else
-        rayQuery.TraceRayInline(SceneBVH, RAY_FLAG_NONE, INSTANCE_MASK_OPAQUE, ray);
+    rayQuery.TraceRayInline(accelStruct, RAY_FLAG_NONE, INSTANCE_MASK_OPAQUE, ray);
 
     rayQuery.Proceed();
 
@@ -214,10 +216,7 @@ bool RAB_GetConservativeVisibility(RAB_Surface surface, RAB_LightSample lightSam
     payload.instanceID = ~0u;
     payload.throughput = 1.0;
 
-    if(usePreviousTLAS)
-        TraceRay(PrevSceneBVH, RAY_FLAG_CULL_NON_OPAQUE | RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH, INSTANCE_MASK_OPAQUE, 0, 0, 0, ray, payload);
-    else
-        TraceRay(SceneBVH, RAY_FLAG_CULL_NON_OPAQUE | RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH, INSTANCE_MASK_OPAQUE, 0, 0, 0, ray, payload);
+    TraceRay(accelStruct, RAY_FLAG_CULL_NON_OPAQUE | RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH, INSTANCE_MASK_OPAQUE, 0, 0, 0, ray, payload);
 
     bool visible = (payload.instanceID == ~0u);
 #endif
@@ -225,6 +224,26 @@ bool RAB_GetConservativeVisibility(RAB_Surface surface, RAB_LightSample lightSam
     REPORT_RAY(!visible);
 
     return visible;
+}
+
+// Traces a cheap visibility ray that returns approximate, conservative visibility
+// between the surface and the light sample. Conservative means if unsure, assume the light is visible.
+// Significant differences between this conservative visibility and the final one will result in more noise.
+// This function is used in the spatial resampling functions for ray traced bias correction.
+bool RAB_GetConservativeVisibility(RAB_Surface surface, RAB_LightSample lightSample)
+{
+    return GetConservativeVisibility(SceneBVH, surface, lightSample);
+}
+
+// Same as RAB_GetConservativeVisibility but for temporal resampling.
+// When the previous frame TLAS and BLAS are available, the implementation should use the previous position and the previous AS.
+// When they are not available, use the current AS. That will result in transient bias.
+bool RAB_GetTemporalConservativeVisibility(RAB_Surface currentSurface, RAB_Surface previousSurface, RAB_LightSample lightSample)
+{
+    if (g_Const.enablePreviousTLAS)
+        return GetConservativeVisibility(PrevSceneBVH, previousSurface, lightSample);
+    else
+        return GetConservativeVisibility(SceneBVH, currentSurface, lightSample);
 }
 
 // Traces an expensive visibility ray that considers all alpha tested  and transparent geometry along the way.
@@ -261,6 +280,7 @@ float3 GetFinalVisibility(RAB_Surface surface, RAB_LightSample lightSample)
         {
             if (considerTransparentMaterial(
                 rayQuery.CandidateInstanceID(),
+                rayQuery.CandidateGeometryIndex(),
                 rayQuery.CandidatePrimitiveIndex(), 
                 rayQuery.CandidateTriangleBarycentrics(),
                 payload.throughput))
@@ -274,6 +294,7 @@ float3 GetFinalVisibility(RAB_Surface surface, RAB_LightSample lightSample)
     {
         payload.instanceID = rayQuery.CommittedInstanceID();
         payload.primitiveIndex = rayQuery.CommittedPrimitiveIndex();
+        payload.geometryIndex = rayQuery.CommittedGeometryIndex();
         payload.barycentrics = rayQuery.CommittedTriangleBarycentrics();
         payload.committedRayT = rayQuery.CommittedRayT();
     }
@@ -295,8 +316,8 @@ RAB_Surface GetGBufferSurface(
     Texture2D<float> depthTexture, 
     Texture2D<uint> normalsTexture, 
     Texture2D<uint> geoNormalsTexture, 
-    Texture2D<uint> baseColorTexture, 
-    Texture2D<uint> metalRoughTexture)
+    Texture2D<uint> diffuseAlbedoTexture, 
+    Texture2D<uint> specularRoughTexture)
 {
     RAB_Surface surface = (RAB_Surface)0;
     surface.viewDepth = depthTexture[pixelPosition];
@@ -306,10 +327,10 @@ RAB_Surface GetGBufferSurface(
 
     surface.normal = octToNdirUnorm32(normalsTexture[pixelPosition]);
     surface.geoNormal = octToNdirUnorm32(geoNormalsTexture[pixelPosition]);
-    surface.baseColor = Unpack_R8G8B8_UFLOAT(baseColorTexture[pixelPosition]);
-    float2 metalRough = Unpack_R16G16_UFLOAT(metalRoughTexture[pixelPosition]);
-    surface.metalness = metalRough.x;
-    surface.roughness = metalRough.y;
+    surface.diffuseAlbedo = Unpack_R11G11B10_UFLOAT(diffuseAlbedoTexture[pixelPosition]).rgb;
+    float4 specularRough = Unpack_R8G8B8A8_Gamma_UFLOAT(specularRoughTexture[pixelPosition]);
+    surface.specularF0 = specularRough.rgb;
+    surface.roughness = specularRough.a;
 
     float2 uv = (float2(pixelPosition) + 0.5) * view.viewportSizeInv;
     float4 clipPos = float4(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0, 0.5, 1);
@@ -336,8 +357,8 @@ RAB_Surface RAB_GetGBufferSurface(int2 pixelPosition, bool previousFrame)
             t_PrevGBufferDepth, 
             t_PrevGBufferNormals, 
             t_PrevGBufferGeoNormals, 
-            t_PrevGBufferBaseColor, 
-            t_PrevGBufferMetalRough);
+            t_PrevGBufferDiffuseAlbedo, 
+            t_PrevGBufferSpecularRough);
     }
     else
     {
@@ -347,8 +368,8 @@ RAB_Surface RAB_GetGBufferSurface(int2 pixelPosition, bool previousFrame)
             t_GBufferDepth, 
             t_GBufferNormals, 
             t_GBufferGeoNormals, 
-            t_GBufferBaseColor, 
-            t_GBufferMetalRough);
+            t_GBufferDiffuseAlbedo, 
+            t_GBufferSpecularRough);
     }
 }
 
@@ -424,10 +445,9 @@ float RAB_GetLightSampleTargetPdfForSurface(RAB_LightSample lightSample, RAB_Sur
         return 0;
     
     float3 V = normalize(g_Const.view.cameraDirectionOrPosition.xyz - surface.worldPos);
-    float F0 = lerp(0.05, 1.0, surface.metalness);
-
+    
     float d = Lambert(surface.normal, -L);
-    float s = GGX(V, L, surface.normal, surface.roughness, F0);
+    float3 s = GGX_times_NdotL(V, L, surface.normal, surface.roughness, surface.specularF0);
 
     if (lightSample.lightType == PolymorphicLightType::kTriangle || 
         lightSample.lightType == PolymorphicLightType::kEnvironment)
@@ -436,11 +456,8 @@ float RAB_GetLightSampleTargetPdfForSurface(RAB_LightSample lightSample, RAB_Sur
         // and therefore cannot be hit by BRDF rays.
         s *= EvaluateSpecularSampledLightingWeight(surface, L, lightSample.solidAnglePdf);
     }
-
-    float3 albedo, baseReflectivity;
-    getReflectivity(surface.metalness, surface.baseColor, albedo, baseReflectivity);
-
-    float3 reflectedRadiance = lightSample.radiance * (d * albedo + s * baseReflectivity);
+    
+    float3 reflectedRadiance = lightSample.radiance * (d * surface.diffuseAlbedo + s);
     
     return calcLuminance(reflectedRadiance) / lightSample.solidAnglePdf;
 }
@@ -525,16 +542,16 @@ bool RTXDI_CompareRelativeDifference(float reference, float candidate, float thr
 bool RAB_AreMaterialsSimilar(RAB_Surface a, RAB_Surface b)
 {
     const float roughnessThreshold = 0.5;
-    const float metalnessThreshold = 0.5;
-    const float colorThreshold = 0.5;
+    const float reflectivityThreshold = 0.5;
+    const float albedoThreshold = 0.5;
 
     if (!RTXDI_CompareRelativeDifference(a.roughness, b.roughness, roughnessThreshold))
         return false;
 
-    if (!RTXDI_CompareRelativeDifference(a.metalness, b.metalness, metalnessThreshold))
+    if (!RTXDI_CompareRelativeDifference(calcLuminance(a.specularF0), calcLuminance(b.specularF0), reflectivityThreshold))
         return false;
-
-    if (!RTXDI_CompareRelativeDifference(calcLuminance(a.baseColor), calcLuminance(b.baseColor), colorThreshold))
+    
+    if (!RTXDI_CompareRelativeDifference(calcLuminance(a.diffuseAlbedo), calcLuminance(b.diffuseAlbedo), albedoThreshold))
         return false;
 
     return true;

@@ -84,60 +84,12 @@ static nvrhi::Format GetNvrhiFormat(nrd::Format format)
     }
 }
 
-template <class T>
-inline void hash_combine(size_t& s, const T& v)
-{
-    s ^= std::hash<T>()(v) + 0x9e3779b9 + (s << 6) + (s >> 2);
-}
-
-namespace std
-{
-    template<> struct hash<nvrhi::BindingSetItem>
-    {
-        std::size_t operator()(nvrhi::BindingSetItem const& s) const noexcept
-        {
-            size_t value = 0;
-            hash_combine(value, s.type);
-            hash_combine(value, s.format);
-            hash_combine(value, s.slot);
-            hash_combine(value, s.resourceHandle);
-            hash_combine(value, s.rawData[0]);
-            hash_combine(value, s.rawData[1]);
-            return value;
-        }
-    };
-
-    template<> struct hash<nvrhi::BindingSetDesc>
-    {
-        std::size_t operator()(nvrhi::BindingSetDesc const& s) const noexcept
-        {
-            size_t value = 0;
-            for (const auto& item : s.bindings)
-                hash_combine(value, item);
-            return value;
-        }
-    };
-}
-
-nvrhi::IBindingSet* NrdIntegration::GetOrCreateBindingSet(const nvrhi::BindingSetDesc& desc, nvrhi::IBindingLayout* layout)
-{
-    size_t hash = std::hash<nvrhi::BindingSetDesc>()(desc);
-    hash_combine(hash, layout);
-
-    auto found = m_BindingSetCache.find(hash);
-    if (found != m_BindingSetCache.end())
-        return found->second;
-
-    nvrhi::BindingSetHandle bindingSet = m_Device->createBindingSet(desc, layout);
-    m_BindingSetCache[hash] = bindingSet;
-    return bindingSet;
-}
-
 NrdIntegration::NrdIntegration(nvrhi::IDevice* device, nrd::Method method)
     : m_Device(device)
-    , m_Method(method)
-    , m_Denoiser(nullptr)
     , m_Initialized(false)
+    , m_Denoiser(nullptr)
+    , m_Method(method)
+    , m_BindingCache(device)
 {
 }
 
@@ -176,25 +128,25 @@ bool NrdIntegration::Initialize(uint32_t width, uint32_t height)
     {
         const nrd::Sampler& samplerMode = denoiserDesc.staticSamplers[samplerIndex].sampler;
 
-        nvrhi::SamplerDesc::WrapMode wrapMode = nvrhi::SamplerDesc::WRAP_MODE_WRAP;
+        nvrhi::SamplerAddressMode addressMode = nvrhi::SamplerAddressMode::Wrap;
         bool filter = false;
 
         switch (samplerMode)
         {
         case nrd::Sampler::NEAREST_CLAMP:
-            wrapMode = nvrhi::SamplerDesc::WRAP_MODE_CLAMP;
+            addressMode = nvrhi::SamplerAddressMode::Clamp;
             filter = false;
             break;
         case nrd::Sampler::NEAREST_MIRRORED_REPEAT:
-            wrapMode = nvrhi::SamplerDesc::WRAP_MODE_MIRROR;
+            addressMode = nvrhi::SamplerAddressMode::Mirror;
             filter = false;
             break;
         case nrd::Sampler::LINEAR_CLAMP:
-            wrapMode = nvrhi::SamplerDesc::WRAP_MODE_CLAMP;
+            addressMode = nvrhi::SamplerAddressMode::Clamp;
             filter = true;
             break;
         case nrd::Sampler::LINEAR_MIRRORED_REPEAT:
-            wrapMode = nvrhi::SamplerDesc::WRAP_MODE_MIRROR;
+            addressMode = nvrhi::SamplerAddressMode::Mirror;
             filter = true;
             break;
         default:
@@ -202,9 +154,9 @@ bool NrdIntegration::Initialize(uint32_t width, uint32_t height)
             break;
         }
 
-        nvrhi::SamplerDesc samplerDesc = {};
-        samplerDesc.wrapMode[0] = samplerDesc.wrapMode[1] = samplerDesc.wrapMode[2] = wrapMode;
-        samplerDesc.minFilter = samplerDesc.magFilter = filter;
+        auto samplerDesc = nvrhi::SamplerDesc()
+            .setAllAddressModes(addressMode)
+            .setAllFilters(filter);
 
         const nvrhi::SamplerHandle sampler = m_Device->createSampler(samplerDesc);
 
@@ -331,7 +283,7 @@ bool NrdIntegration::Initialize(uint32_t width, uint32_t height)
         textureDesc.format = format;
         textureDesc.mipLevels = nrdTextureDesc.mipNum;
         textureDesc.dimension = nvrhi::TextureDimension::Texture2D;
-        textureDesc.initialState = nvrhi::ResourceStates::SHADER_RESOURCE;
+        textureDesc.initialState = nvrhi::ResourceStates::ShaderResource;
         textureDesc.keepInitialState = true;
         textureDesc.isUAV = true;
         textureDesc.debugName = ss.str();
@@ -487,14 +439,13 @@ void NrdIntegration::RunDenoiserPasses(
                 subresources.baseMipLevel = resource.mipOffset;
                 subresources.numMipLevels = resource.mipNum;
 
-                nvrhi::BindingSetItem setItem = {};
+                nvrhi::BindingSetItem setItem = nvrhi::BindingSetItem::None();
                 setItem.resourceHandle = texture;
                 setItem.slot = nrdDescriptorRange.baseRegisterIndex + descriptorOffset;
                 setItem.subresources = subresources;
                 setItem.type = (nrdDescriptorRange.descriptorType == nrd::DescriptorType::TEXTURE)
                     ? nvrhi::ResourceType::Texture_SRV
                     : nvrhi::ResourceType::Texture_UAV;
-                setItem.format = nvrhi::Format::UNKNOWN;
 
                 setDesc.bindings.push_back(setItem);
 
@@ -506,7 +457,7 @@ void NrdIntegration::RunDenoiserPasses(
 
         const NrdPipeline& pipeline = m_Pipelines[dispatchDesc.pipelineIndex];
 
-        nvrhi::IBindingSet* bindingSet = GetOrCreateBindingSet(setDesc, pipeline.BindingLayout);
+        nvrhi::BindingSetHandle bindingSet = m_BindingCache.GetOrCreateBindingSet(setDesc, pipeline.BindingLayout);
 
         nvrhi::ComputeState state;
         state.bindings = { bindingSet };

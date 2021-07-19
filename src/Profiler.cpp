@@ -48,14 +48,14 @@ Profiler::Profiler(donut::app::DeviceManager& deviceManager)
     rayCountBufferDesc.canHaveUAVs = true;
     rayCountBufferDesc.canHaveTypedViews = true;
     rayCountBufferDesc.debugName = "RayCount";
-    rayCountBufferDesc.initialState = nvrhi::ResourceStates::UNORDERED_ACCESS;
+    rayCountBufferDesc.initialState = nvrhi::ResourceStates::UnorderedAccess;
     rayCountBufferDesc.keepInitialState = true;
     m_RayCountBuffer = m_Device->createBuffer(rayCountBufferDesc);
 
     rayCountBufferDesc.byteSize *= 2;
     rayCountBufferDesc.canHaveUAVs = false;
     rayCountBufferDesc.cpuAccess = nvrhi::CpuAccessMode::Read;
-    rayCountBufferDesc.initialState = nvrhi::ResourceStates::COMMON;
+    rayCountBufferDesc.initialState = nvrhi::ResourceStates::Common;
     m_RayCountReadback = m_Device->createBuffer(rayCountBufferDesc);
 }
 
@@ -189,7 +189,7 @@ double Profiler::GetHitCount(ProfilerSection::Enum section)
 
 int Profiler::GetMaterialReadback()
 {
-    return int(m_RayCounts[ProfilerSection::MaterialReadback]);
+    return int(m_RayCounts[ProfilerSection::MaterialReadback]) - 1;
 }
 
 void Profiler::BuildUI(const bool enableRayCounts)

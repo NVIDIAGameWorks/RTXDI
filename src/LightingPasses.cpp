@@ -14,7 +14,7 @@
 #include "Profiler.h"
 #include "SampleScene.h"
 
-#include <donut/engine/BindlessScene.h>
+#include <donut/engine/Scene.h>
 #include <donut/engine/CommonRenderPasses.h>
 #include <donut/engine/ShaderFactory.h>
 #include <donut/engine/View.h>
@@ -37,7 +37,7 @@ LightingPasses::LightingPasses(
     nvrhi::IDevice* device, 
     std::shared_ptr<ShaderFactory> shaderFactory,
     std::shared_ptr<donut::engine::CommonRenderPasses> commonPasses,
-    std::shared_ptr<donut::engine::BindlessScene> bindlessScene,
+    std::shared_ptr<donut::engine::Scene> scene,
     std::shared_ptr<Profiler> profiler,
     nvrhi::IBindingLayout* bindlessLayout
 )
@@ -45,13 +45,13 @@ LightingPasses::LightingPasses(
     , m_BindlessLayout(bindlessLayout)
     , m_ShaderFactory(std::move(shaderFactory))
     , m_CommonPasses(std::move(commonPasses))
-    , m_BindlessScene(std::move(bindlessScene))
+    , m_Scene(std::move(scene))
     , m_Profiler(std::move(profiler))
 {
     // The binding layout descriptor must match the binding set descriptor defined in CreateBindingSet(...) below
 
     nvrhi::BindingLayoutDesc globalBindingLayoutDesc;
-    globalBindingLayoutDesc.visibility = nvrhi::ShaderType::Compute;
+    globalBindingLayoutDesc.visibility = nvrhi::ShaderType::Compute | nvrhi::ShaderType::AllRayTracing;
     globalBindingLayoutDesc.bindings = {
         nvrhi::BindingLayoutItem::Texture_SRV(0),
         nvrhi::BindingLayoutItem::Texture_SRV(1),
@@ -114,20 +114,20 @@ void LightingPasses::CreateBindingSet(
             nvrhi::BindingSetItem::Texture_SRV(0, currentFrame ? renderTargets.Depth : renderTargets.PrevDepth),
             nvrhi::BindingSetItem::Texture_SRV(1, currentFrame ? renderTargets.GBufferNormals : renderTargets.PrevGBufferNormals),
             nvrhi::BindingSetItem::Texture_SRV(2, currentFrame ? renderTargets.GBufferGeoNormals : renderTargets.PrevGBufferGeoNormals),
-            nvrhi::BindingSetItem::Texture_SRV(3, currentFrame ? renderTargets.GBufferBaseColor : renderTargets.PrevGBufferBaseColor),
-            nvrhi::BindingSetItem::Texture_SRV(4, currentFrame ? renderTargets.GBufferMetalRough : renderTargets.PrevGBufferMetalRough),
+            nvrhi::BindingSetItem::Texture_SRV(3, currentFrame ? renderTargets.GBufferDiffuseAlbedo : renderTargets.PrevGBufferDiffuseAlbedo),
+            nvrhi::BindingSetItem::Texture_SRV(4, currentFrame ? renderTargets.GBufferSpecularRough : renderTargets.PrevGBufferSpecularRough),
             nvrhi::BindingSetItem::Texture_SRV(5, currentFrame ? renderTargets.PrevDepth : renderTargets.Depth),
             nvrhi::BindingSetItem::Texture_SRV(6, currentFrame ? renderTargets.PrevGBufferNormals : renderTargets.GBufferNormals),
             nvrhi::BindingSetItem::Texture_SRV(7, currentFrame ? renderTargets.PrevGBufferGeoNormals : renderTargets.GBufferGeoNormals),
-            nvrhi::BindingSetItem::Texture_SRV(8, currentFrame ? renderTargets.PrevGBufferBaseColor : renderTargets.GBufferBaseColor),
-            nvrhi::BindingSetItem::Texture_SRV(9, currentFrame ? renderTargets.PrevGBufferMetalRough : renderTargets.GBufferMetalRough),
+            nvrhi::BindingSetItem::Texture_SRV(8, currentFrame ? renderTargets.PrevGBufferDiffuseAlbedo : renderTargets.GBufferDiffuseAlbedo),
+            nvrhi::BindingSetItem::Texture_SRV(9, currentFrame ? renderTargets.PrevGBufferSpecularRough : renderTargets.GBufferSpecularRough),
             nvrhi::BindingSetItem::Texture_SRV(10, renderTargets.MotionVectors),
             
             nvrhi::BindingSetItem::RayTracingAccelStruct(11, currentFrame ? topLevelAS : prevTopLevelAS),
             nvrhi::BindingSetItem::RayTracingAccelStruct(12, currentFrame ? prevTopLevelAS : topLevelAS),
-            nvrhi::BindingSetItem::StructuredBuffer_SRV(13, m_BindlessScene->GetInstanceBuffer()),
-            nvrhi::BindingSetItem::StructuredBuffer_SRV(14, m_BindlessScene->GetGeometryBuffer()),
-            nvrhi::BindingSetItem::StructuredBuffer_SRV(15, m_BindlessScene->GetMaterialBuffer()),
+            nvrhi::BindingSetItem::StructuredBuffer_SRV(13, m_Scene->GetInstanceBuffer()),
+            nvrhi::BindingSetItem::StructuredBuffer_SRV(14, m_Scene->GetGeometryBuffer()),
+            nvrhi::BindingSetItem::StructuredBuffer_SRV(15, m_Scene->GetMaterialBuffer()),
 
             nvrhi::BindingSetItem::StructuredBuffer_SRV(20, resources.LightDataBuffer),
             nvrhi::BindingSetItem::TypedBuffer_SRV(21, resources.NeighborOffsetsBuffer),
@@ -157,11 +157,11 @@ void LightingPasses::CreateBindingSet(
             m_PrevBindingSet = bindingSet;
     }
 
-    const auto& environmentPdfDesc = resources.EnvironmentPdfTexture->GetDesc();
+    const auto& environmentPdfDesc = resources.EnvironmentPdfTexture->getDesc();
     m_EnvironmentPdfTextureSize.x = environmentPdfDesc.width;
     m_EnvironmentPdfTextureSize.y = environmentPdfDesc.height;
     
-    const auto& localLightPdfDesc = resources.LocalLightPdfTexture->GetDesc();
+    const auto& localLightPdfDesc = resources.LocalLightPdfTexture->getDesc();
     m_LocalLightPdfTextureSize.x = localLightPdfDesc.width;
     m_LocalLightPdfTextureSize.y = localLightPdfDesc.height;
 }
@@ -184,7 +184,7 @@ void LightingPasses::ExecuteComputePass(nvrhi::ICommandList* commandList, Comput
     m_Profiler->BeginSection(commandList, profilerSection);
 
     nvrhi::ComputeState state;
-    state.bindings = { m_BindingSet, m_BindlessScene->GetDescriptorTable() };
+    state.bindings = { m_BindingSet, m_Scene->GetDescriptorTable() };
     state.pipeline = pass.Pipeline;
     commandList->setComputeState(state);
 
@@ -206,7 +206,7 @@ void LightingPasses::ExecuteRayTracingPass(nvrhi::ICommandList* commandList, Ray
     PerPassConstants pushConstants{};
     pushConstants.rayCountBufferIndex = enableRayCounts ? profilerSection : -1;
     
-    pass.Execute(commandList, dispatchSize.x, dispatchSize.y, m_BindingSet, m_BindlessScene->GetDescriptorTable(), &pushConstants, sizeof(pushConstants));
+    pass.Execute(commandList, dispatchSize.x, dispatchSize.y, m_BindingSet, m_Scene->GetDescriptorTable(), &pushConstants, sizeof(pushConstants));
     
     m_Profiler->EndSection(commandList, profilerSection);
     commandList->endMarker();

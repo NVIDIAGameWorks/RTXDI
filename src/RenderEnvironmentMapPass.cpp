@@ -14,7 +14,9 @@
 
 #include <donut/core/math/math.h>
 #include <donut/core/log.h>
+#include <donut/render/SkyPass.h>
 
+#include "PrepareLightsPass.h"
 #include "donut/engine/DescriptorTableManager.h"
 #include "donut/engine/SceneTypes.h"
 using namespace donut::math;
@@ -36,7 +38,7 @@ RenderEnvironmentMapPass::RenderEnvironmentMapPass(
     destDesc.mipLevels = 1;
     destDesc.isUAV = true;
     destDesc.debugName = "ProceduralEnvironmentMap";
-    destDesc.initialState = nvrhi::ResourceStates::SHADER_RESOURCE;
+    destDesc.initialState = nvrhi::ResourceStates::ShaderResource;
     destDesc.keepInitialState = true;
     destDesc.format = nvrhi::Format::RGBA16_FLOAT;
     m_DestinationTexture = device->createTexture(destDesc);
@@ -70,11 +72,11 @@ RenderEnvironmentMapPass::~RenderEnvironmentMapPass()
     }
 }
 
-void RenderEnvironmentMapPass::Render(nvrhi::ICommandList* commandList, const donut::engine::DirectionalLight& light)
+void RenderEnvironmentMapPass::Render(nvrhi::ICommandList* commandList, const donut::engine::DirectionalLight& light, const donut::render::SkyParameters& params)
 {
     commandList->beginMarker("RenderEnvironmentMap");
 
-    const auto& destDesc = m_DestinationTexture->GetDesc();
+    const auto& destDesc = m_DestinationTexture->getDesc();
 
     nvrhi::ComputeState state;
     state.pipeline = m_Pipeline;
@@ -83,9 +85,7 @@ void RenderEnvironmentMapPass::Render(nvrhi::ICommandList* commandList, const do
 
     RenderEnvironmentMapConstants constants{};
     constants.invTextureSize = { 1.f / float(destDesc.width), 1.f / float(destDesc.height) };
-    constants.directionToSun = -light.direction;
-    constants.angularSizeOfLight = dm::radians(clamp(light.angularSize, 0.1f, 90.f));
-    constants.lightIntensity = light.irradiance;
+    donut::render::SkyPass::FillShaderParameters(light, params, constants.params);
     commandList->setPushConstants(&constants, sizeof(constants));
 
     commandList->dispatch(div_ceil(destDesc.width, 16), div_ceil(destDesc.height, 16), 1);

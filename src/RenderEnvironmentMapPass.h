@@ -21,6 +21,11 @@ namespace donut::engine
     class ShaderFactory;
 }
 
+namespace donut::render
+{
+    struct SkyParameters;
+}
+
 class RenderEnvironmentMapPass
 {
 private:
@@ -41,7 +46,7 @@ public:
 
     ~RenderEnvironmentMapPass();
 
-    void Render(nvrhi::ICommandList* commandList, const donut::engine::DirectionalLight& light);
+    void Render(nvrhi::ICommandList* commandList, const donut::engine::DirectionalLight& light, const donut::render::SkyParameters& params);
 
     nvrhi::ITexture* GetTexture() const { return m_DestinationTexture; }
     int GetTextureIndex() const { return m_DestinationTextureIndex; }

@@ -11,8 +11,9 @@
 #include "SampleScene.h"
 #include <donut/core/json.h>
 #include <donut/core/vfs/VFS.h>
-#include <donut/engine/BindlessScene.h>
 #include <json/value.h>
+#include <nvrhi/utils.h>
+#include <nvrhi/common/misc.h>
 
 #include "donut/engine/TextureCache.h"
 
@@ -22,7 +23,7 @@ using namespace donut::math;
 
 #include "../shaders/ShaderParameters.h"
 
-void SpotLightWithProfile::Load(Json::Value& node)
+void SpotLightWithProfile::Load(const Json::Value& node)
 {
     engine::SpotLight::Load(node);
     
@@ -36,112 +37,145 @@ void SpotLightWithProfile::Store(Json::Value& node) const
     node["profile"] = profileName;
 }
 
-void CylinderLight::Load(Json::Value& node)
+std::shared_ptr<engine::SceneGraphLeaf> SpotLightWithProfile::Clone()
 {
-    node["name"] >> name;
-    node["center"] >> center;
-    node["axis"] >> axis;
+    auto copy = std::make_shared<SpotLightWithProfile>();
+    copy->color = color;
+    copy->intensity = intensity;
+    copy->radius = radius;
+    copy->range = range;
+    copy->innerAngle = innerAngle;
+    copy->outerAngle = outerAngle;
+    copy->profileName = profileName;
+    copy->profileTextureIndex = profileTextureIndex;
+    return std::static_pointer_cast<SceneGraphLeaf>(copy);
+}
+
+std::shared_ptr<engine::SceneGraphLeaf> EnvironmentLight::Clone()
+{
+    auto copy = std::make_shared<EnvironmentLight>();
+    copy->color = color;
+    copy->radianceScale = radianceScale;
+    copy->textureIndex = textureIndex;
+    copy->rotation = rotation;
+    return std::static_pointer_cast<SceneGraphLeaf>(copy);
+}
+
+void CylinderLight::Load(const Json::Value& node)
+{
     node["color"] >> color;
     node["flux"] >> flux;
     node["radius"] >> radius;
     node["length"] >> length;
-
-    axis = normalize(axis);
 }
 
 void CylinderLight::Store(Json::Value& node) const
 {
-    node["name"] << name;
-    node["center"] << center;
-    node["axis"] << axis;
     node["color"] << color;
     node["flux"] << flux;
     node["radius"] << radius;
     node["length"] << length;
 }
 
-void DiskLight::Load(Json::Value& node)
+std::shared_ptr<engine::SceneGraphLeaf> CylinderLight::Clone()
 {
-    node["name"] >> name;
-    node["center"] >> center;
-    node["center"] >> normal;
-    node["center"] >> color;
+    auto copy = std::make_shared<CylinderLight>();
+    copy->color = color;
+    copy->length = length;
+    copy->radius = radius;
+    copy->flux = flux;
+    return std::static_pointer_cast<SceneGraphLeaf>(copy);
+}
+
+void DiskLight::Load(const Json::Value& node)
+{
+    node["color"] >> color;
     node["flux"] >> flux;
     node["radius"] >> radius;
-
-    normal = normalize(normal);
 }
 
 void DiskLight::Store(Json::Value& node) const
 {
-    node["name"] << name;
-    node["center"] << center;
-    node["center"] << normal;
-    node["center"] << color;
+    node["name"] << GetName();
+    node["center"] << GetPosition();
+    node["normal"] << GetDirection();
+    node["color"] << color;
     node["flux"] << flux;
     node["radius"] << radius;
 }
 
-void RectLight::Load(Json::Value& node)
+std::shared_ptr<engine::SceneGraphLeaf> DiskLight::Clone()
 {
-    node["name"] >> name;
-    node["center"] >> center;
-    node["normal"] >> normal;
+    auto copy = std::make_shared<DiskLight>();
+    copy->color = color;
+    copy->radius = radius;
+    copy->flux = flux;
+    return std::static_pointer_cast<SceneGraphLeaf>(copy);
+}
+
+void RectLight::Load(const Json::Value& node)
+{
     node["color"] >> color;
     node["flux"] >> flux;
-    node["rotation"] >> rotation;
     node["width"] >> width;
     node["height"] >> height;
-
-    normal = normalize(normal);
 }
 
 void RectLight::Store(Json::Value& node) const
 {
-    node["name"] << name;
-    node["center"] << center;
-    node["normal"] << normal;
     node["color"] << color;
     node["flux"] << flux;
-    node["rotation"] << rotation;
     node["width"] << width;
     node["height"] << height;
 }
 
-std::shared_ptr<engine::Light> SampleScene::CreateLight(const std::string& type)
+std::shared_ptr<engine::SceneGraphLeaf> RectLight::Clone()
 {
-    if (type == "spot")
+    auto copy = std::make_shared<RectLight>();
+    copy->color = color;
+    copy->width = width;
+    copy->height = height;
+    copy->flux = flux;
+    return std::static_pointer_cast<SceneGraphLeaf>(copy);
+}
+
+std::shared_ptr<donut::engine::SceneGraphLeaf> SampleSceneTypeFactory::CreateLeaf(const std::string& type)
+{
+    if (type == "SpotLight")
     {
         return std::make_shared<SpotLightWithProfile>();
     }
-    else if (type == "environment")
+    if (type == "EnvironmentLight")
     {
         return std::make_shared<EnvironmentLight>();
     }
-    else if (type == "cylinder")
+    if (type == "CylinderLight")
     {
         return std::make_shared<CylinderLight>();
     }
-    else if (type == "disk")
+    if (type == "DiskLight")
     {
         return std::make_shared<DiskLight>();
     }
-    else if (type == "rect")
+    if (type == "RectLight")
     {
         return std::make_shared<RectLight>();
     }
 
-    return engine::Scene::CreateLight(type);
+    return SceneTypeFactory::CreateLeaf(type);
 }
 
-void SampleScene::LoadCustomData(Json::Value& rootNode, engine::TextureCache& textureCache, concurrency::task_group& taskGroup, bool& success)
+std::shared_ptr<donut::engine::MeshInfo> SampleSceneTypeFactory::CreateMesh()
 {
-    m_CameraPath.Load(rootNode["camera_path"]);
+    return std::make_shared<SampleMesh>();
+}
 
+bool SampleScene::LoadCustomData(Json::Value& rootNode, tf::Executor* executor)
+{
     // Enumerate the available environment maps
     std::vector<std::string> environmentMapNames;
     const std::string texturePath = "/media/environment/";
-    m_fs->enumerate(texturePath + "*.exr", false, environmentMapNames);
+    m_fs->enumerateFiles(texturePath, { ".exr" }, donut::vfs::enumerate_to_vector(environmentMapNames));
 
     m_EnvironmentMaps.clear();
     m_EnvironmentMaps.push_back(""); // Procedural env.map with no name
@@ -150,108 +184,189 @@ void SampleScene::LoadCustomData(Json::Value& rootNode, engine::TextureCache& te
     {
         m_EnvironmentMaps.push_back(texturePath + mapName);
     }
+
+    return Scene::LoadCustomData(rootNode, executor);
 }
 
-bool SampleScene::Load(const std::filesystem::path& jsonFileName, donut::engine::TextureCache& textureCache)
+bool SampleScene::LoadWithExecutor(const std::filesystem::path& jsonFileName, tf::Executor* executor)
 {
-    if (!Scene::Load(jsonFileName, textureCache))
+    if (!Scene::LoadWithExecutor(jsonFileName, executor))
         return false;
-
-    for (auto* material : GetMaterials())
-    {
-        material->emissiveColor *= 100.f;
-
-        if (material->name.find("StringLights") == std::string::npos)
-            continue;
-
-        if (all(material->emissiveColor == 0.f))
-            continue;
-
-        AnimatedMaterial am;
-        am.radiance = material->emissiveColor;
-        am.material = material;
-        m_AnimatedMaterials.push_back(am);
-    }
-
-    for (auto* instance : GetMeshInstances())
-    {
-        const std::string& materialName = instance->mesh->material->name;
-
-        if (materialName == "LMBR_0000002_Mesh")
-        {
-            m_RotatingFans.push_back(instance);
-        }
-        else if (materialName == "sphere_case")
-        {
-            m_RotatingSphereParts.push_back(instance);
-        }
-    }
     
+    for (const auto& animation : GetSceneGraph()->GetAnimations())
+    {
+        if (animation->GetName() == "Benchmark")
+        {
+            m_BenchmarkAnimation = animation;
+            for (const auto& channel : animation->GetChannels())
+            {
+                const auto& targetNode = channel->GetTargetNode();
+                if (targetNode)
+                {
+                    const auto& camera = std::dynamic_pointer_cast<engine::PerspectiveCamera>(targetNode->GetLeaf());
+                    if (camera)
+                    {
+                        m_BenchmarkCamera = camera;
+                        break;
+                    }
+                }
+            }
+            break;
+        }
+    }
+
     return true;
 }
 
-float SampleScene::GetCameraPathDuration() const
+inline uint64_t advanceHeapPtr(uint64_t& heapPtr, const nvrhi::MemoryRequirements& memReq)
 {
-    return m_CameraPath.GetEndTime();
-}
+    heapPtr = nvrhi::align(heapPtr, memReq.alignment);
+    uint64_t current = heapPtr;
 
-bool SampleScene::InterpolateCameraPath(const float time, float3& position, float3& direction)
-{
-    auto optionalView = m_CameraPath.Evaluate(time, false);
+    heapPtr += memReq.size;
 
-    if (!optionalView.has_value())
-        return false;
-
-    position = optionalView.value().position;
-    direction = optionalView.value().direction;
-
-    if (length(direction) > 0)
-        direction = normalize(direction);
-    else
-        direction = float3(1, 0, 0);
-
-    return true;
+    return current;
 }
 
 void SampleScene::BuildMeshBLASes(nvrhi::IDevice* device)
 {
+    assert(device->queryFeatureSupport(nvrhi::Feature::VirtualResources));
+
+    uint64_t heapSize = 0;
+
+    for (const auto& mesh : GetSceneGraph()->GetMeshes())
+    {
+        if (mesh->buffers->hasAttribute(engine::VertexAttribute::JointWeights))
+            continue;
+
+        nvrhi::rt::AccelStructDesc blasDesc;
+        blasDesc.isTopLevel = false;
+        blasDesc.isVirtual = true;
+
+        for (const auto& geometry : mesh->geometries)
+        {
+            nvrhi::rt::GeometryDesc geometryDesc;
+            auto& triangles = geometryDesc.geometryData.triangles;
+            triangles.indexBuffer = mesh->buffers->indexBuffer;
+            triangles.indexOffset = (mesh->indexOffset + geometry->indexOffsetInMesh) * sizeof(uint32_t);
+            triangles.indexFormat = nvrhi::Format::R32_UINT;
+            triangles.indexCount = geometry->numIndices;
+            triangles.vertexBuffer = mesh->buffers->vertexBuffer;
+            triangles.vertexOffset = (mesh->vertexOffset + geometry->vertexOffsetInMesh) * sizeof(float3) + mesh->buffers->getVertexBufferRange(engine::VertexAttribute::Position).byteOffset;
+            triangles.vertexFormat = nvrhi::Format::RGB32_FLOAT;
+            triangles.vertexStride = sizeof(float3);
+            triangles.vertexCount = geometry->numVertices;
+            geometryDesc.geometryType = nvrhi::rt::GeometryType::Triangles;
+            geometryDesc.flags = (geometry->material->domain == engine::MaterialDomain::Opaque)
+                ? nvrhi::rt::GeometryFlags::Opaque
+                : nvrhi::rt::GeometryFlags::None;
+            blasDesc.bottomLevelGeometries.push_back(geometryDesc);
+        }
+
+        blasDesc.buildFlags = nvrhi::rt::AccelStructBuildFlags::PerferFastTrace;
+        if (!mesh->skinPrototype)
+        {
+            // Only allow compaction on non-skinned, static meshes.
+            blasDesc.buildFlags = blasDesc.buildFlags | nvrhi::rt::AccelStructBuildFlags::AllowCompaction;
+        }
+
+        blasDesc.trackLiveness = false;
+        blasDesc.debugName = mesh->name;
+
+        nvrhi::rt::AccelStructHandle as = device->createAccelStruct(blasDesc);
+        
+        advanceHeapPtr(heapSize, device->getAccelStructMemoryRequirements(as));
+
+        // If this is a skinned mesh, create a second BLAS to toggle with the first one on every frame.
+        // RTXDI needs access to the previous frame geometry in order to be unbiased.
+        if (mesh->skinPrototype)
+        {
+            auto sampleMesh = dynamic_cast<SampleMesh*>(mesh.get());
+            assert(sampleMesh);
+            sampleMesh->prevAccelStruct = device->createAccelStruct(blasDesc);
+            advanceHeapPtr(heapSize, device->getAccelStructMemoryRequirements(as));
+        }
+
+        mesh->accelStruct = as;
+    }
+    
+    nvrhi::rt::AccelStructDesc tlasDesc;
+    tlasDesc.isTopLevel = true;
+    tlasDesc.isVirtual = true;
+    tlasDesc.topLevelMaxInstances = GetSceneGraph()->GetMeshInstances().size();
+    tlasDesc.debugName = "TopLevelAS";
+    tlasDesc.buildFlags = nvrhi::rt::AccelStructBuildFlags::AllowUpdate;
+
+    m_TopLevelAS = device->createAccelStruct(tlasDesc);
+
+    advanceHeapPtr(heapSize, device->getAccelStructMemoryRequirements(m_TopLevelAS));
+        
+    tlasDesc.debugName = "PrevTopLevelAS";
+
+    m_PrevTopLevelAS = device->createAccelStruct(tlasDesc);
+
+    advanceHeapPtr(heapSize, device->getAccelStructMemoryRequirements(m_PrevTopLevelAS));
+
+
+    nvrhi::HeapDesc heapDecs;
+    heapDecs.type = nvrhi::HeapType::DeviceLocal;
+    heapDecs.capacity = heapSize;
+    heapDecs.debugName = "AccelStructHeap";
+
+    nvrhi::HeapHandle heap = device->createHeap(heapDecs);
+
+    heapSize = 0;
+
+    for (const auto& mesh : GetSceneGraph()->GetMeshes())
+    {
+        if (!mesh->accelStruct)
+            continue;
+
+        uint64_t heapOffset = advanceHeapPtr(heapSize, device->getAccelStructMemoryRequirements(mesh->accelStruct));
+
+        device->bindAccelStructMemory(mesh->accelStruct, heap, heapOffset);
+
+        // Bind memory for the second BLAS for skinned meshes.
+        if (mesh->skinPrototype)
+        {
+            auto sampleMesh = dynamic_cast<SampleMesh*>(mesh.get());
+            assert(sampleMesh);
+
+            heapOffset = advanceHeapPtr(heapSize, device->getAccelStructMemoryRequirements(sampleMesh->prevAccelStruct));
+            device->bindAccelStructMemory(sampleMesh->prevAccelStruct, heap, heapOffset);
+        }
+    }
+
+    uint64_t heapOffset = advanceHeapPtr(heapSize, device->getAccelStructMemoryRequirements(m_TopLevelAS));
+
+    device->bindAccelStructMemory(m_TopLevelAS, heap, heapOffset);
+
+    heapOffset = advanceHeapPtr(heapSize, device->getAccelStructMemoryRequirements(m_PrevTopLevelAS));
+
+    device->bindAccelStructMemory(m_PrevTopLevelAS, heap, heapOffset);
+
+
     nvrhi::CommandListParameters clparams;
     clparams.scratchChunkSize = clparams.scratchMaxMemory;
 
     nvrhi::CommandListHandle commandList = device->createCommandList(clparams);
     commandList->open();
 
-    for (auto* mesh : GetMeshes())
+    for (const auto& mesh : GetSceneGraph()->GetMeshes())
     {
-        nvrhi::rt::BottomLevelAccelStructDesc blasDesc;
-        nvrhi::rt::GeometryDesc geometryDesc;
-        auto& triangles = geometryDesc.geometryData.triangles;
-        triangles.indexBuffer = mesh->buffers->indexBuffer;
-        triangles.indexOffset = mesh->indexOffset * sizeof(uint32_t);
-        triangles.indexFormat = nvrhi::Format::R32_UINT;
-        triangles.indexCount = mesh->numIndices;
-        triangles.vertexBuffer = mesh->buffers->vertexBuffers[int(engine::VertexAttribute::Position)];
-        triangles.vertexOffset = mesh->vertexOffset * sizeof(float3);
-        triangles.vertexFormat = nvrhi::Format::RGB32_FLOAT;
-        triangles.vertexStride = sizeof(float3);
-        triangles.vertexCount = mesh->numVertices;
-        geometryDesc.geometryType = nvrhi::rt::AccelStructGeometryType::TRIANGLES;
-        geometryDesc.flags = (mesh->material->domain == engine::MD_OPAQUE)
-            ? nvrhi::rt::GeometryFlags::OPAQUE_
-            : nvrhi::rt::GeometryFlags::NONE;
-        blasDesc.geometries.push_back(geometryDesc);
-        blasDesc.buildFlags = nvrhi::rt::AccelStructBuildFlags::PERFER_FAST_TRACE;
-        blasDesc.trackLiveness = false;
+        if (!mesh->accelStruct)
+            continue;
 
-        nvrhi::rt::AccelStructHandle as = device->createBottomLevelAccelStruct(blasDesc);
-        commandList->buildBottomLevelAccelStruct(as, blasDesc);
+        // Get the desc from the AS, restore the buffer pointers because they're erased by nvrhi
+        nvrhi::rt::AccelStructDesc blasDesc = mesh->accelStruct->getDesc();
+        for (auto& geometryDesc : blasDesc.bottomLevelGeometries)
+        {
+            geometryDesc.geometryData.triangles.indexBuffer = mesh->buffers->indexBuffer;
+            geometryDesc.geometryData.triangles.vertexBuffer = mesh->buffers->vertexBuffer;
+        }
 
-        mesh->accelStruct = as;
+        nvrhi::utils::BuildBottomLevelAccelStruct(commandList, mesh->accelStruct, blasDesc);
     }
-
-    const uint32_t maxInstances = uint32_t(GetMeshInstances().size());
-    m_TopLevelAS = device->createTopLevelAccelStruct(maxInstances);
-    m_PrevTopLevelAS = device->createTopLevelAccelStruct(maxInstances);
 
     commandList->close();
     device->executeCommandList(commandList);
@@ -260,103 +375,113 @@ void SampleScene::BuildMeshBLASes(nvrhi::IDevice* device)
     device->runGarbageCollection();
 }
 
+void SampleScene::UpdateSkinnedMeshBLASes(nvrhi::ICommandList* commandList, uint32_t frameIndex)
+{
+    commandList->beginMarker("Skinned BLAS Updates");
+
+    // Transition all the buffers to their necessary states before building the BLAS'es to allow BLAS batching
+    for (const auto& skinnedInstance : GetSceneGraph()->GetSkinnedMeshInstances())
+    {
+        if (skinnedInstance->GetLastUpdateFrameIndex() < frameIndex)
+            continue;
+        
+        auto sampleMesh = dynamic_cast<SampleMesh*>(skinnedInstance->GetMesh().get());
+        assert(sampleMesh);
+        assert(sampleMesh->prevAccelStruct);
+        std::swap(sampleMesh->accelStruct, sampleMesh->prevAccelStruct);
+
+        commandList->setAccelStructState(skinnedInstance->GetMesh()->accelStruct, nvrhi::ResourceStates::AccelStructWrite);
+        commandList->setBufferState(skinnedInstance->GetMesh()->buffers->vertexBuffer, nvrhi::ResourceStates::AccelStructBuildInput);
+    }
+    commandList->commitBarriers();
+
+    // Now build the BLAS'es
+    for (const auto& skinnedInstance : GetSceneGraph()->GetSkinnedMeshInstances())
+    {
+        if (skinnedInstance->GetLastUpdateFrameIndex() < frameIndex)
+            continue;
+
+        const auto& mesh = skinnedInstance->GetMesh();
+        nvrhi::rt::AccelStructDesc blasDesc = mesh->accelStruct->getDesc();
+        for (auto& geometryDesc : blasDesc.bottomLevelGeometries)
+        {
+            geometryDesc.geometryData.triangles.indexBuffer = mesh->buffers->indexBuffer;
+            geometryDesc.geometryData.triangles.vertexBuffer = mesh->buffers->vertexBuffer;
+        }
+
+        nvrhi::utils::BuildBottomLevelAccelStruct(commandList, mesh->accelStruct, blasDesc);
+    }
+    commandList->endMarker();
+}
+
 void SampleScene::BuildTopLevelAccelStruct(nvrhi::ICommandList* commandList)
 {
-    m_TlasDesc.instances.resize(GetMeshInstances().size());
+    m_TlasInstances.resize(GetSceneGraph()->GetMeshInstances().size());
 
-    // TODO - updates are not properly supported by NVRHI
-    //if(m_FrameIndex != 0)
-    //    tlasDesc.buildFlags = nvrhi::rt::AccelStructBuildFlags::PERFORM_UPDATE;
-
+    nvrhi::rt::AccelStructBuildFlags buildFlags = m_CanUpdateTLAS
+        ? nvrhi::rt::AccelStructBuildFlags::PerformUpdate
+        : nvrhi::rt::AccelStructBuildFlags::None;
+    
     uint32_t index = 0;
 
-    for (auto* instance : GetMeshInstances())
+    for (const auto& instance : GetSceneGraph()->GetMeshInstances())
     {
-        engine::MeshInfo* mesh = instance->mesh;
-
+        const auto& mesh = instance->GetMesh();
+        
         if (!mesh->accelStruct)
             continue;
 
-        nvrhi::rt::InstanceDesc& instanceDesc = m_TlasDesc.instances[index++];
+        nvrhi::rt::InstanceDesc& instanceDesc = m_TlasInstances[index++];
 
-        switch (mesh->material->domain)
+        instanceDesc.instanceMask = 0;
+        engine::SceneContentFlags contentFlags = instance->GetContentFlags();
+
+        if ((contentFlags & engine::SceneContentFlags::OpaqueMeshes) != 0)
+            instanceDesc.instanceMask |= INSTANCE_MASK_OPAQUE;
+
+        if ((contentFlags & engine::SceneContentFlags::AlphaTestedMeshes) != 0)
+            instanceDesc.instanceMask |= INSTANCE_MASK_ALPHA_TESTED;
+
+        if ((contentFlags & engine::SceneContentFlags::BlendedMeshes) != 0)
+            instanceDesc.instanceMask |= INSTANCE_MASK_TRANSPARENT;
+
+        for (const auto& geometry : mesh->geometries)
         {
-        case engine::MD_OPAQUE:
-            instanceDesc.instanceMask = INSTANCE_MASK_OPAQUE;
-            break;
-        case engine::MD_ALPHA_TESTED:
-            instanceDesc.instanceMask = INSTANCE_MASK_ALPHA_TESTED;
-            break;
-        case engine::MD_TRANSPARENT:
-            if (mesh->material->shininess > 0.9f)
-                instanceDesc.instanceMask = INSTANCE_MASK_TRANSPARENT;
-            else
-                instanceDesc.instanceMask = INSTANCE_MASK_ALPHA_TESTED;
-            break;
-        default:
-            continue;
+            if (geometry->material->doubleSided)
+                instanceDesc.flags = nvrhi::rt::InstanceFlags::TriangleCullDisable;
         }
 
         instanceDesc.bottomLevelAS = mesh->accelStruct;
 
-        // Copy the transform in the right layout - doing it through the dm library is much slower
-        instanceDesc.transform[0][0] = instance->localTransform.m_linear.m00;
-        instanceDesc.transform[0][1] = instance->localTransform.m_linear.m10;
-        instanceDesc.transform[0][2] = instance->localTransform.m_linear.m20;
-        instanceDesc.transform[0][3] = instance->localTransform.m_translation.x;
-        instanceDesc.transform[1][0] = instance->localTransform.m_linear.m01;
-        instanceDesc.transform[1][1] = instance->localTransform.m_linear.m11;
-        instanceDesc.transform[1][2] = instance->localTransform.m_linear.m21;
-        instanceDesc.transform[1][3] = instance->localTransform.m_translation.y;
-        instanceDesc.transform[2][0] = instance->localTransform.m_linear.m02;
-        instanceDesc.transform[2][1] = instance->localTransform.m_linear.m12;
-        instanceDesc.transform[2][2] = instance->localTransform.m_linear.m22;
-        instanceDesc.transform[2][3] = instance->localTransform.m_translation.z;
+        auto node = instance->GetNode();
+        if (node)
+            dm::affineToColumnMajor(node->GetLocalToWorldTransformFloat(), &instanceDesc.transform[0][0]);
 
-        instanceDesc.instanceID = uint(instance->globalInstanceIndex);
+        instanceDesc.instanceID = uint(instance->GetInstanceIndex());
     }
 
-    commandList->buildTopLevelAccelStruct(m_TopLevelAS, m_TlasDesc);
+    commandList->buildTopLevelAccelStruct(m_TopLevelAS, m_TlasInstances.data(), m_TlasInstances.size(), buildFlags);
+    m_CanUpdateTLAS = true;
 }
 
 void SampleScene::NextFrame()
 {
     std::swap(m_TopLevelAS, m_PrevTopLevelAS);
+    std::swap(m_CanUpdateTLAS, m_CanUpdatePrevTLAS);
 }
 
-void SampleScene::Animate(float fElapsedTimeSeconds, bool animateLights, bool animateMeshes, donut::engine::BindlessScene& bindlessScene)
+void SampleScene::Animate(float fElapsedTimeSeconds)
 {
-    m_WallclockTimeMs += (int)(fElapsedTimeSeconds * 1e3f);
-
-    int index = 0;
-    for (auto& am : m_AnimatedMaterials)
+    m_WallclockTime += fElapsedTimeSeconds;
+    
+    for (const auto& animation : m_SceneGraph->GetAnimations())
     {
-        int phase = m_WallclockTimeMs + index * 400;
-        bool on = animateLights ? (phase & 2048) != 0 : true;
+        if (animation == m_BenchmarkAnimation)
+            continue;
 
-        am.material->emissiveColor = am.radiance * (on ? 1.f : 0.f);
-        bindlessScene.UpdateMaterial(am.material);
-
-        index++;
-    }
-
-    for (auto* inst : m_RotatingFans)
-    {
-        inst->previousTransform = inst->localTransform;
-
-        if (animateMeshes)
-            inst->localTransform = dm::rotation(dm::float3(0, 0, 1), fElapsedTimeSeconds * 2.f) * inst->localTransform;
-
-        bindlessScene.UpdateInstance(inst);
-    }
-
-    for (auto* inst : m_RotatingSphereParts)
-    {
-        inst->previousTransform = inst->localTransform;
-
-        if (animateMeshes)
-            inst->localTransform = dm::rotation(dm::float3(0, 1, 0), fElapsedTimeSeconds * 3.f) * inst->localTransform;
-
-        bindlessScene.UpdateInstance(inst);
+        float duration = animation->GetDuration();
+        double integral;
+        float animationTime = float(std::modf(m_WallclockTime / double(duration), &integral)) * duration;
+        (void)animation->Apply(animationTime);
     }
 }

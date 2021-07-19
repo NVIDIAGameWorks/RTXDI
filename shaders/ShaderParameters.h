@@ -12,6 +12,7 @@
 #define SHADER_PARAMETERS_H
 
 #include <donut/shaders/view_cb.h>
+#include <donut/shaders/sky_cb.h>
 #include <rtxdi/RtxdiParameters.h>
 
 #define TASK_PRIMITIVE_LIGHT_BIT 0x80000000u
@@ -52,7 +53,7 @@ struct PrepareLightsConstants
 
 struct PrepareLightsTask
 {
-    uint instanceIndex;
+    uint instanceAndGeometryIndex; // low 12 bits are geometryIndex, mid 19 bits are instanceIndex, high bit is TASK_PRIMITIVE_LIGHT_BIT
     uint triangleCount;
     uint lightBufferOffset;
     int previousLightBufferOffset; // -1 means no previous data
@@ -60,11 +61,9 @@ struct PrepareLightsTask
 
 struct RenderEnvironmentMapConstants
 {
-    float2 invTextureSize;
-    float lightIntensity;
-    float angularSizeOfLight;
+    ProceduralSkyShaderParameters params;
 
-    float3 directionToSun;
+    float2 invTextureSize;
 };
 
 struct PreprocessEnvironmentMapConstants

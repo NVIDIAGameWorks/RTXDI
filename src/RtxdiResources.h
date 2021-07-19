@@ -21,6 +21,9 @@ class RtxdiResources
 {
 private:
     bool m_NeighborOffsetsInitialized = false;
+    uint32_t m_MaxEmissiveMeshes = 0;
+    uint32_t m_MaxEmissiveTriangles = 0;
+    uint32_t m_MaxPrimitiveLights = 0;
 
 public:
     nvrhi::BufferHandle TaskBuffer;
@@ -44,4 +47,8 @@ public:
         uint32_t environmentMapHeight);
 
     void InitializeNeighborOffsets(nvrhi::ICommandList* commandList, const rtxdi::Context& context);
+
+    uint32_t GetMaxEmissiveMeshes() const { return m_MaxEmissiveMeshes; }
+    uint32_t GetMaxEmissiveTriangles() const { return m_MaxEmissiveTriangles; }
+    uint32_t GetMaxPrimitiveLights() const { return m_MaxPrimitiveLights; }
 };

@@ -121,104 +121,6 @@ float pdfAtoW(float pdfA, float distance_, float cosTheta)
     return pdfA * square(distance_) / cosTheta;
 }
 
-// Pack [0.0, 1.0] float to a uint of a given bit depth
-#define PACK_UFLOAT_TEMPLATE(size)                      \
-uint Pack_R ## size ## _UFLOAT(float r, float d = 0.5f) \
-{                                                       \
-    const uint mask = (1U << size) - 1U;                \
-                                                        \
-    return (uint)floor(r * mask + d) & mask;            \
-}                                                       \
-                                                        \
-float Unpack_R ## size ## _UFLOAT(uint r)               \
-{                                                       \
-    const uint mask = (1U << size) - 1U;                \
-                                                        \
-    return (float)(r & mask) / (float)mask;             \
-}
-
-PACK_UFLOAT_TEMPLATE(8)
-PACK_UFLOAT_TEMPLATE(16)
-
-uint Pack_R8G8B8_UFLOAT(float3 rgb, float3 d = float3(0.5f, 0.5f, 0.5f))
-{
-    uint r = Pack_R8_UFLOAT(rgb.r, d.r);
-    uint g = Pack_R8_UFLOAT(rgb.g, d.g) << 8;
-    uint b = Pack_R8_UFLOAT(rgb.b, d.b) << 16;
-    return r | g | b;
-}
-
-float3 Unpack_R8G8B8_UFLOAT(uint rgb)
-{
-    float r = Unpack_R8_UFLOAT(rgb);
-    float g = Unpack_R8_UFLOAT(rgb >> 8);
-    float b = Unpack_R8_UFLOAT(rgb >> 16);
-    return float3(r, g, b);
-}
-
-uint Pack_R8G8B8A8_UFLOAT(float4 rgba, float4 d = float4(0.5f, 0.5f, 0.5f, 0.5f))
-{
-    uint r = Pack_R8_UFLOAT(rgba.r, d.r);
-    uint g = Pack_R8_UFLOAT(rgba.g, d.g) << 8;
-    uint b = Pack_R8_UFLOAT(rgba.b, d.b) << 16;
-    uint a = Pack_R8_UFLOAT(rgba.a, d.a) << 24;
-    return r | g | b | a;
-}
-
-float4 Unpack_R8G8B8A8_UFLOAT(uint rgba)
-{
-    float r = Unpack_R8_UFLOAT(rgba);
-    float g = Unpack_R8_UFLOAT(rgba >> 8);
-    float b = Unpack_R8_UFLOAT(rgba >> 16);
-    float a = Unpack_R8_UFLOAT(rgba >> 24);
-    return float4(r, g, b, a);
-}
-
-uint Pack_R16G16_UFLOAT(float2 rg, float2 d = float2(0.5f, 0.5f))
-{
-    uint r = Pack_R16_UFLOAT(rg.r, d.r);
-    uint g = Pack_R16_UFLOAT(rg.g, d.g) << 16;
-    return r | g;
-}
-
-float2 Unpack_R16G16_UFLOAT(uint rg)
-{
-    float r = Unpack_R16_UFLOAT(rg);
-    float g = Unpack_R16_UFLOAT(rg >> 16);
-    return float2(r, g);
-}
-
-// Todo: FLOAT is not consistent with the rest of the naming here, they should be changed
-// to UNORM as they do not actually decode into full floats but are rather normalized unsigned
-// floats, whereas this should be a SFLOAT.
-uint Pack_R16G16_FLOAT(float2 rg)
-{
-    uint r = f32tof16(rg.r);
-    uint g = f32tof16(rg.g) << 16;
-    return r | g;
-}
-
-float2 Unpack_R16G16_FLOAT(uint rg)
-{
-    uint2 d = uint2(rg, rg >> 16);
-    return f16tof32(d);
-}
-
-float Unpack_R8_SNORM(uint value)
-{
-    int signedValue = int(value << 24) >> 24;
-    return clamp(float(signedValue) / 127.0, -1.0, 1.0);
-}
-
-float3 Unpack_RGB8_SNORM(uint value)
-{
-    return float3(
-        Unpack_R8_SNORM(value),
-        Unpack_R8_SNORM(value >> 8),
-        Unpack_R8_SNORM(value >> 16)
-    );
-}
-
 float calcLuminance(float3 color)
 {
     return dot(color.xyz, float3(0.299f, 0.587f, 0.114f));
@@ -241,8 +143,9 @@ float3 sphericalDirection(float sinTheta, float cosTheta, float sinPhi, float co
 
 void getReflectivity(float metalness, float3 baseColor, out float3 o_albedo, out float3 o_baseReflectivity)
 {
-    o_albedo = baseColor * (1.0 - metalness);
-    o_baseReflectivity = lerp(0.04, baseColor, metalness);
+    const float dielectricSpecular = 0.04;
+    o_albedo = lerp(baseColor * (1.0 - dielectricSpecular), 0, metalness);
+    o_baseReflectivity = lerp(dielectricSpecular, baseColor, metalness);
 }
 
 
@@ -268,16 +171,6 @@ float3 sampleGGX_VNDF(float3 Ve, float roughness, float2 random)
     // Tangent space H
     float3 Ne = float3(alpha * Nh.x, alpha * Nh.y, max(0.0, Nh.z));
     return Ne;
-}
-
-float2 interpolate(float2 vertices[3], float3 bary)
-{
-    return vertices[0] * bary[0] + vertices[1] * bary[1] + vertices[2] * bary[2];
-}
-
-float3 interpolate(float3 vertices[3], float3 bary)
-{
-    return vertices[0] * bary[0] + vertices[1] * bary[1] + vertices[2] * bary[2];
 }
 
 float2 directionToEquirectUV(float3 normalizedDirection)

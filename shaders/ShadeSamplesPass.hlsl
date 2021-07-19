@@ -15,6 +15,7 @@
 #include <rtxdi/ResamplingFunctions.hlsli>
 
 #ifdef WITH_NRD
+#define COMPILER_DXC
 #include <NRD.hlsl>
 #endif
 
@@ -52,6 +53,7 @@ void RayGen()
             surface, RTXDI_GetReservoirSampleUV(reservoir));
 
         bool needToStore = ShadeSurfaceWithLightSample(reservoir, surface, lightSample, diffuse, specular, lightDistance);
+        specular = DemodulateSpecular(surface, specular);
 
         if (needToStore)
         {

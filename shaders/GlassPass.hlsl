@@ -48,6 +48,7 @@ struct RayPayload
 {
     float committedRayT;
     uint instanceID;
+    uint geometryIndex;
     uint primitiveIndex;
     float2 barycentrics;
 };
@@ -81,7 +82,7 @@ void AnyHit(inout RayPayload payload : SV_RayPayload, in RayAttributes attrib : 
 void tracePrimaryRay(inout RayPayload payload, RayDesc ray)
 {
 #if USE_RAY_QUERY
-    RayQuery<RAY_FLAG_SKIP_PROCEDURAL_PRIMITIVES | RAY_FLAG_FORCE_OPAQUE> rayQuery;
+    RayQuery<RAY_FLAG_SKIP_PROCEDURAL_PRIMITIVES | RAY_FLAG_FORCE_OPAQUE | RAY_FLAG_CULL_BACK_FACING_TRIANGLES > rayQuery;
 
     rayQuery.TraceRayInline(SceneBVH, RAY_FLAG_NONE, INSTANCE_MASK_TRANSPARENT, ray);
 
@@ -95,7 +96,7 @@ void tracePrimaryRay(inout RayPayload payload, RayDesc ray)
         payload.committedRayT = rayQuery.CommittedRayT();
     }
 #else
-    TraceRay(SceneBVH, RAY_FLAG_SKIP_PROCEDURAL_PRIMITIVES | RAY_FLAG_FORCE_OPAQUE, INSTANCE_MASK_TRANSPARENT, 0, 0, 0, ray, payload);
+    TraceRay(SceneBVH, RAY_FLAG_SKIP_PROCEDURAL_PRIMITIVES | RAY_FLAG_FORCE_OPAQUE | RAY_FLAG_CULL_BACK_FACING_TRIANGLES, INSTANCE_MASK_TRANSPARENT, 0, 0, 0, ray, payload);
 #endif
     
     REPORT_RAY(payload.instanceID != ~0u);
@@ -143,10 +144,13 @@ float3 getSecondaryRadiance(float3 surfacePosition, float3 reflectedDirection)
             environmentColor *= g_Const.environmentScale;
             return environmentColor;
         }
+        else
+            return 0;
     }
 
     GeometrySample gs = getGeometryFromHit(
         payload.instanceID,
+        payload.geometryIndex,
         payload.primitiveIndex,
         payload.barycentrics,
         GeomAttr_TexCoord | GeomAttr_Normal, 
@@ -155,9 +159,9 @@ float3 getSecondaryRadiance(float3 surfacePosition, float3 reflectedDirection)
     MaterialSample ms = sampleGeometryMaterial(gs, 0, 0, 0,
         MatAttr_BaseColor | MatAttr_Emissive, s_MaterialSampler);
 
-    float3 ambient = float3(0.15, 0.135, 0.09); // very basic ambient, works OK for this sample
+    float3 ambient = float3(0.05, 0.045, 0.03); // very basic ambient, works OK for this sample
 
-    return ms.emissive + ms.baseColor * ambient;
+    return ms.emissiveColor + ms.diffuseAlbedo * ambient;
 }
 
 #if USE_RAY_QUERY
@@ -182,7 +186,7 @@ void RayGen()
     RayDesc ray = setupPrimaryRay(pixelPosition, g_Const.view, maxGlassHitT + 0.01);
 
     for (uint surfaceIndex = 0; surfaceIndex < 8; surfaceIndex++)
-    {       
+    {
         RayPayload payload = (RayPayload)0;
         payload.instanceID = ~0u;
 
@@ -190,42 +194,72 @@ void RayGen()
 
         if (payload.instanceID == ~0u)
             break;
-        
+
         float3 surfacePosition = ray.Origin + ray.Direction * payload.committedRayT;
 
         ray.Origin = surfacePosition + ray.Direction * 0.001; // for the next ray
+        ray.TMax -= payload.committedRayT;
 
         GeometrySample gs = getGeometryFromHit(
             payload.instanceID,
+            payload.geometryIndex,
             payload.primitiveIndex,
             payload.barycentrics,
             GeomAttr_TexCoord | GeomAttr_Normal | GeomAttr_Tangents,
             t_InstanceData, t_GeometryData, t_MaterialConstants);
 
-        MaterialSample ms = sampleGeometryMaterial(gs, 0, 0, 0, MatAttr_Normal, 
+        MaterialSample ms = sampleGeometryMaterial(gs, 0, 0, 0, MatAttr_BaseColor | MatAttr_Normal | MatAttr_Transmission | MatAttr_Emissive,
             s_MaterialSampler, g_Const.normalMapScale);
 
         if (surfaceIndex == 0 && all(g_Const.materialReadbackPosition == int2(pixelPosition)))
         {
-            u_RayCountBuffer[g_Const.materialReadbackBufferIndex] = gs.geometry.materialIndex;
+            u_RayCountBuffer[g_Const.materialReadbackBufferIndex] = gs.geometry.materialIndex + 1;
         }
 
-        float3 surfaceNormal = ms.shadingNormal;
+        bool alphaMask = ms.opacity >= gs.material.alphaCutoff;
 
-        if (dot(surfaceNormal, ray.Direction) > 0)
-            surfaceNormal = -surfaceNormal;
+        if (gs.material.domain == MaterialDomain_Transmissive ||
+            (gs.material.domain == MaterialDomain_TransmissiveAlphaTested && alphaMask) ||
+            gs.material.domain == MaterialDomain_TransmissiveAlphaBlended)
+        {
+            float3 surfaceNormal = ms.shadingNormal;
 
-        float fresnel = Schlick_Fresnel(0.05, abs(dot(surfaceNormal, ray.Direction)));
+            if (dot(surfaceNormal, ray.Direction) > 0)
+                surfaceNormal = -surfaceNormal;
 
-        float3 reflectedDirection = reflect(ray.Direction, surfaceNormal);
+            // TODO: use the surface params provided by donut
+            float3 F0 = lerp(0.04, ms.baseColor, ms.metalness);
 
-        float3 secondaryRadiance = getSecondaryRadiance(surfacePosition, reflectedDirection);
+            float3 fresnel = Schlick_Fresnel(F0, abs(dot(surfaceNormal, ray.Direction)));
 
-        overlay += secondaryRadiance * (throughput * fresnel);
-        throughput *= (1.0 - fresnel) * (1.0 - ms.opacity) * gs.material.diffuseColor.rgb;
+            float3 reflectedDirection = reflect(ray.Direction, surfaceNormal);
 
-        if (calcLuminance(throughput) < 0.01)
-            break;
+            float3 secondaryRadiance = getSecondaryRadiance(surfacePosition, reflectedDirection);
+
+            float3 contribution = secondaryRadiance * fresnel + ms.emissiveColor;
+
+            float3 thisSurfaceThroughput = ms.transmission;
+
+            if ((gs.material.flags & MaterialFlags_UseSpecularGlossModel) == 0)
+                thisSurfaceThroughput *= (1.0 - ms.metalness) * ms.baseColor;
+
+            if (gs.material.domain == MaterialDomain_TransmissiveAlphaBlended)
+            {
+                contribution *= ms.opacity;
+                thisSurfaceThroughput *= (1.0 - ms.opacity);
+            }
+
+            thisSurfaceThroughput *= (1.0 - fresnel) * gs.material.baseOrDiffuseColor.rgb;
+
+            if (all(thisSurfaceThroughput == 0)) // this is a transparent-turned-opaque surface, it should be in the G-buffer
+                break;
+
+            overlay += contribution * throughput;
+            throughput *= thisSurfaceThroughput;
+
+            if (calcLuminance(throughput) < 0.01)
+                break;
+        }
     }
 
     if (any(throughput < 1.0) || any(overlay > 0.0))

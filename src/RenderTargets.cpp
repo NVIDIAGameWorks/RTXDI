@@ -27,7 +27,7 @@ RenderTargets::RenderTargets(nvrhi::IDevice* device, int2 size)
 
     desc.isUAV = false;
     desc.isRenderTarget = true;
-    desc.initialState = nvrhi::ResourceStates::RENDER_TARGET;
+    desc.initialState = nvrhi::ResourceStates::RenderTarget;
 
     desc.format = nvrhi::Format::SRGBA8_UNORM;
     desc.debugName = "LdrColor";
@@ -38,7 +38,7 @@ RenderTargets::RenderTargets(nvrhi::IDevice* device, int2 size)
     
     desc.format = nvrhi::Format::D32;
     desc.debugName = "DeviceDepth";
-    desc.initialState = nvrhi::ResourceStates::DEPTH_WRITE;
+    desc.initialState = nvrhi::ResourceStates::DepthWrite;
     desc.clearValue = 0.f;
     desc.useClearValue = true;
     DeviceDepth = device->createTexture(desc);
@@ -46,7 +46,7 @@ RenderTargets::RenderTargets(nvrhi::IDevice* device, int2 size)
     // G-buffer targets
 
     desc.isUAV = true;
-    desc.initialState = nvrhi::ResourceStates::UNORDERED_ACCESS;
+    desc.initialState = nvrhi::ResourceStates::UnorderedAccess;
 
     desc.format = nvrhi::Format::R32_FLOAT;
     desc.debugName = "DepthBuffer";
@@ -57,16 +57,16 @@ RenderTargets::RenderTargets(nvrhi::IDevice* device, int2 size)
     desc.useClearValue = false;
 
     desc.format = nvrhi::Format::R32_UINT;
-    desc.debugName = "GBufferBaseColor";
-    GBufferBaseColor = device->createTexture(desc);
-    desc.debugName = "PrevGBufferBaseColor";
-    PrevGBufferBaseColor = device->createTexture(desc);
+    desc.debugName = "GBufferDiffuseAlbedo";
+    GBufferDiffuseAlbedo = device->createTexture(desc);
+    desc.debugName = "PrevGBufferDiffuseAlbedo";
+    PrevGBufferDiffuseAlbedo = device->createTexture(desc);
 
     desc.format = nvrhi::Format::R32_UINT;
-    desc.debugName = "GBufferMetalRough";
-    GBufferMetalRough = device->createTexture(desc);
-    desc.debugName = "PrevGBufferMetalRough";
-    PrevGBufferMetalRough = device->createTexture(desc);
+    desc.debugName = "GBufferSpecularRough";
+    GBufferSpecularRough = device->createTexture(desc);
+    desc.debugName = "PrevGBufferSpecularRough";
+    PrevGBufferSpecularRough = device->createTexture(desc);
 
     desc.format = nvrhi::Format::R32_UINT;
     desc.debugName = "GBufferNormals";
@@ -91,13 +91,17 @@ RenderTargets::RenderTargets(nvrhi::IDevice* device, int2 size)
     desc.format = nvrhi::Format::RGBA16_FLOAT;
     desc.debugName = "MotionVectors";
     MotionVectors = device->createTexture(desc);
-    
+
+    desc.format = nvrhi::Format::RGBA16_FLOAT;
+    desc.debugName = "ResolvedColor";
+    ResolvedColor = device->createTexture(desc);
+
     GBufferFramebuffer = std::make_shared<engine::FramebufferFactory>(device);
     GBufferFramebuffer->DepthTarget = DeviceDepth;
     GBufferFramebuffer->RenderTargets = {
         Depth,
-        GBufferBaseColor,
-        GBufferMetalRough,
+        GBufferDiffuseAlbedo,
+        GBufferSpecularRough,
         GBufferNormals,
         GBufferGeoNormals,
         GBufferEmissive,
@@ -109,14 +113,17 @@ RenderTargets::RenderTargets(nvrhi::IDevice* device, int2 size)
     PrevGBufferFramebuffer->DepthTarget = DeviceDepth;
     PrevGBufferFramebuffer->RenderTargets = {
         PrevDepth,
-        PrevGBufferBaseColor,
-        PrevGBufferMetalRough,
+        PrevGBufferDiffuseAlbedo,
+        PrevGBufferSpecularRough,
         PrevGBufferNormals,
         PrevGBufferGeoNormals,
         GBufferEmissive,
         MotionVectors,
         NormalRoughness
     };
+
+    ResolvedFramebuffer = std::make_shared<engine::FramebufferFactory>(device);
+    ResolvedFramebuffer->RenderTargets = { ResolvedColor };
 
     // UAV-only textures
 
@@ -145,10 +152,6 @@ RenderTargets::RenderTargets(nvrhi::IDevice* device, int2 size)
     TaaFeedback2 = device->createTexture(desc);
 
     desc.format = nvrhi::Format::RGBA16_FLOAT;
-    desc.debugName = "ResolvedColor";
-    ResolvedColor = device->createTexture(desc);
-
-    desc.format = nvrhi::Format::RGBA16_FLOAT;
     desc.debugName = "HdrColor";
     HdrColor = device->createTexture(desc);
 
@@ -168,8 +171,8 @@ bool RenderTargets::IsUpdateRequired(int2 size)
 void RenderTargets::NextFrame()
 {
     std::swap(Depth, PrevDepth);
-    std::swap(GBufferBaseColor, PrevGBufferBaseColor);
-    std::swap(GBufferMetalRough, PrevGBufferMetalRough);
+    std::swap(GBufferDiffuseAlbedo, PrevGBufferDiffuseAlbedo);
+    std::swap(GBufferSpecularRough, PrevGBufferSpecularRough);
     std::swap(GBufferNormals, PrevGBufferNormals);
     std::swap(GBufferGeoNormals, PrevGBufferGeoNormals);
     std::swap(GBufferFramebuffer, PrevGBufferFramebuffer);

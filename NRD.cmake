@@ -1,18 +1,12 @@
 
-find_path(NRD_INCLUDE_DIR 
-	Nrd.h
-	PATHS ${CMAKE_CURRENT_LIST_DIR}/NRD/Include)
+if (EXISTS "${CMAKE_CURRENT_LIST_DIR}/NRD")
+	set(NRD_DXC_PATH ${DXC_DXIL_EXECUTABLE})
+	set(NRD_DXC_SPIRV_PATH ${DXC_SPIRV_EXECUTABLE})
+	option(NRD_STATIC_LIBRARY "" ON)
 
-if (WIN32)
-	find_path(NRD_LIB_DIR
-		NRD.lib
-		PATHS ${CMAKE_CURRENT_LIST_DIR}/NRD/Lib/Release)
-else()
-	find_path(NRD_LIB_DIR
-		libNRD.so
-		PATHS ${CMAKE_CURRENT_LIST_DIR}/NRD/Lib/Release)
+	add_subdirectory(NRD)
+	
+	set_target_properties(NRD PROPERTIES FOLDER NRD)
+	set_target_properties(Shaders PROPERTIES FOLDER NRD)
+	set_target_properties(CreateFolderForShaders PROPERTIES FOLDER NRD)
 endif()
-
-find_path(NRD_SHADERS_DIR
-	NRD.hlsl
-	PATHS ${CMAKE_CURRENT_LIST_DIR}/NRD/Shaders)

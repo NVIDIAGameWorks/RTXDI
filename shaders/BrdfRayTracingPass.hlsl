@@ -138,6 +138,7 @@ void RayGen()
     if (rayQuery.CommittedStatus() == COMMITTED_TRIANGLE_HIT)
     {
         payload.instanceID = rayQuery.CommittedInstanceID();
+        payload.geometryIndex = rayQuery.CommittedGeometryIndex();
         payload.primitiveIndex = rayQuery.CommittedPrimitiveIndex();
         payload.barycentrics = rayQuery.CommittedTriangleBarycentrics();
         payload.committedRayT = rayQuery.CommittedRayT();

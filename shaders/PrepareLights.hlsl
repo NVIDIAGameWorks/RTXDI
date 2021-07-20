@@ -105,7 +105,7 @@ void main(uint dispatchThreadId : SV_DispatchThreadID, uint groupThreadId : SV_G
 
         float3 radiance = material.emissiveColor;
 
-        if (material.emissiveTextureIndex >= 0 && geometry.texCoord1Offset != ~0u)
+        if (material.emissiveTextureIndex >= 0 && geometry.texCoord1Offset != ~0u && (material.flags & MaterialFlags_UseEmissiveTexture) != 0)
         {
             Texture2D emissiveTexture = t_BindlessTextures[NonUniformResourceIndex(material.emissiveTextureIndex)];
 

@@ -108,10 +108,7 @@ private:
     double m_WallclockTime = 0;
 
     std::vector<std::string> m_EnvironmentMaps;
-
-protected:
-    bool LoadCustomData(Json::Value& rootNode, tf::Executor* executor) override;
-
+    
 public:
     using Scene::Scene;
 

@@ -49,7 +49,7 @@ private:
     std::shared_ptr<donut::engine::CommonRenderPasses> m_CommonPasses;
     std::shared_ptr<donut::engine::Scene> m_Scene;
 
-    std::unordered_map<const donut::engine::MeshInstance*, uint32_t> m_InstanceLightBufferOffsets;
+    std::unordered_map<size_t, uint32_t> m_InstanceLightBufferOffsets; // hash(instance*, geometryIndex) -> bufferOffset
     std::unordered_map<const donut::engine::Light*, uint32_t> m_PrimitiveLightBufferOffsets;
 
 public:

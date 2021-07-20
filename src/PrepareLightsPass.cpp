@@ -349,15 +349,19 @@ void PrepareLightsPass::Process(
         {
             const auto& geometry = mesh->geometries[geometryIndex];
 
+            size_t instanceHash = 0;
+            nvrhi::hash_combine(instanceHash, instance.get());
+            nvrhi::hash_combine(instanceHash, geometryIndex);
+
             if (!any(geometry->material->emissiveColor != 0.f))
             {
                 // remove the info about this instance, just in case it was emissive and now it's not
-                m_InstanceLightBufferOffsets.erase(instance.get());
+                m_InstanceLightBufferOffsets.erase(instanceHash);
                 continue;
             }
 
             // find the previous offset of this instance in the light buffer
-            auto pOffset = m_InstanceLightBufferOffsets.find(instance.get());
+            auto pOffset = m_InstanceLightBufferOffsets.find(instanceHash);
 
             assert(geometryIndex < 0xfff);
 
@@ -368,7 +372,7 @@ void PrepareLightsPass::Process(
             task.previousLightBufferOffset = (pOffset != m_InstanceLightBufferOffsets.end()) ? int(pOffset->second) : -1;
 
             // record the current offset of this instance for use on the next frame
-            m_InstanceLightBufferOffsets[instance.get()] = lightBufferOffset;
+            m_InstanceLightBufferOffsets[instanceHash] = lightBufferOffset;
 
             lightBufferOffset += task.triangleCount;
 

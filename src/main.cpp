@@ -270,6 +270,14 @@ public:
             }
         }
 
+        if (!m_SunLight)
+        {
+            m_SunLight = std::make_shared<engine::DirectionalLight>();
+            sceneGraph->AttachLeafNode(sceneGraph->GetRootNode(), m_SunLight);
+            m_SunLight->SetDirection(dm::double3(0.15, -1.0, 0.3));
+            m_SunLight->angularSize = 1.f;
+        }
+
         m_CommandList->open();
         AssignIesProfiles(m_CommandList);
         m_CommandList->close();

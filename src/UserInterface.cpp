@@ -574,8 +574,9 @@ void UserInterface::CopyCamera() const
 
 static std::string getEnvironmentMapName(SampleScene& scene, const int index)
 {
-    if (index < 0)
+    if (index < 0 || index >= scene.GetEnvironmentMaps().size())
         return "None";
+
     const auto& environmentMapPath = scene.GetEnvironmentMaps()[index];
 
     if (environmentMapPath.empty())

@@ -170,24 +170,6 @@ std::shared_ptr<donut::engine::MeshInfo> SampleSceneTypeFactory::CreateMesh()
     return std::make_shared<SampleMesh>();
 }
 
-bool SampleScene::LoadCustomData(Json::Value& rootNode, tf::Executor* executor)
-{
-    // Enumerate the available environment maps
-    std::vector<std::string> environmentMapNames;
-    const std::string texturePath = "/media/environment/";
-    m_fs->enumerateFiles(texturePath, { ".exr" }, donut::vfs::enumerate_to_vector(environmentMapNames));
-
-    m_EnvironmentMaps.clear();
-    m_EnvironmentMaps.push_back(""); // Procedural env.map with no name
-
-    for (const std::string& mapName : environmentMapNames)
-    {
-        m_EnvironmentMaps.push_back(texturePath + mapName);
-    }
-
-    return Scene::LoadCustomData(rootNode, executor);
-}
-
 bool SampleScene::LoadWithExecutor(const std::filesystem::path& jsonFileName, tf::Executor* executor)
 {
     if (!Scene::LoadWithExecutor(jsonFileName, executor))
@@ -213,6 +195,19 @@ bool SampleScene::LoadWithExecutor(const std::filesystem::path& jsonFileName, tf
             }
             break;
         }
+    }
+
+    // Enumerate the available environment maps
+    std::vector<std::string> environmentMapNames;
+    const std::string texturePath = "/media/environment/";
+    m_fs->enumerateFiles(texturePath, { ".exr" }, donut::vfs::enumerate_to_vector(environmentMapNames));
+
+    m_EnvironmentMaps.clear();
+    m_EnvironmentMaps.push_back(""); // Procedural env.map with no name
+
+    for (const std::string& mapName : environmentMapNames)
+    {
+        m_EnvironmentMaps.push_back(texturePath + mapName);
     }
 
     return true;

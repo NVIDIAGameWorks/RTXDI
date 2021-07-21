@@ -64,8 +64,14 @@ void main(uint2 globalIdx : SV_DispatchThreadID)
             specular_illumination = t_Specular[globalIdx].rgba;
         }
 
-        compositedColor = diffuse_illumination.rgb * diffuseAlbedo;
-        compositedColor += specular_illumination.rgb * max(0.01, specularF0);
+        if (g_Const.enableTextures)
+        {
+            diffuse_illumination.rgb *= diffuseAlbedo;
+            specular_illumination.rgb *= max(0.01, specularF0);
+        }
+
+        compositedColor = diffuse_illumination.rgb;
+        compositedColor += specular_illumination.rgb;
         compositedColor += emissive.rgb;
     }
     else

@@ -416,10 +416,36 @@ float RAB_GetNextRandom(inout RAB_RandomSamplerState rng)
     return sampleUniformRng(rng);
 }
 
+// Computes the probability of a particular direction being sampled from the environment map
+// relative to all the other possible directions, based on the environment map pdf texture.
+float EvaluateEnvironmentMapSamplingPdf(float3 L)
+{
+    if (!g_Const.environmentMapImportanceSampling)
+        return 1.0;
+
+    float2 uv = directionToEquirectUV(L);
+    uv.x -= g_Const.environmentRotation;
+    uv = frac(uv);
+
+    uint2 pdfTextureSize = g_Const.environmentPdfTextureSize.xy;
+    uint2 texelPosition = uint2(pdfTextureSize * uv);
+    float texelValue = t_EnvironmentPdfTexture[texelPosition].r;
+    
+    int lastMipLevel = max(0, int(floor(log2(max(pdfTextureSize.x, pdfTextureSize.y)))) - 1);
+    float averageValue = 0.5 * (
+        t_EnvironmentPdfTexture.mips[lastMipLevel][uint2(0, 0)] +
+        t_EnvironmentPdfTexture.mips[lastMipLevel][uint2(1, 0)]);
+
+    return texelValue / averageValue;
+}
+
 float EvaluateSpecularSampledLightingWeight(RAB_Surface surface, float3 L, float solidAnglePdf)
 {
     if (!g_Const.enableBrdfMIS)
         return 1.0;
+
+    // Empirical boost factor for the light sampling pdf, to account for ReSTIR.
+    solidAnglePdf *= 50;
 
     float3 V = normalize(g_Const.view.cameraDirectionOrPosition.xyz - surface.worldPos);
     float ggxVndfPdf = ImportanceSampleGGX_VNDF_PDF(max(surface.roughness, 0.01), surface.normal, V, L);
@@ -452,9 +478,13 @@ float RAB_GetLightSampleTargetPdfForSurface(RAB_LightSample lightSample, RAB_Sur
     if (lightSample.lightType == PolymorphicLightType::kTriangle || 
         lightSample.lightType == PolymorphicLightType::kEnvironment)
     {
+        float solidAnglePdf = lightSample.solidAnglePdf;
+        if (lightSample.lightType == PolymorphicLightType::kEnvironment)
+            solidAnglePdf *= EvaluateEnvironmentMapSamplingPdf(L);
+
         // Only apply MIS to triangle and environment lights: other types have no geometric representation
         // and therefore cannot be hit by BRDF rays.
-        s *= EvaluateSpecularSampledLightingWeight(surface, L, lightSample.solidAnglePdf);
+        s *= EvaluateSpecularSampledLightingWeight(surface, L, solidAnglePdf);
     }
     
     float3 reflectedRadiance = lightSample.radiance * (d * surface.diffuseAlbedo + s);

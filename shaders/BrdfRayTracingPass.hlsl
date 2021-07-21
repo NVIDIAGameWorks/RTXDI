@@ -260,6 +260,8 @@ void RayGen()
                 solidAnglePdf = 1.0 / (2 * c_pi * c_pi * cosElevation);
             }
 
+            solidAnglePdf *= EvaluateEnvironmentMapSamplingPdf(ray.Direction);
+    
             float misWeight = 1.0 - EvaluateSpecularSampledLightingWeight(surface, ray.Direction, solidAnglePdf);
             environmentRadiance *= misWeight;
         }

@@ -74,6 +74,7 @@ struct UIData
     bool useRayQuery = true;
     bool enableBloom = true;
     float exposureBias = -1.0f;
+    float verticalFov = 60.f;
 
     uint32_t numAccumulatedFrames = 1;
 

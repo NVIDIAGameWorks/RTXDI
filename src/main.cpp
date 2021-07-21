@@ -474,7 +474,7 @@ public:
         if (activeCamera)
             m_View.SetMatrices(activeCamera->GetWorldToViewMatrix(), perspProjD3DStyleReverse(activeCamera->verticalFov, aspectRatio, activeCamera->zNear));
         else
-            m_View.SetMatrices(m_Camera.GetWorldToViewMatrix(), perspProjD3DStyleReverse(radians(60.f), aspectRatio, 0.1f));
+            m_View.SetMatrices(m_Camera.GetWorldToViewMatrix(), perspProjD3DStyleReverse(radians(m_ui.verticalFov), aspectRatio, 0.1f));
         m_View.UpdateCache();
 
         if (m_ViewPrevious.GetViewExtent().width() == 0)

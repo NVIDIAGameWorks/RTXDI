@@ -169,6 +169,7 @@ void UserInterface::GeneralSettingsWindow()
     ImGui::Checkbox("Rasterize G-Buffer", &m_ui.rasterizeGBuffer);
 
     ImGui::SliderFloat("Exposure bias", &m_ui.exposureBias, -4.f, 2.f);
+    ImGui::SliderFloat("Camera vFOV", &m_ui.verticalFov, 10.f, 110.f);
 
     ImGui::Checkbox("##enableFpsLimit", &m_ui.enableFpsLimit);
     ImGui::SameLine();

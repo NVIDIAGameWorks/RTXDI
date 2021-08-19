@@ -65,6 +65,7 @@ struct RTXDI_Reservoir
     static const uint c_DistanceYShift = 8;
     static const uint c_AgeShift = 16;
     static const uint c_MaxAge = 0xff;
+    static const uint c_DistanceMask = (1u << c_DistanceChannelBits) - 1;
     static const  int c_MaxDistance = int((1u << (c_DistanceChannelBits - 1)) - 1);
 
     // Light index helpers
@@ -75,7 +76,7 @@ struct RTXDI_Reservoir
 RTXDI_PackedReservoir RTXDI_PackReservoir(const RTXDI_Reservoir reservoir)
 {
     int2 clampedSpatialDistance = clamp(reservoir.spatialDistance, -RTXDI_Reservoir::c_MaxDistance, RTXDI_Reservoir::c_MaxDistance);
-    int clampedAge = min(reservoir.age, RTXDI_Reservoir::c_MaxAge);
+    int clampedAge = clamp(reservoir.age, 0, RTXDI_Reservoir::c_MaxAge);
 
     RTXDI_PackedReservoir data;
     data.lightData = reservoir.lightData;
@@ -85,8 +86,8 @@ RTXDI_PackedReservoir RTXDI_PackReservoir(const RTXDI_Reservoir reservoir)
         | (min(reservoir.M, RTXDI_Reservoir::c_MaxM) << RTXDI_Reservoir::c_MShift);
 
     data.distanceAge = 
-          (clampedSpatialDistance.x << RTXDI_Reservoir::c_DistanceXShift) 
-        | (clampedSpatialDistance.y << RTXDI_Reservoir::c_DistanceYShift) 
+          ((clampedSpatialDistance.x & RTXDI_Reservoir::c_DistanceMask) << RTXDI_Reservoir::c_DistanceXShift) 
+        | ((clampedSpatialDistance.y & RTXDI_Reservoir::c_DistanceMask) << RTXDI_Reservoir::c_DistanceYShift) 
         | (clampedAge << RTXDI_Reservoir::c_AgeShift);
 
     data.targetPdf = reservoir.targetPdf;

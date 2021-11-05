@@ -23,6 +23,7 @@ namespace donut::engine
 
 class RenderTargets;
 class EnvironmentLight;
+struct UIData;
 
 class CompositingPass
 {
@@ -32,9 +33,11 @@ private:
     nvrhi::ShaderHandle m_ComputeShader;
     nvrhi::ComputePipelineHandle m_ComputePipeline;
     nvrhi::BindingLayoutHandle m_BindingLayout;
+    nvrhi::BindingLayoutHandle m_RtxgiBindingLayout;
     nvrhi::BindingLayoutHandle m_BindlessLayout;
     nvrhi::BindingSetHandle m_BindingSetEven;
     nvrhi::BindingSetHandle m_BindingSetOdd;
+    nvrhi::BindingSetHandle m_RtxgiBindingSet;
 
     nvrhi::BufferHandle m_ConstantBuffer;
 
@@ -52,14 +55,16 @@ public:
 
     void CreatePipeline();
 
-    void CreateBindingSet(const RenderTargets& renderTargets);
+    void CreateBindingSet(const RenderTargets& renderTargets, const class RtxgiIntegration* rtxgi);
 
     void Render(
         nvrhi::ICommandList* commandList,
         const donut::engine::IView& view,
         const donut::engine::IView& viewPrev,
-        bool enableTextures,
         uint32_t denoiserMode,
+        uint32_t numRtxgiVolumes,
+        bool checkerboard,
+        const UIData& ui,
         const EnvironmentLight& environmentLight);
 
     void NextFrame();

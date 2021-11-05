@@ -14,11 +14,9 @@ struct ProfilerSection
 {
     enum Enum
     {
-        Frame,
         TlasUpdate,
         EnvironmentMap,
         GBufferFill,
-        BrdfRays,
         MeshProcessing,
         LocalLightPdfMap,
         PresampleLights,
@@ -28,9 +26,15 @@ struct ProfilerSection
         TemporalResampling,
         SpatialResampling,
         Shading,
-        LightingTotal,
+        RtxgiProbeTracing,
+        RtxgiProbeUpdates,
+        BrdfRays,
+        ShadeSecondary,
+        Gradients,
         Denoising,
         Glass,
+        Resolve,
+        Frame,
 
         // Not really a section, just using a slot in the count buffer
         MaterialReadback,

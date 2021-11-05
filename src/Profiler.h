@@ -23,6 +23,7 @@ namespace donut::app
 class Profiler
 {
 private:
+    bool m_Enabled = true;
     bool m_IsAccumulating = false;
     uint32_t m_AccumulatedFrames = 0;
     uint32_t m_ActiveBank = 0;
@@ -36,11 +37,13 @@ private:
     donut::app::DeviceManager& m_DeviceManager;
     nvrhi::DeviceHandle m_Device;
     nvrhi::BufferHandle m_RayCountBuffer;
-    nvrhi::BufferHandle m_RayCountReadback;
+    std::array<nvrhi::BufferHandle, 2> m_RayCountReadback;
     
 public:
     explicit Profiler(donut::app::DeviceManager& deviceManager);
 
+    bool IsEnabled() const { return m_Enabled; }
+    void EnableProfiler(bool enable);
     void EnableAccumulation(bool enable);
     void ResetAccumulation();
     void ResolvePreviousFrame();

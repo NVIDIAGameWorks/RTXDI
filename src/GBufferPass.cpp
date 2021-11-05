@@ -72,7 +72,7 @@ RaytracedGBufferPass::RaytracedGBufferPass(
 
 void RaytracedGBufferPass::CreatePipeline(bool useRayQuery)
 {
-    m_Pass.Init(m_Device, *m_ShaderFactory, "app/RaytracedGBuffer.hlsl", {}, useRayQuery, 16, m_BindingLayout, m_BindlessLayout);
+    m_Pass.Init(m_Device, *m_ShaderFactory, "app/RaytracedGBuffer.hlsl", {}, useRayQuery, 16, m_BindingLayout, nullptr, m_BindlessLayout);
 }
 
 void RaytracedGBufferPass::CreateBindingSet(
@@ -91,7 +91,7 @@ void RaytracedGBufferPass::CreateBindingSet(
             nvrhi::BindingSetItem::Texture_UAV(4, currentFrame ? renderTargets.GBufferGeoNormals : renderTargets.PrevGBufferGeoNormals),
             nvrhi::BindingSetItem::Texture_UAV(5, renderTargets.GBufferEmissive),
             nvrhi::BindingSetItem::Texture_UAV(6, renderTargets.MotionVectors),
-            nvrhi::BindingSetItem::Texture_UAV(7, renderTargets.NormalRoughness),
+            nvrhi::BindingSetItem::Texture_UAV(7, renderTargets.DeviceDepthUAV),
             nvrhi::BindingSetItem::TypedBuffer_UAV(8, m_Profiler->GetRayCountBuffer()),
 
             nvrhi::BindingSetItem::ConstantBuffer(0, m_ConstantBuffer),
@@ -130,6 +130,8 @@ void RaytracedGBufferPass::Render(
     constants.enableTransparentGeometry = settings.enableTransparentGeometry;
     constants.materialReadbackBufferIndex = ProfilerSection::MaterialReadback * 2;
     constants.materialReadbackPosition = (settings.enableMaterialReadback) ? settings.materialReadbackPosition : int2(-1, -1);
+    constants.textureLodBias = settings.textureLodBias;
+    constants.textureGradientScale = powf(2.f, settings.textureLodBias);
     commandList->writeBuffer(m_ConstantBuffer, &constants, sizeof(constants));
 
     PerPassConstants pushConstants{};
@@ -139,7 +141,8 @@ void RaytracedGBufferPass::Render(
         commandList, 
         view.GetViewExtent().width(), 
         view.GetViewExtent().height(), 
-        m_BindingSet, 
+        m_BindingSet,
+        nullptr,
         m_Scene->GetDescriptorTable(),
         &pushConstants,
         sizeof(pushConstants));
@@ -176,7 +179,8 @@ RasterizedGBufferPass::RasterizedGBufferPass(
         nvrhi::BindingLayoutItem::StructuredBuffer_SRV(0),
         nvrhi::BindingLayoutItem::StructuredBuffer_SRV(1),
         nvrhi::BindingLayoutItem::StructuredBuffer_SRV(2),
-        nvrhi::BindingLayoutItem::Sampler(0)
+        nvrhi::BindingLayoutItem::Sampler(0),
+        nvrhi::BindingLayoutItem::TypedBuffer_UAV(0)
     };
 
     m_BindingLayout = m_Device->createBindingLayout(globalBindingLayoutDesc);
@@ -193,7 +197,8 @@ void RasterizedGBufferPass::CreateBindingSet()
         nvrhi::BindingSetItem::StructuredBuffer_SRV(0, m_Scene->GetInstanceBuffer()),
         nvrhi::BindingSetItem::StructuredBuffer_SRV(1, m_Scene->GetGeometryBuffer()),
         nvrhi::BindingSetItem::StructuredBuffer_SRV(2, m_Scene->GetMaterialBuffer()),
-        nvrhi::BindingSetItem::Sampler(0, m_CommonPasses->m_AnisotropicWrapSampler)
+        nvrhi::BindingSetItem::Sampler(0, m_CommonPasses->m_AnisotropicWrapSampler),
+        nvrhi::BindingSetItem::TypedBuffer_UAV(0, m_Profiler->GetRayCountBuffer())
     };
 
     m_BindingSet = m_Device->createBindingSet(bindingSetDesc, m_BindingLayout);
@@ -237,7 +242,7 @@ void RasterizedGBufferPass::Render(
     commandList->beginMarker("GBufferFill");
 
     commandList->clearDepthStencilTexture(renderTargets.DeviceDepth, nvrhi::AllSubresources, true, 0.f, false, 0);
-    commandList->clearTextureFloat(renderTargets.Depth, nvrhi::AllSubresources, nvrhi::Color(0.f));
+    commandList->clearTextureFloat(renderTargets.Depth, nvrhi::AllSubresources, nvrhi::Color(BACKGROUND_DEPTH));
 
 
     GBufferConstants constants;
@@ -246,7 +251,17 @@ void RasterizedGBufferPass::Render(
     constants.roughnessOverride = (settings.enableRoughnessOverride) ? settings.roughnessOverride : -1.f;
     constants.metalnessOverride = (settings.enableMetalnessOverride) ? settings.metalnessOverride : -1.f;
     constants.normalMapScale = settings.normalMapScale;
+    constants.textureLodBias = settings.textureLodBias;
+    constants.textureGradientScale = powf(2.f, settings.textureLodBias);
+    constants.materialReadbackBufferIndex = ProfilerSection::MaterialReadback * 2;
+    constants.materialReadbackPosition = (settings.enableMaterialReadback) ? settings.materialReadbackPosition : int2(-1, -1);
     commandList->writeBuffer(m_ConstantBuffer, &constants, sizeof(constants));
+
+    nvrhi::IFramebuffer* framebuffer = renderTargets.GBufferFramebuffer->GetFramebuffer(nvrhi::AllSubresources);
+
+    commandList->setEnableAutomaticBarriers(false);
+    commandList->setResourceStatesForFramebuffer(framebuffer);
+    commandList->commitBarriers();
 
     const auto& instances = m_Scene->GetSceneGraph()->GetMeshInstances();
 
@@ -260,7 +275,7 @@ void RasterizedGBufferPass::Render(
         nvrhi::GraphicsState state;
         state.pipeline = alphaTested ? m_AlphaTestedPipeline : m_OpaquePipeline;
         state.bindings = { m_BindingSet, m_Scene->GetDescriptorTable() };
-        state.framebuffer = renderTargets.GBufferFramebuffer->GetFramebuffer(nvrhi::AllSubresources);
+        state.framebuffer = framebuffer;
         state.viewport = view.GetViewportState();
         commandList->setGraphicsState(state);
 
@@ -296,5 +311,74 @@ void RasterizedGBufferPass::Render(
         }
     }
 
+    commandList->setEnableAutomaticBarriers(true);
+
     commandList->endMarker();
+}
+
+PostprocessGBufferPass::PostprocessGBufferPass(nvrhi::IDevice* device, std::shared_ptr<donut::engine::ShaderFactory> shaderFactory)
+    : m_Device(device)
+    , m_ShaderFactory(std::move(shaderFactory))
+{
+    nvrhi::BindingLayoutDesc globalBindingLayoutDesc;
+    globalBindingLayoutDesc.visibility = nvrhi::ShaderType::Compute;
+    globalBindingLayoutDesc.bindings = {
+        nvrhi::BindingLayoutItem::Texture_UAV(0),
+        nvrhi::BindingLayoutItem::Texture_UAV(1),
+
+        nvrhi::BindingLayoutItem::Texture_SRV(0),
+        nvrhi::BindingLayoutItem::Texture_SRV(1)
+    };
+
+    m_BindingLayout = m_Device->createBindingLayout(globalBindingLayoutDesc);
+}
+
+void PostprocessGBufferPass::CreatePipeline()
+{
+    m_ComputeShader = m_ShaderFactory->CreateShader("app/PostprocessGBuffer.hlsl", "main", nullptr, nvrhi::ShaderType::Compute);
+
+    auto pipelineDesc = nvrhi::ComputePipelineDesc()
+        .setComputeShader(m_ComputeShader)
+        .addBindingLayout(m_BindingLayout);
+
+    m_ComputePipeline = m_Device->createComputePipeline(pipelineDesc);
+}
+
+void PostprocessGBufferPass::CreateBindingSet(const RenderTargets& renderTargets)
+{
+    for (int currentFrame = 0; currentFrame <= 1; currentFrame++)
+    {
+        nvrhi::BindingSetDesc bindingSetDesc;
+        bindingSetDesc.bindings = {
+            nvrhi::BindingSetItem::Texture_UAV(0, currentFrame ? renderTargets.GBufferSpecularRough : renderTargets.PrevGBufferSpecularRough),
+            nvrhi::BindingSetItem::Texture_UAV(1, renderTargets.NormalRoughness),
+
+            nvrhi::BindingSetItem::Texture_SRV(0, currentFrame ? renderTargets.GBufferNormals : renderTargets.PrevGBufferNormals),
+            nvrhi::BindingSetItem::Texture_SRV(1, currentFrame ? renderTargets.Depth : renderTargets.PrevDepth)
+        };
+
+        const nvrhi::BindingSetHandle bindingSet = m_Device->createBindingSet(bindingSetDesc, m_BindingLayout);
+
+        if (currentFrame)
+            m_BindingSet = bindingSet;
+        else
+            m_PrevBindingSet = bindingSet;
+    }
+}
+
+void PostprocessGBufferPass::Render(nvrhi::ICommandList* commandList, const donut::engine::IView& view)
+{
+    auto state = nvrhi::ComputeState()
+        .setPipeline(m_ComputePipeline)
+        .addBindingSet(m_BindingSet);
+
+    commandList->setComputeState(state);
+    commandList->dispatch(
+        dm::div_ceil(view.GetViewExtent().width(), 16),
+        dm::div_ceil(view.GetViewExtent().height(), 16));
+}
+
+void PostprocessGBufferPass::NextFrame()
+{
+    std::swap(m_BindingSet, m_PrevBindingSet);
 }

@@ -283,7 +283,9 @@ This function is a combination of `RTXDI_SampleLocalLightsFromReGIR` (or `RTXDI_
         uint maxHistoryLength;
         uint biasCorrectionMode;
         float depthThreshold;
-        float normalThreshold;
+        float normalThreshold;    
+        bool enableVisibilityShortcut;
+        bool enablePermutationSampling;
     };
     RTXDI_Reservoir RTXDI_TemporalResampling(
         uint2 pixelPosition,
@@ -292,7 +294,9 @@ This function is a combination of `RTXDI_SampleLocalLightsFromReGIR` (or `RTXDI_
         RAB_RandomSamplerState rng,
         RTXDI_TemporalResamplingParameters tparams,
         RTXDI_ResamplingRuntimeParameters params,
-        RWStructuredBuffer<RTXDI_PackedReservoir> LightReservoirs)
+        RWStructuredBuffer<RTXDI_PackedReservoir> LightReservoirs,
+        out int2 temporalSamplePixelPos,
+        inout RAB_LightSample selectedLightSample)
 
 Implements the core functionality of the temporal resampling pass. Takes the previous G-buffer, motion vectors, and two light reservoir buffers - current and previous - as inputs. Tries to match the surfaces in the current frame to surfaces in the previous frame. If a match is found for a given pixel, the current and previous reservoirs are combined.
 
@@ -321,7 +325,8 @@ For more information on the members of the `RTXDI_TemporalResamplingParameters` 
         RTXDI_SpatialResamplingParameters sparams,
         RTXDI_ResamplingRuntimeParameters params,
         RWStructuredBuffer<RTXDI_PackedReservoir> LightReservoirs,
-        Buffer<float2> NeighborOffsets)
+        Buffer<float2> NeighborOffsets,
+        inout RAB_LightSample selectedLightSample)
 
 
 Implements the core functionality of the spatial resampling pass. Operates on the current frame G-buffer and its reservoirs. For each pixel, considers a number of its neighbors and, if their surfaces are similar enough to the current pixel, combines their light reservoirs.
@@ -343,6 +348,8 @@ For more information on the members of the `RTXDI_SpatialResamplingParameters` s
         float normalThreshold;
         uint numSamples;
         float samplingRadius;
+        bool enableVisibilityShortcut;
+        bool enablePermutationSampling;
     };
     RTXDI_Reservoir RTXDI_SpatioTemporalResampling(
         uint2 pixelPosition,
@@ -352,7 +359,9 @@ For more information on the members of the `RTXDI_SpatialResamplingParameters` s
         RTXDI_SpatioTemporalResamplingParameters stparams,
         RTXDI_ResamplingRuntimeParameters params,
         RWStructuredBuffer<RTXDI_PackedReservoir> LightReservoirs,
-        Buffer<float2> NeighborOffsets)
+        Buffer<float2> NeighborOffsets,
+        out int2 temporalSamplePixelPos,
+        inout RAB_LightSample selectedLightSample)
 
 Implements the core functionality of a combined spatio-temporal resampling pass. This is similar to a sequence of `RTXDI_TemporalResampling` and `RTXDI_SpatialResampling`, with the exception that the input reservoirs are all taken from the previous frame. This function is useful for implementing a lighting solution in a single shader, which generates the initial samples, applies spatio-temporal resampling, and shades the final samples.
 

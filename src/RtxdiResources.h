@@ -34,6 +34,7 @@ public:
     nvrhi::BufferHandle RisLightDataBuffer;
     nvrhi::BufferHandle NeighborOffsetsBuffer;
     nvrhi::BufferHandle LightReservoirBuffer;
+    nvrhi::BufferHandle SecondarySurfaceBuffer;
     nvrhi::TextureHandle EnvironmentPdfTexture;
     nvrhi::TextureHandle LocalLightPdfTexture;
 
@@ -51,4 +52,6 @@ public:
     uint32_t GetMaxEmissiveMeshes() const { return m_MaxEmissiveMeshes; }
     uint32_t GetMaxEmissiveTriangles() const { return m_MaxEmissiveTriangles; }
     uint32_t GetMaxPrimitiveLights() const { return m_MaxPrimitiveLights; }
+
+    static constexpr uint32_t c_NumReservoirBuffers = 3;
 };

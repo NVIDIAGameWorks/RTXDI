@@ -24,6 +24,8 @@
 
 #include <utility>
 
+#include "RtxgiIntegration.h"
+
 #if WITH_NRD
 #include <NRD.h>
 #endif
@@ -64,12 +66,14 @@ LightingPasses::LightingPasses(
         nvrhi::BindingLayoutItem::Texture_SRV(8),
         nvrhi::BindingLayoutItem::Texture_SRV(9),
         nvrhi::BindingLayoutItem::Texture_SRV(10),
+        nvrhi::BindingLayoutItem::Texture_SRV(11),
+        nvrhi::BindingLayoutItem::Texture_SRV(12),
 
-        nvrhi::BindingLayoutItem::RayTracingAccelStruct(11),
-        nvrhi::BindingLayoutItem::RayTracingAccelStruct(12),
-        nvrhi::BindingLayoutItem::StructuredBuffer_SRV(13),
-        nvrhi::BindingLayoutItem::StructuredBuffer_SRV(14),
-        nvrhi::BindingLayoutItem::StructuredBuffer_SRV(15),
+        nvrhi::BindingLayoutItem::RayTracingAccelStruct(30),
+        nvrhi::BindingLayoutItem::RayTracingAccelStruct(31),
+        nvrhi::BindingLayoutItem::StructuredBuffer_SRV(32),
+        nvrhi::BindingLayoutItem::StructuredBuffer_SRV(33),
+        nvrhi::BindingLayoutItem::StructuredBuffer_SRV(34),
 
         nvrhi::BindingLayoutItem::StructuredBuffer_SRV(20),
         nvrhi::BindingLayoutItem::TypedBuffer_SRV(21),
@@ -80,10 +84,14 @@ LightingPasses::LightingPasses(
         nvrhi::BindingLayoutItem::StructuredBuffer_UAV(0),
         nvrhi::BindingLayoutItem::Texture_UAV(1),
         nvrhi::BindingLayoutItem::Texture_UAV(2),
+        nvrhi::BindingLayoutItem::Texture_UAV(3),
+        nvrhi::BindingLayoutItem::Texture_UAV(4),
+        nvrhi::BindingLayoutItem::Texture_UAV(5),
 
         nvrhi::BindingLayoutItem::TypedBuffer_UAV(10),
         nvrhi::BindingLayoutItem::TypedBuffer_UAV(11),
         nvrhi::BindingLayoutItem::TypedBuffer_UAV(12),
+        nvrhi::BindingLayoutItem::StructuredBuffer_UAV(13),
 
         nvrhi::BindingLayoutItem::VolatileConstantBuffer(0),
         nvrhi::BindingLayoutItem::PushConstants(1, sizeof(PerPassConstants)),
@@ -93,14 +101,25 @@ LightingPasses::LightingPasses(
 
     m_BindingLayout = m_Device->createBindingLayout(globalBindingLayoutDesc);
 
-    m_ConstantBuffer = m_Device->createBuffer(nvrhi::utils::CreateVolatileConstantBufferDesc(sizeof(ResamplingConstants), "ResamplingConstants", 8));
+    m_ConstantBuffer = m_Device->createBuffer(nvrhi::utils::CreateVolatileConstantBufferDesc(sizeof(ResamplingConstants), "ResamplingConstants", 16));
+
+#ifdef WITH_RTXGI
+    auto rtxgiBindingLayoutDesc = nvrhi::BindingLayoutDesc()
+        .setVisibility(nvrhi::ShaderType::Compute | nvrhi::ShaderType::AllRayTracing)
+        .addItem(nvrhi::BindingLayoutItem::StructuredBuffer_SRV(40))
+        .addItem(nvrhi::BindingLayoutItem::StructuredBuffer_SRV(41))
+        .addItem(nvrhi::BindingLayoutItem::Sampler(40));
+
+    m_RtxgiBindingLayout = m_Device->createBindingLayout(rtxgiBindingLayoutDesc);
+#endif
 }
 
 void LightingPasses::CreateBindingSet(
     nvrhi::rt::IAccelStruct* topLevelAS,
     nvrhi::rt::IAccelStruct* prevTopLevelAS,
     const RenderTargets& renderTargets,
-    const RtxdiResources& resources)
+    const RtxdiResources& resources,
+    const RtxgiIntegration* rtxgi)
 {
     assert(&renderTargets);
     assert(&resources);
@@ -121,13 +140,15 @@ void LightingPasses::CreateBindingSet(
             nvrhi::BindingSetItem::Texture_SRV(7, currentFrame ? renderTargets.PrevGBufferGeoNormals : renderTargets.GBufferGeoNormals),
             nvrhi::BindingSetItem::Texture_SRV(8, currentFrame ? renderTargets.PrevGBufferDiffuseAlbedo : renderTargets.GBufferDiffuseAlbedo),
             nvrhi::BindingSetItem::Texture_SRV(9, currentFrame ? renderTargets.PrevGBufferSpecularRough : renderTargets.GBufferSpecularRough),
-            nvrhi::BindingSetItem::Texture_SRV(10, renderTargets.MotionVectors),
+            nvrhi::BindingSetItem::Texture_SRV(10, currentFrame ? renderTargets.PrevRestirLuminance : renderTargets.RestirLuminance),
+            nvrhi::BindingSetItem::Texture_SRV(11, renderTargets.MotionVectors),
+            nvrhi::BindingSetItem::Texture_SRV(12, renderTargets.NormalRoughness),
             
-            nvrhi::BindingSetItem::RayTracingAccelStruct(11, currentFrame ? topLevelAS : prevTopLevelAS),
-            nvrhi::BindingSetItem::RayTracingAccelStruct(12, currentFrame ? prevTopLevelAS : topLevelAS),
-            nvrhi::BindingSetItem::StructuredBuffer_SRV(13, m_Scene->GetInstanceBuffer()),
-            nvrhi::BindingSetItem::StructuredBuffer_SRV(14, m_Scene->GetGeometryBuffer()),
-            nvrhi::BindingSetItem::StructuredBuffer_SRV(15, m_Scene->GetMaterialBuffer()),
+            nvrhi::BindingSetItem::RayTracingAccelStruct(30, currentFrame ? topLevelAS : prevTopLevelAS),
+            nvrhi::BindingSetItem::RayTracingAccelStruct(31, currentFrame ? prevTopLevelAS : topLevelAS),
+            nvrhi::BindingSetItem::StructuredBuffer_SRV(32, m_Scene->GetInstanceBuffer()),
+            nvrhi::BindingSetItem::StructuredBuffer_SRV(33, m_Scene->GetGeometryBuffer()),
+            nvrhi::BindingSetItem::StructuredBuffer_SRV(34, m_Scene->GetMaterialBuffer()),
 
             nvrhi::BindingSetItem::StructuredBuffer_SRV(20, resources.LightDataBuffer),
             nvrhi::BindingSetItem::TypedBuffer_SRV(21, resources.NeighborOffsetsBuffer),
@@ -138,10 +159,14 @@ void LightingPasses::CreateBindingSet(
             nvrhi::BindingSetItem::StructuredBuffer_UAV(0, resources.LightReservoirBuffer),
             nvrhi::BindingSetItem::Texture_UAV(1, renderTargets.DiffuseLighting),
             nvrhi::BindingSetItem::Texture_UAV(2, renderTargets.SpecularLighting),
+            nvrhi::BindingSetItem::Texture_UAV(3, renderTargets.TemporalSamplePositions),
+            nvrhi::BindingSetItem::Texture_UAV(4, renderTargets.Gradients),
+            nvrhi::BindingSetItem::Texture_UAV(5, currentFrame ? renderTargets.RestirLuminance : renderTargets.PrevRestirLuminance),
 
             nvrhi::BindingSetItem::TypedBuffer_UAV(10, resources.RisBuffer),
             nvrhi::BindingSetItem::TypedBuffer_UAV(11, resources.RisLightDataBuffer),
             nvrhi::BindingSetItem::TypedBuffer_UAV(12, m_Profiler->GetRayCountBuffer()),
+            nvrhi::BindingSetItem::StructuredBuffer_UAV(13, resources.SecondarySurfaceBuffer),
 
             nvrhi::BindingSetItem::ConstantBuffer(0, m_ConstantBuffer),
             nvrhi::BindingSetItem::PushConstants(1, sizeof(PerPassConstants)),
@@ -157,6 +182,17 @@ void LightingPasses::CreateBindingSet(
             m_PrevBindingSet = bindingSet;
     }
 
+#ifdef WITH_RTXGI
+    assert(rtxgi);
+
+    auto rtxgiBindingSetDesc = nvrhi::BindingSetDesc()
+        .addItem(nvrhi::BindingSetItem::StructuredBuffer_SRV(40, rtxgi->GetConstantBuffer()))
+        .addItem(nvrhi::BindingSetItem::StructuredBuffer_SRV(41, rtxgi->GetVolumeResourceIndicesBuffer()))
+        .addItem(nvrhi::BindingSetItem::Sampler(40, rtxgi->GetProbeSampler()));
+
+    m_RtxgiBindingSet = m_Device->createBindingSet(rtxgiBindingSetDesc, m_RtxgiBindingLayout);
+#endif
+    
     const auto& environmentPdfDesc = resources.EnvironmentPdfTexture->getDesc();
     m_EnvironmentPdfTextureSize.x = environmentPdfDesc.width;
     m_EnvironmentPdfTextureSize.y = environmentPdfDesc.height;
@@ -164,6 +200,9 @@ void LightingPasses::CreateBindingSet(
     const auto& localLightPdfDesc = resources.LocalLightPdfTexture->getDesc();
     m_LocalLightPdfTextureSize.x = localLightPdfDesc.width;
     m_LocalLightPdfTextureSize.y = localLightPdfDesc.height;
+
+    m_LightReservoirBuffer = resources.LightReservoirBuffer;
+    m_SecondarySurfaceBuffer = resources.SecondarySurfaceBuffer;
 }
 
 void LightingPasses::CreateComputePass(ComputePass& pass, const char* shaderName, const std::vector<donut::engine::ShaderMacro>& macros)
@@ -198,7 +237,7 @@ void LightingPasses::ExecuteComputePass(nvrhi::ICommandList* commandList, Comput
     commandList->endMarker();
 }
 
-void LightingPasses::ExecuteRayTracingPass(nvrhi::ICommandList* commandList, RayTracingPass& pass, bool enableRayCounts, const char* passName, dm::int2 dispatchSize, ProfilerSection::Enum profilerSection)
+void LightingPasses::ExecuteRayTracingPass(nvrhi::ICommandList* commandList, RayTracingPass& pass, bool enableRayCounts, const char* passName, dm::int2 dispatchSize, ProfilerSection::Enum profilerSection, nvrhi::IBindingSet* extraBindingSet)
 {
     commandList->beginMarker(passName);
     m_Profiler->BeginSection(commandList, profilerSection);
@@ -206,13 +245,13 @@ void LightingPasses::ExecuteRayTracingPass(nvrhi::ICommandList* commandList, Ray
     PerPassConstants pushConstants{};
     pushConstants.rayCountBufferIndex = enableRayCounts ? profilerSection : -1;
     
-    pass.Execute(commandList, dispatchSize.x, dispatchSize.y, m_BindingSet, m_Scene->GetDescriptorTable(), &pushConstants, sizeof(pushConstants));
+    pass.Execute(commandList, dispatchSize.x, dispatchSize.y, m_BindingSet, extraBindingSet, m_Scene->GetDescriptorTable(), &pushConstants, sizeof(pushConstants));
     
     m_Profiler->EndSection(commandList, profilerSection);
     commandList->endMarker();
 }
 
-void LightingPasses::CreatePipelines(const rtxdi::ContextParameters& contextParameters, bool useRayQuery)
+donut::engine::ShaderMacro LightingPasses::GetRegirMacro(const rtxdi::ContextParameters& contextParameters)
 {
     std::string regirMode;
 
@@ -229,24 +268,31 @@ void LightingPasses::CreatePipelines(const rtxdi::ContextParameters& contextPara
         break;
     }
 
+    return { "RTXDI_REGIR_MODE", regirMode };
+}
+
+void LightingPasses::CreatePipelines(const rtxdi::ContextParameters& contextParameters, bool useRayQuery)
+{
     std::vector<donut::engine::ShaderMacro> regirMacros = {
-        { "RTXDI_REGIR_MODE", regirMode }
+        GetRegirMacro(contextParameters) 
     };
 
-    CreateComputePass(m_PresampleLightsPass, "app/PresampleLights.hlsl", {});
-    CreateComputePass(m_PresampleEnvironmentMapPass, "app/PresampleEnvironmentMap.hlsl", {});
+    CreateComputePass(m_PresampleLightsPass, "app/LightingPasses/PresampleLights.hlsl", {});
+    CreateComputePass(m_PresampleEnvironmentMapPass, "app/LightingPasses/PresampleEnvironmentMap.hlsl", {});
 
     if (contextParameters.ReGIR.Mode != rtxdi::ReGIRMode::Disabled)
     {
-        CreateComputePass(m_PresampleReGIR, "app/PresampleReGIR.hlsl", regirMacros);
+        CreateComputePass(m_PresampleReGIR, "app/LightingPasses/PresampleReGIR.hlsl", regirMacros);
     }
 
-    m_GenerateInitialSamplesPass.Init(m_Device, *m_ShaderFactory, "app/GenerateInitialSamplesPass.hlsl", regirMacros, useRayQuery, RTXDI_SCREEN_SPACE_GROUP_SIZE, m_BindingLayout, m_BindlessLayout);
-    m_TemporalResamplingPass.Init(m_Device, *m_ShaderFactory, "app/TemporalResamplingPass.hlsl", {}, useRayQuery, RTXDI_SCREEN_SPACE_GROUP_SIZE, m_BindingLayout, m_BindlessLayout);
-    m_SpatialResamplingPass.Init(m_Device, *m_ShaderFactory, "app/SpatialResamplingPass.hlsl", {}, useRayQuery, RTXDI_SCREEN_SPACE_GROUP_SIZE, m_BindingLayout, m_BindlessLayout);
-    m_ShadeSamplesPass.Init(m_Device, *m_ShaderFactory, "app/ShadeSamplesPass.hlsl", regirMacros, useRayQuery, RTXDI_SCREEN_SPACE_GROUP_SIZE, m_BindingLayout, m_BindlessLayout);
-    m_BrdfRayTracingPass.Init(m_Device, *m_ShaderFactory, "app/BrdfRayTracingPass.hlsl", regirMacros, useRayQuery, RTXDI_SCREEN_SPACE_GROUP_SIZE, m_BindingLayout, m_BindlessLayout);
-    m_FusedResamplingPass.Init(m_Device, *m_ShaderFactory, "app/FusedResamplingPass.hlsl", regirMacros, useRayQuery, RTXDI_SCREEN_SPACE_GROUP_SIZE, m_BindingLayout, m_BindlessLayout);
+    m_GenerateInitialSamplesPass.Init(m_Device, *m_ShaderFactory, "app/LightingPasses/GenerateInitialSamples.hlsl", regirMacros, useRayQuery, RTXDI_SCREEN_SPACE_GROUP_SIZE, m_BindingLayout, nullptr, m_BindlessLayout);
+    m_TemporalResamplingPass.Init(m_Device, *m_ShaderFactory, "app/LightingPasses/TemporalResampling.hlsl", {}, useRayQuery, RTXDI_SCREEN_SPACE_GROUP_SIZE, m_BindingLayout, nullptr, m_BindlessLayout);
+    m_SpatialResamplingPass.Init(m_Device, *m_ShaderFactory, "app/LightingPasses/SpatialResampling.hlsl", {}, useRayQuery, RTXDI_SCREEN_SPACE_GROUP_SIZE, m_BindingLayout, nullptr, m_BindlessLayout);
+    m_ShadeSamplesPass.Init(m_Device, *m_ShaderFactory, "app/LightingPasses/ShadeSamples.hlsl", regirMacros, useRayQuery, RTXDI_SCREEN_SPACE_GROUP_SIZE, m_BindingLayout, nullptr, m_BindlessLayout);
+    m_BrdfRayTracingPass.Init(m_Device, *m_ShaderFactory, "app/LightingPasses/BrdfRayTracing.hlsl", {}, useRayQuery, RTXDI_SCREEN_SPACE_GROUP_SIZE, m_BindingLayout, nullptr, m_BindlessLayout);
+    m_ShadeSecondarySurfacesPass.Init(m_Device, *m_ShaderFactory, "app/LightingPasses/ShadeSecondarySurfaces.hlsl", regirMacros, useRayQuery, RTXDI_SCREEN_SPACE_GROUP_SIZE, m_BindingLayout, m_RtxgiBindingLayout, m_BindlessLayout);
+    m_FusedResamplingPass.Init(m_Device, *m_ShaderFactory, "app/LightingPasses/FusedResampling.hlsl", regirMacros, useRayQuery, RTXDI_SCREEN_SPACE_GROUP_SIZE, m_BindingLayout, nullptr, m_BindlessLayout);
+    m_GradientsPass.Init(m_Device, *m_ShaderFactory, "app/LightingPasses/ComputeGradients.hlsl", {}, useRayQuery, RTXDI_SCREEN_SPACE_GROUP_SIZE, m_BindingLayout, nullptr, m_BindlessLayout);
 }
 
 #if WITH_NRD
@@ -306,19 +352,29 @@ void LightingPasses::FillResamplingConstants(
     constants.finalVisibilityMaxDistance = lightingSettings.finalVisibilityMaxDistance;
     constants.discardInvisibleSamples = lightingSettings.discardInvisibleSamples;
     constants.numRegirBuildSamples = lightingSettings.numRegirBuildSamples;
+    constants.enablePermutationSampling = lightingSettings.enablePermutationSampling;
+    constants.permutationSamplingThreshold = lightingSettings.permutationSamplingThreshold;
+
+    constants.numSecondarySamples = lightingSettings.enableSecondaryResampling ? lightingSettings.numSecondarySamples : 0;
+    constants.secondaryBiasCorrection = lightingSettings.secondaryBiasCorrection;
+    constants.secondarySamplingRadius = lightingSettings.secondarySamplingRadius;
+    constants.secondaryDepthThreshold = lightingSettings.secondaryDepthThreshold;
+    constants.secondaryNormalThreshold = lightingSettings.secondaryNormalThreshold;
 
     if (lightingSettings.useFusedKernel)
     {
         constants.temporalInputBufferIndex = m_LastFrameOutputReservoir;
-        constants.shadeInputBufferIndex = !m_LastFrameOutputReservoir;
+        constants.shadeInputBufferIndex = (m_LastFrameOutputReservoir + 1) % RtxdiResources::c_NumReservoirBuffers;
     }
     else
     {
-        constants.initialOutputBufferIndex = !m_LastFrameOutputReservoir;
+        constants.initialOutputBufferIndex = (m_LastFrameOutputReservoir + 1) % RtxdiResources::c_NumReservoirBuffers;
         constants.temporalInputBufferIndex = m_LastFrameOutputReservoir;
-        constants.temporalOutputBufferIndex = constants.initialOutputBufferIndex;
-        constants.spatialInputBufferIndex = constants.temporalOutputBufferIndex;
-        constants.spatialOutputBufferIndex = !constants.spatialInputBufferIndex;
+        constants.temporalOutputBufferIndex = (constants.temporalInputBufferIndex + 1) % RtxdiResources::c_NumReservoirBuffers;
+        constants.spatialInputBufferIndex = lightingSettings.enableTemporalResampling
+            ? constants.temporalOutputBufferIndex
+            : constants.initialOutputBufferIndex;
+        constants.spatialOutputBufferIndex = (constants.spatialInputBufferIndex + 1) % RtxdiResources::c_NumReservoirBuffers;
         constants.shadeInputBufferIndex = lightingSettings.enableSpatialResampling
             ? constants.spatialOutputBufferIndex
             : constants.temporalOutputBufferIndex;
@@ -337,6 +393,25 @@ void LightingPasses::FillResamplingConstants(
     m_CurrentFrameOutputReservoir = constants.shadeInputBufferIndex;
 }
 
+void LightingPasses::FillConstantBufferForProbeTracing(
+    nvrhi::ICommandList* commandList,
+    rtxdi::Context& context,
+    const RenderSettings& localSettings,
+    const rtxdi::FrameParameters& frameParameters)
+{
+    ResamplingConstants constants = {};
+    constants.frameIndex = frameParameters.frameIndex;
+    context.FillRuntimeParameters(constants.runtimeParams, frameParameters);
+    FillResamplingConstants(constants, localSettings, frameParameters);
+
+    constants.numIndirectRegirSamples = localSettings.enableReGIR ? localSettings.numRtxgiRegirSamples : 0;
+    constants.numIndirectLocalLightSamples = localSettings.numRtxgiLocalLightSamples;
+    constants.numIndirectInfiniteLightSamples = localSettings.numRtxgiInfiniteLightSamples;
+    constants.numIndirectEnvironmentSamples = frameParameters.environmentLightPresent ? localSettings.numRtxgiEnvironmentSamples : 0;
+
+    commandList->writeBuffer(m_ConstantBuffer, &constants, sizeof(constants));
+}
+
 void LightingPasses::Render(
     nvrhi::ICommandList* commandList,
     rtxdi::Context& context,
@@ -344,7 +419,9 @@ void LightingPasses::Render(
     const donut::engine::IView& previousView,
     const RenderSettings& localSettings,
     const rtxdi::FrameParameters& frameParameters,
-    bool enableSpecularMis)
+    bool enableSpecularMis,
+    bool enableAccumulation,
+    uint32_t visualizationMode)
 {
     ResamplingConstants constants = {};
     constants.frameIndex = frameParameters.frameIndex;
@@ -353,6 +430,7 @@ void LightingPasses::Render(
     context.FillRuntimeParameters(constants.runtimeParams, frameParameters);
     FillResamplingConstants(constants, localSettings, frameParameters);
     constants.enableBrdfMIS = enableSpecularMis;
+    constants.enableAccumulation = enableAccumulation;
 
     commandList->writeBuffer(m_ConstantBuffer, &constants, sizeof(constants));
     
@@ -397,6 +475,12 @@ void LightingPasses::Render(
     if (context.GetParameters().CheckerboardSamplingMode != rtxdi::CheckerboardMode::Off)
         dispatchSize.x /= 2;
 
+    // Run the lighting passes in the necessary sequence: one fused kernel or multiple separate passes.
+    //
+    // Note: the below code places explicit UAV barriers between subsequent passes
+    // because NVRHI misses them, as the binding sets are exactly the same between these passes.
+    // That equality makes NVRHI take a shortcut for performance and it doesn't look at bindings at all.
+
     if (localSettings.useFusedKernel)
     {
         ExecuteRayTracingPass(commandList, m_FusedResamplingPass, localSettings.enableRayCounts, "FusedResampling", dispatchSize, ProfilerSection::Shading);
@@ -407,15 +491,28 @@ void LightingPasses::Render(
 
         if (localSettings.enableTemporalResampling)
         {
+            nvrhi::utils::BufferUavBarrier(commandList, m_LightReservoirBuffer);
+
             ExecuteRayTracingPass(commandList, m_TemporalResamplingPass, localSettings.enableRayCounts, "TemporalResampling", dispatchSize, ProfilerSection::TemporalResampling);
         }
 
         if (localSettings.enableSpatialResampling)
         {
+            nvrhi::utils::BufferUavBarrier(commandList, m_LightReservoirBuffer);
+
             ExecuteRayTracingPass(commandList, m_SpatialResamplingPass, localSettings.enableRayCounts, "SpatialResampling", dispatchSize, ProfilerSection::SpatialResampling);
         }
 
-        ExecuteRayTracingPass(commandList, m_ShadeSamplesPass, localSettings.enableRayCounts, "ShadeSamplesPass", dispatchSize, ProfilerSection::Shading);
+        nvrhi::utils::BufferUavBarrier(commandList, m_LightReservoirBuffer);
+
+        ExecuteRayTracingPass(commandList, m_ShadeSamplesPass, localSettings.enableRayCounts, "ShadeSamples", dispatchSize, ProfilerSection::Shading);
+    }
+    
+    if (localSettings.enableGradients)
+    {
+        nvrhi::utils::BufferUavBarrier(commandList, m_LightReservoirBuffer);
+
+        ExecuteRayTracingPass(commandList, m_GradientsPass, localSettings.enableRayCounts, "Gradients", (dispatchSize + RTXDI_GRAD_FACTOR - 1) / RTXDI_GRAD_FACTOR, ProfilerSection::Gradients);
     }
 }
 
@@ -428,7 +525,9 @@ void LightingPasses::RenderBrdfRays(
     const EnvironmentLight& environmentLight,
     bool enableIndirect,
     bool enableAdditiveBlend,
-    bool enableSpecularMis)
+    bool enableSpecularMis,
+    uint32_t numRtxgiVolumes,
+    bool enableAccumulation)
 {
     ResamplingConstants constants = {};
     view.FillPlanarViewConstants(constants.view);
@@ -437,7 +536,9 @@ void LightingPasses::RenderBrdfRays(
     constants.enableBrdfMIS = enableSpecularMis;
     constants.enableBrdfIndirect = enableIndirect;
     constants.enableBrdfAdditiveBlend = enableAdditiveBlend;
+    constants.numRtxgiVolumes = numRtxgiVolumes;
     constants.enableEnvironmentMap = (environmentLight.textureIndex >= 0);
+    constants.enableAccumulation = enableAccumulation;
     constants.environmentMapTextureIndex = (environmentLight.textureIndex >= 0) ? environmentLight.textureIndex : 0;
     constants.environmentScale = environmentLight.radianceScale.x;
     constants.environmentRotation = environmentLight.rotation;
@@ -455,6 +556,14 @@ void LightingPasses::RenderBrdfRays(
         dispatchSize.x /= 2;
 
     ExecuteRayTracingPass(commandList, m_BrdfRayTracingPass, localSettings.enableRayCounts, "BrdfRayTracingPass", dispatchSize, ProfilerSection::BrdfRays);
+
+    if (enableIndirect)
+    {
+        // Place an explicit UAV barrier between the passes. See the note on barriers in Render(...)
+        nvrhi::utils::BufferUavBarrier(commandList, m_SecondarySurfaceBuffer);
+
+        ExecuteRayTracingPass(commandList, m_ShadeSecondarySurfacesPass, localSettings.enableRayCounts, "ShadeSecondarySurfacesPass", dispatchSize, ProfilerSection::ShadeSecondary, m_RtxgiBindingSet);
+    }
 }
 
 void LightingPasses::NextFrame()

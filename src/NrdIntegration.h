@@ -58,6 +58,7 @@ public:
         const donut::engine::PlanarView& view, 
         const donut::engine::PlanarView& viewPrev,
         uint32_t frameIndex,
+        bool enableConfidenceInputs,
         const void* methodSettings);
 
     const nrd::Method GetMethod() const { return m_Method; }

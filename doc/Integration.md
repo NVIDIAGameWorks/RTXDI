@@ -90,13 +90,17 @@ Build the world-space light sampling structure for [ReGIR](#regir) (Reservoir-ba
 
 ### 7. Perform light sampling and resampling
 
-Perform light sampling and resampling in screen space using shaders that call the following functions: `[RTXDI_SampleLightsForSurface`](ShaderAPI.md#rtxdi_samplelightsforsurface), [`RTXDI_TemporalResampling`](ShaderAPI.md#rtxdi_temporalresampling), [`RTXDI_SpatialResampling`](ShaderAPI.md#rtxdi_spatialresampling), [`RTXDI_SpatioTemporalResampling`](ShaderAPI.md#RTXDI_SpatioTemporalResampling). See e.g. [`GenerateInitialSamplesPass.hlsl`](../shaders/GenerateInitialSamplesPass.hlsl) for a shader example, and [`LightingPasses.cpp`](../src/LightingPasses.cpp) for host-side code example. Examples of resampled pipelines are provided [below](#examples).
+Perform light sampling and resampling in screen space using shaders that call the following functions: `[RTXDI_SampleLightsForSurface`](ShaderAPI.md#rtxdi_samplelightsforsurface), [`RTXDI_TemporalResampling`](ShaderAPI.md#rtxdi_temporalresampling), [`RTXDI_SpatialResampling`](ShaderAPI.md#rtxdi_spatialresampling), [`RTXDI_SpatioTemporalResampling`](ShaderAPI.md#RTXDI_SpatioTemporalResampling). See e.g. [`GenerateInitialSamples.hlsl`](../shaders/LightingPasses/GenerateInitialSamples.hlsl) for a shader example, and [`LightingPasses.cpp`](../src/LightingPasses.cpp) for host-side code example. Examples of resampled pipelines are provided [below](#examples).
 
 ### 8. Shade
 
-Shade the final selected light samples using your final material BRDF. Load the sample from the reservoir buffer, trace a visibility ray, store the visibility in the reservoir if desired, and evaluate the BRDF. See [`ShadeSamplesPass.hlsl`](../shaders/ShadeSamplesPass.hlsl) for an example.
+Shade the final selected light samples using your final material BRDF. Load the sample from the reservoir buffer, trace a visibility ray, store the visibility in the reservoir if desired, and evaluate the BRDF. See [`ShadeSamples.hlsl`](../shaders/LightingPasses/ShadeSamples.hlsl) for an example.
 
-### 9. Denoise
+### 9. Compute the denoiser confidence inputs (Optional)
+
+The application can use the light sampling information coming from RTXDI to compute a confidence channel that improves denoiser responsiveness. For more information about this process, see [the Confidence guide](Confidence.md).
+
+### 10. Denoise
 
 Apply denoising and composite the denoised lighting with other effects.
 

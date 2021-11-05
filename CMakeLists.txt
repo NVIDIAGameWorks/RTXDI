@@ -18,6 +18,12 @@ if (MSVC)
 	set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} /MT")
 	set(CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} /MT")
 	set(CMAKE_C_FLAGS_MINSIZEREL "${CMAKE_C_FLAGS_MINSIZEREL} /MT")
+
+elseif (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+
+	# JsonCpp uses its own deprecated methods, which produces annoying warnings.
+	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-deprecated-declarations")
+
 endif()
 
 option(DONUT_USE_DXIL_ON_DX12 "" ON)
@@ -43,7 +49,7 @@ if (EXISTS "${PACKMAN_DXC}")
 	endif()
 endif()
 
-set(DONUT_SHADERS_OUTPUT_DIR "${CMAKE_SOURCE_DIR}/bin/shaders/framework")
+set(DONUT_SHADERS_OUTPUT_DIR "${CMAKE_BINARY_DIR}/bin/shaders/framework")
 
 if (EXISTS "${CMAKE_CURRENT_LIST_DIR}/donut")
 	add_subdirectory(donut)
@@ -54,7 +60,28 @@ else()
 endif()
 
 include(NRD.cmake)
+include(DLSS.cmake)
+
+if (EXISTS "${CMAKE_CURRENT_LIST_DIR}/RTXGI/rtxgi-sdk/CMakeLists.txt")
+	option(RTXDI_WITH_RTXGI "Enable the RTXGI integration" ON)
+
+	if (RTXDI_WITH_RTXGI)
+		option(RTXGI_DDGI_RESOURCE_MANAGEMENT "" ON)
+		option(RTXGI_DDGI_USE_SHADER_CONFIG_FILE "" ON)
+
+		if (UNIX)
+			set(RTXGI_API_VULKAN_SDK ON)
+			set(Vulkan_INCLUDE_DIR "${CMAKE_CURRENT_LIST_DIR}/donut/nvrhi/thirdparty/Vulkan-Headers/include")
+		endif()
+
+		add_subdirectory(RTXGI/rtxgi-sdk)
+	endif()
+endif()
 
 add_subdirectory(rtxdi-sdk)
 add_subdirectory(shaders)
 add_subdirectory(src)
+
+if (MSVC)
+	set_property(DIRECTORY PROPERTY VS_STARTUP_PROJECT rtxdi-sample)
+endif()

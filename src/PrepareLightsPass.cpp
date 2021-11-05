@@ -232,13 +232,24 @@ static bool ConvertLight(const donut::engine::Light& light, PolymorphicLightInfo
     }
     case LightType_Point: {
         auto& point = static_cast<const donut::engine::PointLight&>(light);
-        float projectedArea = dm::PI_f * square(point.radius);
-        float3 radiance = point.color * point.intensity / projectedArea;
+        if (point.radius == 0.f)
+        {
+            float3 flux = point.color * point.intensity;
 
-        polymorphic.colorTypeAndFlags = (uint32_t)PolymorphicLightType::kSphere << kPolymorphicLightTypeShift;
-        packLightColor(radiance, polymorphic);
-        polymorphic.center = float3(point.GetPosition());
-        polymorphic.scalars = fp32ToFp16(point.radius);
+            polymorphic.colorTypeAndFlags = (uint32_t)PolymorphicLightType::kPoint << kPolymorphicLightTypeShift;
+            packLightColor(flux, polymorphic);
+            polymorphic.center = float3(point.GetPosition());
+        }
+        else
+        {
+            float projectedArea = dm::PI_f * square(point.radius);
+            float3 radiance = point.color * point.intensity / projectedArea;
+
+            polymorphic.colorTypeAndFlags = (uint32_t)PolymorphicLightType::kSphere << kPolymorphicLightTypeShift;
+            packLightColor(radiance, polymorphic);
+            polymorphic.center = float3(point.GetPosition());
+            polymorphic.scalars = fp32ToFp16(point.radius);
+        }
 
         return true;
     }
@@ -353,7 +364,7 @@ void PrepareLightsPass::Process(
             nvrhi::hash_combine(instanceHash, instance.get());
             nvrhi::hash_combine(instanceHash, geometryIndex);
 
-            if (!any(geometry->material->emissiveColor != 0.f))
+            if (!any(geometry->material->emissiveColor != 0.f) || geometry->material->emissiveIntensity <= 0.f)
             {
                 // remove the info about this instance, just in case it was emissive and now it's not
                 m_InstanceLightBufferOffsets.erase(instanceHash);

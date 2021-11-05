@@ -125,6 +125,11 @@ struct RTXDI_ResamplingRuntimeParameters
     uint32_t environmentTileCount;
     uint32_t neighborOffsetMask;
 
+    uint32_t uniformRandomNumber;
+    uint32_t pad1;
+    uint32_t pad2;
+    uint32_t pad3;
+
     RTXDI_ReGIRCommonParameters regirCommon;
     RTXDI_ReGIRGridParameters regirGrid;
     RTXDI_ReGIROnionParameters regirOnion;

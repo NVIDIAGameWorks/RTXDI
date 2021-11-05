@@ -15,6 +15,8 @@ bool ShadeSurfaceWithLightSample(
     inout RTXDI_Reservoir reservoir,
     RAB_Surface surface,
     RAB_LightSample lightSample,
+    bool previousFrameTLAS,
+    bool enableVisibilityReuse,
     out float3 diffuse,
     out float3 specular,
     out float lightDistance)
@@ -32,7 +34,7 @@ bool ShadeSurfaceWithLightSample(
         float3 visibility = 0;
         bool visibilityReused = false;
 
-        if (g_Const.reuseFinalVisibility)
+        if (g_Const.reuseFinalVisibility && enableVisibilityReuse)
         {
             RTXDI_VisibilityReuseParameters rparams;
             rparams.maxAge = g_Const.finalVisibilityMaxAge;
@@ -43,7 +45,10 @@ bool ShadeSurfaceWithLightSample(
 
         if (!visibilityReused)
         {
-            visibility = GetFinalVisibility(surface, lightSample);
+            if (previousFrameTLAS && g_Const.enablePreviousTLAS)
+                visibility = GetFinalVisibility(PrevSceneBVH, surface, lightSample);
+            else
+                visibility = GetFinalVisibility(SceneBVH, surface, lightSample);
             RTXDI_StoreVisibilityInReservoir(reservoir, visibility, g_Const.discardInvisibleSamples);
             needToStore = true;
         }
@@ -59,11 +64,12 @@ bool ShadeSurfaceWithLightSample(
         lightDistance = length(L);
         L /= lightDistance;
 
-        float3 V = normalize(g_Const.view.cameraDirectionOrPosition.xyz - surface.worldPos);
+        float3 V = normalize(surface.viewPoint - surface.worldPos);
         
         float d = Lambert(surface.normal, -L);
         float3 s = GGX_times_NdotL(V, L, surface.normal, surface.roughness, surface.specularF0);
 
+#if RAB_ENABLE_SPECULAR_MIS
         if (lightSample.lightType == PolymorphicLightType::kTriangle || 
             lightSample.lightType == PolymorphicLightType::kEnvironment)
         {
@@ -73,6 +79,7 @@ bool ShadeSurfaceWithLightSample(
 
             s *= EvaluateSpecularSampledLightingWeight(surface, L, solidAnglePdf);
         }
+#endif
     
         diffuse = d * lightSample.radiance;
         specular = s * lightSample.radiance;
@@ -81,70 +88,90 @@ bool ShadeSurfaceWithLightSample(
     return needToStore;
 }
 
-float3 DemodulateSpecular(RAB_Surface surface, float3 specular)
+float3 DemodulateSpecular(float3 surfaceSpecularF0, float3 specular)
 {
-    return specular / max(0.01, surface.specularF0);
+    return specular / max(0.01, surfaceSpecularF0);
 }
 
 
-void StoreRestirShadingOutput(
-    uint2 GlobalIndex,
+void StoreShadingOutput(
+    uint2 reservoirPosition,
     uint2 pixelPosition,
-    uint activeCheckerboardField,
-    RAB_Surface surface,
+    float viewDepth,
+    float roughness,
     float3 diffuse,
     float3 specular,
-    float lightDistance)
+    float lightDistance,
+    bool isFirstPass,
+    bool isLastPass)
 {
-
-#if RTXDI_REGIR_MODE != RTXDI_REGIR_DISABLED
-    if (g_Const.visualizeRegirCells)
-    {
-        diffuse *= RTXDI_VisualizeReGIRCells(g_Const.runtimeParams, RAB_GetSurfaceWorldPos(surface));
-    }
-#endif
-  
     uint2 lightingTexturePos = (g_Const.denoiserMode == DENOISER_MODE_REBLUR)
-        ? GlobalIndex
+        ? reservoirPosition
         : pixelPosition;
 
-    if (g_Const.denoiserMode != DENOISER_MODE_REBLUR && activeCheckerboardField != 0)
-    {
-        diffuse *= 2;
-        specular *= 2;
+    float diffuseHitT = lightDistance;
+    float specularHitT = lightDistance;
 
+    if (!isFirstPass)
+    {
+        float4 priorDiffuse = u_DiffuseLighting[lightingTexturePos];
+        float4 priorSpecular = u_SpecularLighting[lightingTexturePos];
+
+        if (calcLuminance(diffuse) > calcLuminance(priorDiffuse.rgb) || lightDistance == 0)
+            diffuseHitT = priorDiffuse.w;
+
+        if (calcLuminance(specular) > calcLuminance(priorSpecular.rgb) || lightDistance == 0)
+            specularHitT = priorSpecular.w;
+        
+        diffuse += priorDiffuse.rgb;
+        specular += priorSpecular.rgb;
+    }
+
+    if (g_Const.denoiserMode != DENOISER_MODE_REBLUR && g_Const.runtimeParams.activeCheckerboardField != 0 && isLastPass)
+    {
         int2 otherFieldPixelPosition = pixelPosition;
-        otherFieldPixelPosition.x += (activeCheckerboardField == 1) == ((pixelPosition.y & 1) != 0)
+        otherFieldPixelPosition.x += (g_Const.runtimeParams.activeCheckerboardField == 1) == ((pixelPosition.y & 1) != 0)
             ? 1 : -1;
 
-        u_DiffuseLighting[otherFieldPixelPosition] = 0;
-        u_SpecularLighting[otherFieldPixelPosition] = 0;
+        if (g_Const.denoiserMode == DENOISER_MODE_RELAX || g_Const.enableAccumulation)
+        {
+            diffuse *= 2;
+            specular *= 2;
+
+            u_DiffuseLighting[otherFieldPixelPosition] = 0;
+            u_SpecularLighting[otherFieldPixelPosition] = 0;
+        }
+        else // g_Const.denoiserMode == DENOISER_MODE_OFF
+        {
+            u_DiffuseLighting[otherFieldPixelPosition] = float4(diffuse, 0);
+            u_SpecularLighting[otherFieldPixelPosition] = float4(specular, 0);
+        }
     }
 
 #if WITH_NRD
-    if(g_Const.denoiserMode != DENOISER_MODE_OFF && g_Const.enableDenoiserInputPacking)
+    if(g_Const.denoiserMode != DENOISER_MODE_OFF && isLastPass)
     {
         const bool useReLAX = (g_Const.denoiserMode == DENOISER_MODE_RELAX);
  
         if (useReLAX)
         {
-            u_DiffuseLighting[lightingTexturePos] = RELAX_FrontEnd_PackRadiance(diffuse, lightDistance);
-            u_SpecularLighting[lightingTexturePos] = RELAX_FrontEnd_PackRadiance(specular, lightDistance);
+            u_DiffuseLighting[lightingTexturePos] = RELAX_FrontEnd_PackRadianceAndHitDist(diffuse, diffuseHitT);
+            u_SpecularLighting[lightingTexturePos] = RELAX_FrontEnd_PackRadianceAndHitDist(specular, specularHitT);
         }
         else
         {
-            float diffNormDist = REBLUR_FrontEnd_GetNormHitDist(lightDistance, surface.viewDepth, g_Const.reblurDiffHitDistParams);
-            u_DiffuseLighting[lightingTexturePos] = REBLUR_FrontEnd_PackRadiance(diffuse, diffNormDist);
+            float diffNormDist = REBLUR_FrontEnd_GetNormHitDist(diffuseHitT, viewDepth, g_Const.reblurDiffHitDistParams, 1.0);
+            u_DiffuseLighting[lightingTexturePos] = REBLUR_FrontEnd_PackRadianceAndHitDist(diffuse, diffNormDist);
             
-            float specNormDist = REBLUR_FrontEnd_GetNormHitDist(lightDistance, surface.viewDepth, g_Const.reblurSpecHitDistParams, surface.roughness);
-            u_SpecularLighting[lightingTexturePos] = REBLUR_FrontEnd_PackRadiance(specular, specNormDist);
+            float specNormDist = REBLUR_FrontEnd_GetNormHitDist(specularHitT, viewDepth, g_Const.reblurSpecHitDistParams, 1.0, roughness);
+            u_SpecularLighting[lightingTexturePos] = REBLUR_FrontEnd_PackRadianceAndHitDist(specular, specNormDist);
         }
     }
     else
 #endif
     {
-        u_DiffuseLighting[lightingTexturePos] = float4(diffuse, lightDistance);
-        u_SpecularLighting[lightingTexturePos] = float4(specular, lightDistance);
+        u_DiffuseLighting[lightingTexturePos] = float4(diffuse, diffuseHitT);
+        u_SpecularLighting[lightingTexturePos] = float4(specular, specularHitT);
     }
 }
 

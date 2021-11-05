@@ -19,7 +19,10 @@
 
 #define RTXDI_PRESAMPLING_GROUP_SIZE 256
 #define RTXDI_GRID_BUILD_GROUP_SIZE 256
-#define RTXDI_SCREEN_SPACE_GROUP_SIZE 16
+#define RTXDI_SCREEN_SPACE_GROUP_SIZE 8
+#define RTXDI_GRAD_FACTOR 3
+#define RTXDI_GRAD_STORAGE_SCALE 256.0f
+#define RTXDI_GRAD_MAX_VALUE 65504.0f
 
 #define INSTANCE_MASK_OPAQUE 0x01
 #define INSTANCE_MASK_ALPHA_TESTED 0x02
@@ -29,6 +32,22 @@
 #define DENOISER_MODE_OFF 0
 #define DENOISER_MODE_REBLUR 1
 #define DENOISER_MODE_RELAX 2
+
+#define VIS_MODE_NONE                0
+#define VIS_MODE_COMPOSITED_COLOR    1
+#define VIS_MODE_RESOLVED_COLOR      2
+#define VIS_MODE_DIFFUSE             3
+#define VIS_MODE_SPECULAR            4
+#define VIS_MODE_DENOISED_DIFFUSE    5
+#define VIS_MODE_DENOISED_SPECULAR   6
+#define VIS_MODE_RESERVOIR_WEIGHT    7
+#define VIS_MODE_RESERVOIR_M         8
+#define VIS_MODE_DIFFUSE_GRADIENT    9
+#define VIS_MODE_SPECULAR_GRADIENT   10
+#define VIS_MODE_DIFFUSE_CONFIDENCE  11
+#define VIS_MODE_SPECULAR_CONFIDENCE 12
+
+#define BACKGROUND_DEPTH 65504.f
 
 #define RAY_COUNT_TRACED(index) ((index) * 2)
 #define RAY_COUNT_HITS(index) ((index) * 2 + 1)
@@ -86,6 +105,9 @@ struct GBufferConstants
     int2 materialReadbackPosition;
     uint materialReadbackBufferIndex;
     uint enableTransparentGeometry;
+
+    float textureLodBias;
+    float textureGradientScale; // 2^textureLodBias
 };
 
 struct GlassConstants
@@ -114,11 +136,69 @@ struct CompositingConstants
 
     float environmentScale;
     float environmentRotation;
+    float noiseMix;
+    float noiseClampLow;
+
+    float noiseClampHigh;
+    uint checkerboard;
+    uint numRtxgiVolumes;
 };
 
 struct AccumulationConstants
 {
+    float2 outputSize;
+    float2 inputSize;
+    float2 inputTextureSizeInv;
+    float2 pixelOffset;
     float blendFactor;
+};
+
+struct ProbeDebugConstants
+{
+    PlanarViewConstants view;
+    uint blasDeviceAddressLow;
+    uint blasDeviceAddressHigh;
+    uint volumeIndex;
+};
+
+struct DDGIVolumeResourceIndices
+{
+    uint irradianceTextureSRV;
+    uint distanceTextureSRV;
+    uint probeDataTextureSRV;
+    uint rayDataTextureUAV;
+};
+
+struct FilterGradientsConstants
+{
+    uint2 viewportSize;
+    int passIndex;
+    uint checkerboard;
+};
+
+struct ConfidenceConstants
+{
+    uint2 viewportSize;
+    float2 invGradientTextureSize;
+
+    float darknessBias;
+    float sensitivity;
+    uint checkerboard;
+    int inputBufferIndex;
+
+    float blendFactor;
+};
+
+struct VisualizationConstants
+{
+    RTXDI_ResamplingRuntimeParameters runtimeParams;
+
+    int2 outputSize;
+    float2 resolutionScale;
+
+    uint visualizationMode;
+    uint inputBufferIndex;
+    uint enableAccumulation;
 };
 
 struct ResamplingConstants
@@ -133,7 +213,7 @@ struct ResamplingConstants
     uint frameIndex;
     uint enablePreviousTLAS;
     uint denoiserMode;
-    uint padding;
+    uint numRtxgiVolumes;
 
     uint enableBrdfMIS;
     uint enableBrdfIndirect;
@@ -192,11 +272,32 @@ struct ResamplingConstants
     uint environmentMapTextureIndex;
     float environmentScale;
     float environmentRotation;
+
+    uint enablePermutationSampling;
+    uint enableAccumulation;
+    uint numSecondarySamples;
+    uint secondaryBiasCorrection;
+
+    float secondarySamplingRadius;
+    float secondaryDepthThreshold;
+    float secondaryNormalThreshold;
+    float permutationSamplingThreshold;
 };
 
 struct PerPassConstants
 {
     int rayCountBufferIndex;
+    uint rtxgiVolumeIndex;
+};
+
+struct SecondarySurface
+{
+    float3 worldPos;
+    uint normal;
+
+    uint2 throughput;
+    uint diffuseAlbedo;
+    uint specularAndRoughness;
 };
 
 static const uint kPolymorphicLightTypeShift = 24;
@@ -218,7 +319,8 @@ enum PolymorphicLightType
     kRect,
     kTriangle,
     kDirectional,
-    kEnvironment
+    kEnvironment,
+    kPoint
 };
 
 // Stores shared light information (type) and specific light information

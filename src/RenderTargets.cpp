@@ -15,6 +15,8 @@
 using namespace dm;
 using namespace donut;
 
+#include "../shaders/ShaderParameters.h"
+
 RenderTargets::RenderTargets(nvrhi::IDevice* device, int2 size)
     : Size(size)
 {
@@ -49,12 +51,18 @@ RenderTargets::RenderTargets(nvrhi::IDevice* device, int2 size)
     desc.initialState = nvrhi::ResourceStates::UnorderedAccess;
 
     desc.format = nvrhi::Format::R32_FLOAT;
+    desc.clearValue = BACKGROUND_DEPTH;
     desc.debugName = "DepthBuffer";
     Depth = device->createTexture(desc);
     desc.debugName = "PrevDepthBuffer";
     PrevDepth = device->createTexture(desc);
 
     desc.useClearValue = false;
+    desc.clearValue = 0.f;
+
+    desc.format = nvrhi::Format::R32_FLOAT;
+    desc.debugName = "DeviceDepthUAV";
+    DeviceDepthUAV = device->createTexture(desc);
 
     desc.format = nvrhi::Format::R32_UINT;
     desc.debugName = "GBufferDiffuseAlbedo";
@@ -105,8 +113,7 @@ RenderTargets::RenderTargets(nvrhi::IDevice* device, int2 size)
         GBufferNormals,
         GBufferGeoNormals,
         GBufferEmissive,
-        MotionVectors,
-        NormalRoughness
+        MotionVectors
     };
 
     PrevGBufferFramebuffer = std::make_shared<engine::FramebufferFactory>(device);
@@ -118,8 +125,7 @@ RenderTargets::RenderTargets(nvrhi::IDevice* device, int2 size)
         PrevGBufferNormals,
         PrevGBufferGeoNormals,
         GBufferEmissive,
-        MotionVectors,
-        NormalRoughness
+        MotionVectors
     };
 
     ResolvedFramebuffer = std::make_shared<engine::FramebufferFactory>(device);
@@ -158,6 +164,34 @@ RenderTargets::RenderTargets(nvrhi::IDevice* device, int2 size)
     desc.format = nvrhi::Format::RGBA32_FLOAT;
     desc.debugName = "AccumulatedColor";
     AccumulatedColor = device->createTexture(desc);
+	
+    desc.format = nvrhi::Format::RG16_FLOAT;
+    desc.debugName = "RestirLuminance";
+    RestirLuminance = device->createTexture(desc);
+    desc.debugName = "PrevRestirLuminance";
+    PrevRestirLuminance = device->createTexture(desc);
+
+    desc.format = nvrhi::Format::R8_UNORM;
+    desc.debugName = "DiffuseConfidence";
+    DiffuseConfidence = device->createTexture(desc);
+    desc.debugName = "PrevDiffuseConfidence";
+    PrevDiffuseConfidence = device->createTexture(desc);
+    desc.debugName = "SpecularConfidence";
+    SpecularConfidence = device->createTexture(desc);
+    desc.debugName = "PrevSpecularConfidence";
+    PrevSpecularConfidence = device->createTexture(desc);
+
+    desc.format = nvrhi::Format::RG16_SINT;
+    desc.debugName = "TemporalSamplePositions";
+    TemporalSamplePositions = device->createTexture(desc);
+
+    desc.dimension = nvrhi::TextureDimension::Texture2DArray;
+    desc.arraySize = 2;
+    desc.width = (size.x + RTXDI_GRAD_FACTOR - 1) / RTXDI_GRAD_FACTOR;
+    desc.height = (size.y + RTXDI_GRAD_FACTOR - 1) / RTXDI_GRAD_FACTOR;
+    desc.format = nvrhi::Format::RGBA16_FLOAT;
+    desc.debugName = "Gradients";
+    Gradients = device->createTexture(desc);
 }
 
 bool RenderTargets::IsUpdateRequired(int2 size)
@@ -176,4 +210,6 @@ void RenderTargets::NextFrame()
     std::swap(GBufferNormals, PrevGBufferNormals);
     std::swap(GBufferGeoNormals, PrevGBufferGeoNormals);
     std::swap(GBufferFramebuffer, PrevGBufferFramebuffer);
+    std::swap(DiffuseConfidence, PrevDiffuseConfidence);
+    std::swap(SpecularConfidence, PrevSpecularConfidence);
 }

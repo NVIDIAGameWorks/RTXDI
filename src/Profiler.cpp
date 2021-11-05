@@ -15,11 +15,9 @@
 
 
 static const char* g_SectionNames[ProfilerSection::Count] = {
-    "Frame Time",
     "TLAS Update",
     "Environment Map",
     "G-Buffer Fill",
-    "BRDF / Indirect",
     "Mesh Processing",
     "Light PDF Map",
     "Presample Lights",
@@ -28,10 +26,16 @@ static const char* g_SectionNames[ProfilerSection::Count] = {
     "Initial Samples",
     "Temporal Resampling",
     "Spatial Resampling",
-    "Shading",
-    "Lighting Total",
+    "Shade Primary Surf.",
+    "RTXGI Probe Tracing",
+    "RTXGI Probe Updates",
+    "BRDF or MIS Rays",
+    "Shade Secondary Surf.",
+    "Gradients",
     "Denoising",
     "Glass",
+    "TAA or DLSS",
+    "Frame Time (GPU)",
     "(Material Readback)"
 };
 
@@ -52,11 +56,19 @@ Profiler::Profiler(donut::app::DeviceManager& deviceManager)
     rayCountBufferDesc.keepInitialState = true;
     m_RayCountBuffer = m_Device->createBuffer(rayCountBufferDesc);
 
-    rayCountBufferDesc.byteSize *= 2;
     rayCountBufferDesc.canHaveUAVs = false;
     rayCountBufferDesc.cpuAccess = nvrhi::CpuAccessMode::Read;
     rayCountBufferDesc.initialState = nvrhi::ResourceStates::Common;
-    m_RayCountReadback = m_Device->createBuffer(rayCountBufferDesc);
+    rayCountBufferDesc.debugName = "RayCountReadback";
+    for (size_t bank = 0; bank < 2; bank++)
+    {
+        m_RayCountReadback[bank] = m_Device->createBuffer(rayCountBufferDesc);
+    }
+}
+
+void Profiler::EnableProfiler(bool enable)
+{
+    m_Enabled = enable;
 }
 
 void Profiler::EnableAccumulation(bool enable)
@@ -76,8 +88,10 @@ void Profiler::ResolvePreviousFrame()
 {
     m_ActiveBank = !m_ActiveBank;
 
-    const uint32_t* rayCountData = static_cast<const uint32_t*>(m_Device->mapBuffer(m_RayCountReadback, nvrhi::CpuAccessMode::Read));
-    const uint32_t bankBase = m_ActiveBank * ProfilerSection::Count * 2;
+    if (!m_Enabled)
+        return;
+
+    const uint32_t* rayCountData = static_cast<const uint32_t*>(m_Device->mapBuffer(m_RayCountReadback[m_ActiveBank], nvrhi::CpuAccessMode::Read));
     
     for (uint32_t section = 0; section < ProfilerSection::MaterialReadback; section++)
     {
@@ -94,8 +108,8 @@ void Profiler::ResolvePreviousFrame()
 
             if (rayCountData)
             {
-                rayCount = rayCountData[bankBase + section * 2];
-                hitCount = rayCountData[bankBase + section * 2 + 1];
+                rayCount = rayCountData[section * 2];
+                hitCount = rayCountData[section * 2 + 1];
             }
         }
 
@@ -116,13 +130,13 @@ void Profiler::ResolvePreviousFrame()
     }
 
     if (rayCountData)
-        m_RayCounts[ProfilerSection::MaterialReadback] = rayCountData[bankBase + ProfilerSection::MaterialReadback * 2];
+        m_RayCounts[ProfilerSection::MaterialReadback] = rayCountData[ProfilerSection::MaterialReadback * 2];
     else
         m_RayCounts[ProfilerSection::MaterialReadback] = 0;
 
     if (rayCountData)
     {
-        m_Device->unmapBuffer(m_RayCountReadback);
+        m_Device->unmapBuffer(m_RayCountReadback[m_ActiveBank]);
     }
 
     if (m_IsAccumulating)
@@ -133,6 +147,9 @@ void Profiler::ResolvePreviousFrame()
 
 void Profiler::BeginFrame(nvrhi::ICommandList* commandList)
 {
+    if (!m_Enabled)
+        return;
+
     commandList->clearBufferUInt(m_RayCountBuffer, 0);
 
     BeginSection(commandList, ProfilerSection::Frame);
@@ -142,16 +159,22 @@ void Profiler::EndFrame(nvrhi::ICommandList* commandList)
 {
     EndSection(commandList, ProfilerSection::Frame);
 
-    commandList->copyBuffer(
-        m_RayCountReadback,
-        size_t(m_ActiveBank) * ProfilerSection::Count * sizeof(uint32_t) * 2,
-        m_RayCountBuffer,
-        0,
-        ProfilerSection::Count * sizeof(uint32_t) * 2);
+    if (m_Enabled)
+    {
+        commandList->copyBuffer(
+            m_RayCountReadback[m_ActiveBank],
+            0,
+            m_RayCountBuffer,
+            0,
+            ProfilerSection::Count * sizeof(uint32_t) * 2);
+    }
 }
 
 void Profiler::BeginSection(nvrhi::ICommandList* commandList, const ProfilerSection::Enum section)
 {
+    if (!m_Enabled)
+        return;
+
     uint32_t timerIndex = section + m_ActiveBank * ProfilerSection::Count;
     commandList->beginTimerQuery(m_TimerQueries[timerIndex]);
     m_TimersUsed[timerIndex] = true;
@@ -159,6 +182,9 @@ void Profiler::BeginSection(nvrhi::ICommandList* commandList, const ProfilerSect
 
 void Profiler::EndSection(nvrhi::ICommandList* commandList, const ProfilerSection::Enum section)
 {
+    if (!m_Enabled)
+        return;
+    
     uint32_t timerIndex = section + m_ActiveBank * ProfilerSection::Count;
     commandList->endTimerQuery(m_TimerQueries[timerIndex]);
 }
@@ -213,8 +239,11 @@ void Profiler::BuildUI(const bool enableRayCounts)
     
     for (uint32_t section = 0; section < ProfilerSection::MaterialReadback; section++)
     {
-        if (section == ProfilerSection::Frame)
-            continue;
+        if (section == ProfilerSection::InitialSamples ||
+            section == ProfilerSection::RtxgiProbeTracing ||
+            section == ProfilerSection::Gradients || 
+            section == ProfilerSection::Frame)
+            ImGui::Separator();
 
         const double time = GetTimer(ProfilerSection::Enum(section));
         const double rayCount = GetRayCount(ProfilerSection::Enum(section));
@@ -223,7 +252,7 @@ void Profiler::BuildUI(const bool enableRayCounts)
         if (time == 0.0 && rayCount == 0.0)
             continue;
 
-        const bool highlightRow = (section == ProfilerSection::LightingTotal);
+        const bool highlightRow = (section == ProfilerSection::Frame);
 
         if(highlightRow)
             ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0xff, 0xff, 0x40, 0xff));

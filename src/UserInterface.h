@@ -54,6 +54,30 @@ enum class QualityPreset : uint32_t
     Reference = 5
 };
 
+struct RtxgiParameters
+{
+    bool enabled = true;
+    bool showProbes = false;
+    int selectedVolumeIndex = 0;
+    float hysteresis = 0.99f;
+    float irradianceThreshold = 0.25f;
+    float brightnessThreshold = 0.1f;
+    float minFrontFaceDistanceFraction = 0.1f;
+    bool probeRelocation = true;
+    bool probeClassification = true;
+    bool resetRelocation = false;
+};
+
+enum class AntiAliasingMode : uint32_t
+{
+    None,
+    Accumulation,
+    TAA,
+#ifdef WITH_DLSS
+    DLSS,
+#endif
+};
+
 struct UIData
 {
     bool reloadShaders = false;
@@ -64,17 +88,20 @@ struct UIData
     float loadingPercentage = 0.f;
 
     bool enableTextures = true;
-    bool enableAccumulation = false;
     uint32_t framesToAccumulate = 0;
     bool enableToneMapping = true;
     bool enablePixelJitter = true;
-    bool enableTAA = true;
-    bool freezeRandom = false;
-    bool rasterizeGBuffer = false;
+    bool rasterizeGBuffer = true;
     bool useRayQuery = true;
     bool enableBloom = true;
     float exposureBias = -1.0f;
     float verticalFov = 60.f;
+
+#ifdef WITH_DLSS
+    AntiAliasingMode aaMode = AntiAliasingMode::DLSS;
+#else
+    AntiAliasingMode aaMode = AntiAliasingMode::TAA;
+#endif
 
     uint32_t numAccumulatedFrames = 1;
 
@@ -87,6 +114,8 @@ struct UIData
     bool enableLocalLightImportanceSampling = true;
     float environmentIntensityBias = 0.f;
     float environmentRotation = 0.f;
+    
+    RtxgiParameters rtxgi;
 
     bool enableDenoiser = true;
 #ifdef WITH_NRD
@@ -95,6 +124,17 @@ struct UIData
     nrd::RelaxDiffuseSpecularSettings relaxSettings;
     void SetDefaultDenoiserSettings();
 #endif
+    float noiseMix = 0.33f;
+    float noiseClampLow = 0.5f;
+    float noiseClampHigh = 2.0f;
+
+#ifdef WITH_DLSS
+    bool dlssAvailable = false;
+    float dlssExposureScale = 2.f;
+    float dlssSharpness = 0.f;
+#endif
+
+    float resolutionScale = 1.f;
 
     bool enableFpsLimit = false;
     uint32_t fpsLimit = 60;
@@ -107,6 +147,8 @@ struct UIData
     float regirSamplingJitter = 1.f;
     std::optional<int> animationFrame;
     std::string benchmarkResults;
+
+    uint32_t visualizationMode = 0; // See the VIS_MODE_XXX constants in ShaderParameters.h
 
     GBufferSettings gbufferSettings;
     LightingPasses::RenderSettings lightingSettings;
@@ -141,14 +183,15 @@ private:
     void CopySelectedLight() const;
     void CopyCamera() const;
     void ApplyPreset();
-
-    void GeneralSettingsWindow();
+    
     void PerformanceWindow();
-    void SamplingSettingsWindow();
-    void SceneSettingsWindow();
+    void SceneSettings();
+    void GeneralRenderingSettings();
+    void SamplingSettings();
+    void PostProcessSettings();
 
 #ifdef WITH_NRD
-    void DenoiserSettingsWindow();
+    void DenoiserSettings();
 #endif
 
 protected:

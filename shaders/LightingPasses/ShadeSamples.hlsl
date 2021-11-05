@@ -16,14 +16,14 @@
 
 #ifdef WITH_NRD
 #define COMPILER_DXC
-#include <NRD.hlsl>
+#include <NRD.hlsli>
 #endif
 
 #include "ShadingHelpers.hlsli"
 
 #if USE_RAY_QUERY
 [numthreads(RTXDI_SCREEN_SPACE_GROUP_SIZE, RTXDI_SCREEN_SPACE_GROUP_SIZE, 1)]
-void main(uint2 GlobalIndex : SV_DispatchThreadID)
+void main(uint2 GlobalIndex : SV_DispatchThreadID, uint2 LocalIndex : SV_GroupThreadID, uint2 GroupIdx : SV_GroupID)
 #else
 [shader("raygeneration")]
 void RayGen()
@@ -44,6 +44,7 @@ void RayGen()
     float3 diffuse = 0;
     float3 specular = 0;
     float lightDistance = 0;
+    float2 currLuminance = 0;
 
     if (RTXDI_IsValidReservoir(reservoir))
     {
@@ -52,8 +53,12 @@ void RayGen()
         RAB_LightSample lightSample = RAB_SamplePolymorphicLight(lightInfo,
             surface, RTXDI_GetReservoirSampleUV(reservoir));
 
-        bool needToStore = ShadeSurfaceWithLightSample(reservoir, surface, lightSample, diffuse, specular, lightDistance);
-        specular = DemodulateSpecular(surface, specular);
+        bool needToStore = ShadeSurfaceWithLightSample(reservoir, surface, lightSample,
+            /* previousFrameTLAS = */ false, /* enableVisibilityReuse = */ true, diffuse, specular, lightDistance);
+    
+        currLuminance = float2(calcLuminance(diffuse * surface.diffuseAlbedo), calcLuminance(specular));
+    
+        specular = DemodulateSpecular(surface.specularF0, specular);
 
         if (needToStore)
         {
@@ -61,6 +66,17 @@ void RayGen()
         }
     }
 
-    StoreRestirShadingOutput(GlobalIndex, pixelPosition, params.activeCheckerboardField, 
-        surface, diffuse, specular, lightDistance);
+    // Store the sampled lighting luminance for the gradient pass.
+    // Discard the pixels where the visibility was reused, as gradients need actual visibility.
+    u_RestirLuminance[GlobalIndex] = currLuminance * (reservoir.age > 0 ? 0 : 1);
+    
+#if RTXDI_REGIR_MODE != RTXDI_REGIR_DISABLED
+    if (g_Const.visualizeRegirCells)
+    {
+        diffuse *= RTXDI_VisualizeReGIRCells(g_Const.runtimeParams, RAB_GetSurfaceWorldPos(surface));
+    }
+#endif
+
+    StoreShadingOutput(GlobalIndex, pixelPosition, 
+        surface.viewDepth, surface.roughness, diffuse, specular, lightDistance, true, g_Const.enableDenoiserInputPacking);
 }

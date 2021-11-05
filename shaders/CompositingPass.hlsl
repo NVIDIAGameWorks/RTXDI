@@ -16,7 +16,7 @@
 
 #ifdef WITH_NRD
 #define COMPILER_DXC
-#include <NRD.hlsl>
+#include <NRD.hlsli>
 #endif
 
 ConstantBuffer<CompositingConstants> g_Const : register(b0);
@@ -36,33 +36,52 @@ Texture2D t_DenoisedSpecular : register(t8);
 
 SamplerState s_EnvironmentSampler : register(s0);
 
+#ifdef WITH_RTXGI
+#include "RtxgiHelpers.hlsli"
+StructuredBuffer<DDGIVolumeDescGPUPacked> t_DDGIVolumes : register(t10 VK_DESCRIPTOR_SET(2));
+StructuredBuffer<DDGIVolumeResourceIndices> t_DDGIVolumeResourceIndices : register(t11 VK_DESCRIPTOR_SET(2));
+SamplerState s_ProbeSampler : register(s10 VK_DESCRIPTOR_SET(2));
+#endif
+
 [numthreads(8, 8, 1)]
 void main(uint2 globalIdx : SV_DispatchThreadID)
 {
     float3 compositedColor = 0;
 
     float depth = t_GBufferDepth[globalIdx];
-    if (depth != 0)
+    if (depth != BACKGROUND_DEPTH)
     {
+        float3 normal = octToNdirUnorm32(t_GBufferNormals[globalIdx]);
         float3 diffuseAlbedo = Unpack_R11G11B10_UFLOAT(t_GBufferDiffuseAlbedo[globalIdx]);
         float3 specularF0 = Unpack_R8G8B8A8_Gamma_UFLOAT(t_GBufferSpecularRough[globalIdx]).rgb;
         float3 emissive = t_GBufferEmissive[globalIdx].rgb;
 
-        float4 diffuse_illumination;
-        float4 specular_illumination;
+        int2 illuminationPos = globalIdx;
+        if (g_Const.denoiserMode == DENOISER_MODE_REBLUR && g_Const.checkerboard)
+        {
+            // ReBLUR takes the noisy input in checkerboard mode in one half of the screen.
+            // Stretch that to full screen for correct noise mix-in behavior.
+            illuminationPos.x /= 2;
+        }
+
+        float4 diffuse_illumination = t_Diffuse[illuminationPos].rgba;
+        float4 specular_illumination = t_Specular[illuminationPos].rgba;
 
 #ifdef WITH_NRD
         if(g_Const.denoiserMode != DENOISER_MODE_OFF)
         {
-            diffuse_illumination = t_DenoisedDiffuse[globalIdx].rgba;
-            specular_illumination = t_DenoisedSpecular[globalIdx].rgba;
+            float4 denoised_diffuse = t_DenoisedDiffuse[globalIdx].rgba;
+            float4 denoised_specular = t_DenoisedSpecular[globalIdx].rgba;
+
+            diffuse_illumination.rgb = lerp(denoised_diffuse.rgb,
+                clamp(diffuse_illumination.rgb, denoised_diffuse.rgb * g_Const.noiseClampLow, denoised_diffuse.rgb * g_Const.noiseClampHigh),
+                g_Const.noiseMix);
+
+            specular_illumination.rgb = lerp(denoised_specular.rgb,
+                clamp(specular_illumination.rgb, denoised_specular.rgb * g_Const.noiseClampLow, denoised_specular.rgb * g_Const.noiseClampHigh),
+                g_Const.noiseMix);
         }
-        else
 #endif
-        {
-            diffuse_illumination = t_Diffuse[globalIdx].rgba;
-            specular_illumination = t_Specular[globalIdx].rgba;
-        }
 
         if (g_Const.enableTextures)
         {
@@ -73,6 +92,24 @@ void main(uint2 globalIdx : SV_DispatchThreadID)
         compositedColor = diffuse_illumination.rgb;
         compositedColor += specular_illumination.rgb;
         compositedColor += emissive.rgb;
+
+#ifdef WITH_RTXGI
+        if (g_Const.numRtxgiVolumes)
+        {
+            float3 worldPosition = viewDepthToWorldPos(g_Const.view, globalIdx, depth);
+
+            float3 indirectIrradiance = GetIrradianceFromDDGI(
+                worldPosition,
+                normal,
+                g_Const.view.cameraDirectionOrPosition.xyz,
+                g_Const.numRtxgiVolumes,
+                t_DDGIVolumes,
+                t_DDGIVolumeResourceIndices,
+                s_ProbeSampler);
+
+            compositedColor += diffuseAlbedo * indirectIrradiance;
+        }
+#endif
     }
     else
     {   

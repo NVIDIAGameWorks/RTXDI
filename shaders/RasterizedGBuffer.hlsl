@@ -32,6 +32,8 @@ StructuredBuffer<MaterialConstants> t_MaterialConstants : register(t2);
 
 SamplerState s_MaterialSampler : register(s0);
 
+RWBuffer<uint> u_RayCountBuffer : register(u0);
+
 /* The #ifdef SPIRV... parts in this shader are a workaround for DXC not having full
    support for SV_Barycentrics pixel shader inputs. It translates such inputs as BaryCoordSmoothAMD
    but NVIDIA drivers do not support that extension, and they need BaryCoordNV instead. */
@@ -118,8 +120,7 @@ void ps_main(
     out uint o_normal : SV_Target3,
     out uint o_geoNormal : SV_Target4,
     out float4 o_emissive : SV_Target5,
-    out float4 o_motion : SV_Target6,
-    out float4 o_normalRough : SV_Target7
+    out float4 o_motion : SV_Target6
     )
 {
 #ifdef SPIRV
@@ -139,7 +140,7 @@ void ps_main(
         GeomAttr_All, t_InstanceData, t_GeometryData, t_MaterialConstants);
 #endif
 
-    MaterialSample ms = sampleGeometryMaterial(gs, MatAttr_All, s_MaterialSampler, g_Const.normalMapScale);
+    MaterialSample ms = sampleGeometryMaterial(gs, g_Const.textureLodBias, MatAttr_All, s_MaterialSampler, g_Const.normalMapScale);
     
 #if ALPHA_TESTED
     bool alphaMask = (ms.opacity >= gs.material.alphaCutoff);
@@ -165,6 +166,11 @@ void ps_main(
     }
 #endif
 
+    if (all(g_Const.materialReadbackPosition == int2(i_position.xy)))
+    {
+        u_RayCountBuffer[g_Const.materialReadbackBufferIndex] = gs.geometry.materialIndex + 1;
+    }
+
     float3 worldSpacePosition = mul(gs.instance.transform, float4(gs.objectSpacePosition, 1.0)).xyz;
 #ifdef SPIRV
     gs.flatNormal = normalize(cross(ddy(worldSpacePosition), ddx(worldSpacePosition)));
@@ -183,9 +189,10 @@ void ps_main(
         getReflectivity(ms.metalness, ms.baseColor, ms.diffuseAlbedo, ms.specularF0);
     }
 
+    float clipDepth = 0;
     float viewDepth = 0;
     float3 motion = getMotionVector(g_Const.view, g_Const.viewPrev, 
-        gs.instance, gs.objectSpacePosition, gs.prevObjectSpacePosition, viewDepth);
+        gs.instance, gs.objectSpacePosition, gs.prevObjectSpacePosition, clipDepth, viewDepth);
 
     o_viewDepth = viewDepth;
     o_diffuseAlbedo = Pack_R11G11B10_UFLOAT(ms.diffuseAlbedo);
@@ -194,5 +201,4 @@ void ps_main(
     o_geoNormal = ndirToOctUnorm32(gs.flatNormal);
     o_emissive = float4(ms.emissiveColor, viewDistance); // viewDistance is here to enable glass ray tracing on all pixels
     o_motion = float4(motion, 0);
-    o_normalRough = float4(ms.shadingNormal * 0.5 + 0.5, ms.roughness);
 }

@@ -35,6 +35,8 @@
 #endif
 
 #include "RenderTargets.h"
+#include "ConfidencePass.h"
+#include "FilterGradientsPass.h"
 #include "CompositingPass.h"
 #include "AccumulationPass.h"
 #include "GBufferPass.h"
@@ -47,9 +49,18 @@
 #include "SampleScene.h"
 #include "Profiler.h"
 #include "UserInterface.h"
+#include "VisualizationPass.h"
 
 #if WITH_NRD
 #include "NrdIntegration.h"
+#endif
+
+#ifdef WITH_DLSS
+#include "DLSS.h"
+#endif
+
+#if WITH_RTXGI
+#include "RtxgiIntegration.h"
 #endif
 
 #ifndef WIN32
@@ -80,6 +91,7 @@ private:
     app::FirstPersonCamera m_Camera;
     engine::PlanarView m_View;
     engine::PlanarView m_ViewPrevious;
+    engine::PlanarView m_UpscaledView;
     std::shared_ptr<engine::DirectionalLight> m_SunLight;
     std::shared_ptr<EnvironmentLight> m_EnvironmentLight;
     std::shared_ptr<engine::LoadedTexture> m_EnvironmentMap;
@@ -88,7 +100,10 @@ private:
     std::unique_ptr<rtxdi::Context> m_RtxdiContext;
     std::unique_ptr<RaytracedGBufferPass> m_GBufferPass;
     std::unique_ptr<RasterizedGBufferPass> m_RasterizedGBufferPass;
+    std::unique_ptr<PostprocessGBufferPass> m_PostprocessGBufferPass;
     std::unique_ptr<GlassPass> m_GlassPass;
+    std::unique_ptr<FilterGradientsPass> m_FilterGradientsPass;
+    std::unique_ptr<ConfidencePass> m_ConfidencePass;
     std::unique_ptr<CompositingPass> m_CompositingPass;
     std::unique_ptr<AccumulationPass> m_AccumulationPass;
     std::unique_ptr<PrepareLightsPass> m_PrepareLightsPass;
@@ -96,6 +111,7 @@ private:
     std::unique_ptr<GenerateMipsPass> m_EnvironmentMapPdfMipmapPass;
     std::unique_ptr<GenerateMipsPass> m_LocalLightPdfMipmapPass;
     std::unique_ptr<LightingPasses> m_LightingPasses;
+    std::unique_ptr<VisualizationPass> m_VisualizationPass;
     std::unique_ptr<RtxdiResources> m_RtxdiResources;
     std::unique_ptr<engine::IesProfileLoader> m_IesProfileLoader;
     std::shared_ptr<Profiler> m_Profiler;
@@ -104,11 +120,18 @@ private:
     std::unique_ptr<NrdIntegration> m_NRD;
 #endif
 
+#ifdef WITH_DLSS
+    std::unique_ptr<DLSS> m_DLSS;
+#endif
+
+#if WITH_RTXGI
+    std::shared_ptr<RtxgiIntegration> m_RTXGI;
+#endif
+
     UIData& m_ui;
     uint m_FramesSinceAnimation = 0;
     bool m_PreviousViewValid = false;
     time_point<steady_clock> m_PreviousFrameTimeStamp;
-    int m_MaterialReadbackCountdown = 0;
 
     std::vector<std::shared_ptr<engine::IesProfile>> m_IesProfiles;
     
@@ -145,6 +168,16 @@ public:
     bool Init()
     {
         std::filesystem::path mediaPath = app::GetDirectoryWithExecutable().parent_path() / "media";
+        if (!std::filesystem::exists(mediaPath))
+        {
+            mediaPath = mediaPath.parent_path().parent_path() / "media";
+            if (!std::filesystem::exists(mediaPath))
+            {
+                log::error("Couldn't locate the 'media' folder.");
+                return false;
+            }
+        }
+
         std::filesystem::path frameworkShaderPath = app::GetDirectoryWithExecutable() / "shaders/framework" / app::GetShaderTypeName(GetDevice()->getGraphicsAPI());
         std::filesystem::path appShaderPath = app::GetDirectoryWithExecutable() / "shaders/rtxdi-sample" / app::GetShaderTypeName(GetDevice()->getGraphicsAPI());
 
@@ -165,7 +198,8 @@ public:
             bindlessLayoutDesc.firstSlot = 0;
             bindlessLayoutDesc.registerSpaces = {
                 nvrhi::BindingLayoutItem::RawBuffer_SRV(1),
-                nvrhi::BindingLayoutItem::Texture_SRV(2)
+                nvrhi::BindingLayoutItem::Texture_SRV(2),
+                nvrhi::BindingLayoutItem::Texture_UAV(3)
             };
             bindlessLayoutDesc.visibility = nvrhi::ShaderType::All;
             bindlessLayoutDesc.maxCapacity = 1024;
@@ -194,13 +228,28 @@ public:
         m_Profiler = std::make_shared<Profiler>(*GetDeviceManager());
         m_ui.profiler = m_Profiler;
 
+        m_FilterGradientsPass = std::make_unique<FilterGradientsPass>(GetDevice(), m_ShaderFactory);
+        m_ConfidencePass = std::make_unique<ConfidencePass>(GetDevice(), m_ShaderFactory);
         m_CompositingPass = std::make_unique<CompositingPass>(GetDevice(), m_ShaderFactory, m_CommonPasses, m_Scene, m_BindlessLayout);
         m_AccumulationPass = std::make_unique<AccumulationPass>(GetDevice(), m_ShaderFactory);
         m_GBufferPass = std::make_unique<RaytracedGBufferPass>(GetDevice(), m_ShaderFactory, m_CommonPasses, m_Scene, m_Profiler, m_BindlessLayout);
         m_RasterizedGBufferPass = std::make_unique<RasterizedGBufferPass>(GetDevice(), m_ShaderFactory, m_CommonPasses, m_Scene, m_Profiler, m_BindlessLayout);
+        m_PostprocessGBufferPass = std::make_unique<PostprocessGBufferPass>(GetDevice(), m_ShaderFactory);
         m_GlassPass = std::make_unique<GlassPass>(GetDevice(), m_ShaderFactory, m_CommonPasses, m_Scene, m_Profiler, m_BindlessLayout);
         m_PrepareLightsPass = std::make_unique<PrepareLightsPass>(GetDevice(), m_ShaderFactory, m_CommonPasses, m_Scene, m_BindlessLayout);
         m_LightingPasses = std::make_unique<LightingPasses>(GetDevice(), m_ShaderFactory, m_CommonPasses, m_Scene, m_Profiler, m_BindlessLayout);
+
+
+#ifdef WITH_DLSS
+        {
+#ifdef USE_DX12
+            if (GetDevice()->getGraphicsAPI() == nvrhi::GraphicsAPI::D3D12)
+                m_DLSS = DLSS::CreateDX12(GetDevice(), *m_ShaderFactory);
+            else
+#endif
+                m_DLSS = DLSS::CreateVK(GetDevice(), *m_ShaderFactory);
+        }
+#endif
 
         LoadShaders();
 
@@ -301,9 +350,12 @@ public:
     
     void LoadShaders()
     {
+        m_FilterGradientsPass->CreatePipeline();
+        m_ConfidencePass->CreatePipeline();
         m_CompositingPass->CreatePipeline();
         m_AccumulationPass->CreatePipeline();
         m_GBufferPass->CreatePipeline(m_ui.useRayQuery);
+        m_PostprocessGBufferPass->CreatePipeline();
         m_GlassPass->CreatePipeline(m_ui.useRayQuery);
         m_PrepareLightsPass->CreatePipeline();
     }
@@ -377,9 +429,13 @@ public:
         {
             double mousex = 0, mousey = 0;
             glfwGetCursorPos(GetDeviceManager()->GetWindow(), &mousex, &mousey);
+
+            // Scale the mouse position according to the render resolution scale
+            mousex *= m_View.GetViewport().width() / m_UpscaledView.GetViewport().width();
+            mousey *= m_View.GetViewport().height() / m_UpscaledView.GetViewport().height();
+
             m_ui.gbufferSettings.materialReadbackPosition = int2(int(mousex), int(mousey));
             m_ui.gbufferSettings.enableMaterialReadback = true;
-            m_MaterialReadbackCountdown = 0;
             return true;
         }
 
@@ -401,8 +457,11 @@ public:
             m_ToneMappingPass->AdvanceFrame(fElapsedTimeSeconds);
     }
 
-    virtual void BackBufferResizing() override
-    { 
+    virtual void BackBufferResized(const uint32_t width, const uint32_t height, const uint32_t sampleCount) override
+    {
+        if (m_RenderTargets && m_RenderTargets->Size.x == int(width) && m_RenderTargets->Size.y == int(height))
+            return;
+
         m_BindingCache.Clear();
         m_RenderTargets = nullptr;
         m_RtxdiContext = nullptr;
@@ -412,6 +471,12 @@ public:
         m_BloomPass = nullptr;
 #if WITH_NRD
         m_NRD = nullptr;
+#endif
+#if WITH_RTXGI
+        if (m_RTXGI)
+        {
+            m_RTXGI->InvalidateRenderTargets();
+        }
 #endif
     }
 
@@ -459,7 +524,11 @@ public:
         if (m_TemporalAntiAliasingPass)
             m_TemporalAntiAliasingPass->SetJitter(m_ui.temporalJitter);
 
-        m_View.SetViewport(windowViewport);
+        nvrhi::Viewport renderViewport = windowViewport;
+        renderViewport.maxX = roundf(renderViewport.maxX * m_ui.resolutionScale);
+        renderViewport.maxY = roundf(renderViewport.maxY * m_ui.resolutionScale);
+
+        m_View.SetViewport(renderViewport);
 
         if (m_ui.enablePixelJitter && m_TemporalAntiAliasingPass)
         {
@@ -474,11 +543,14 @@ public:
         if (activeCamera)
             m_View.SetMatrices(activeCamera->GetWorldToViewMatrix(), perspProjD3DStyleReverse(activeCamera->verticalFov, aspectRatio, activeCamera->zNear));
         else
-            m_View.SetMatrices(m_Camera.GetWorldToViewMatrix(), perspProjD3DStyleReverse(radians(m_ui.verticalFov), aspectRatio, 0.1f));
+            m_View.SetMatrices(m_Camera.GetWorldToViewMatrix(), perspProjD3DStyleReverse(radians(m_ui.verticalFov), aspectRatio, 0.01f));
         m_View.UpdateCache();
 
         if (m_ViewPrevious.GetViewExtent().width() == 0)
             m_ViewPrevious = m_View;
+
+        m_UpscaledView = m_View;
+        m_UpscaledView.SetViewport(windowViewport);
     }
 
     void SetupRenderPasses(const nvrhi::FramebufferInfo& fbinfo, bool& exposureResetRequired)
@@ -499,6 +571,10 @@ public:
             m_RenderEnvironmentMapPass = nullptr;
             m_EnvironmentMapPdfMipmapPass = nullptr;
             m_LocalLightPdfMipmapPass = nullptr;
+            m_VisualizationPass = nullptr;
+#if WITH_RTXGI
+            m_RTXGI = nullptr;
+#endif
             m_ui.environmentMapDirty = 1;
 
             LoadShaders();
@@ -532,23 +608,6 @@ public:
             m_RtxdiResources = nullptr;
         }
 
-        if (!m_RenderTargets)
-        {
-            m_RenderTargets = std::make_unique<RenderTargets>(GetDevice(), int2(fbinfo.width, fbinfo.height));
-
-            m_GBufferPass->CreateBindingSet(m_Scene->GetTopLevelAS(), m_Scene->GetPrevTopLevelAS(), *m_RenderTargets);
-
-            m_GlassPass->CreateBindingSet(m_Scene->GetTopLevelAS(), m_Scene->GetPrevTopLevelAS(), *m_RenderTargets);
-
-            m_CompositingPass->CreateBindingSet(*m_RenderTargets);
-
-            m_AccumulationPass->CreateBindingSet(*m_RenderTargets);
-
-            m_RasterizedGBufferPass->CreatePipeline(*m_RenderTargets);
-
-            renderTargetsCreated = true;
-        }
-
         if (!m_RtxdiContext)
         {
             m_ui.rtxdiContextParams.RenderWidth = fbinfo.width;
@@ -557,6 +616,49 @@ public:
             m_RtxdiContext = std::make_unique<rtxdi::Context>(m_ui.rtxdiContextParams);
 
             m_ui.regirLightSlotCount = m_RtxdiContext->GetReGIRLightSlotCount();
+        }
+
+#if WITH_RTXGI
+        if (!m_RTXGI)
+        {
+            m_RTXGI = std::make_shared<RtxgiIntegration>(GetDevice(), m_RootFs, m_DescriptorTableManager);
+
+            m_RTXGI->InitializePasses(*m_ShaderFactory, m_LightingPasses->GetBindingLayout(), m_BindlessLayout, m_RtxdiContext->GetParameters(), m_ui.useRayQuery);
+
+            for (auto& volumeDesc : m_Scene->GetRtxgiVolumes())
+            {
+                m_RTXGI->CreateVolume(volumeDesc);
+            }
+        }
+#endif
+
+        if (!m_RenderTargets)
+        {
+            m_RenderTargets = std::make_unique<RenderTargets>(GetDevice(), int2(fbinfo.width, fbinfo.height));
+
+            m_GBufferPass->CreateBindingSet(m_Scene->GetTopLevelAS(), m_Scene->GetPrevTopLevelAS(), *m_RenderTargets);
+
+            m_PostprocessGBufferPass->CreateBindingSet(*m_RenderTargets);
+
+            m_GlassPass->CreateBindingSet(m_Scene->GetTopLevelAS(), m_Scene->GetPrevTopLevelAS(), *m_RenderTargets);
+
+            m_FilterGradientsPass->CreateBindingSet(*m_RenderTargets);
+
+            m_ConfidencePass->CreateBindingSet(*m_RenderTargets);
+            
+            m_AccumulationPass->CreateBindingSet(*m_RenderTargets);
+
+            m_RasterizedGBufferPass->CreatePipeline(*m_RenderTargets);
+
+#if WITH_RTXGI
+            m_CompositingPass->CreateBindingSet(*m_RenderTargets, m_RTXGI.get());
+#else
+            m_CompositingPass->CreateBindingSet(*m_RenderTargets, nullptr);
+#endif
+
+            m_VisualizationPass = nullptr;
+
+            renderTargetsCreated = true;
         }
 
         if (!m_RtxdiResources)
@@ -603,10 +705,15 @@ public:
         if (renderTargetsCreated || rtxdiResourcesCreated)
         {
             m_LightingPasses->CreateBindingSet(
-                m_Scene->GetTopLevelAS(), 
+                m_Scene->GetTopLevelAS(),
                 m_Scene->GetPrevTopLevelAS(),
                 *m_RenderTargets,
-                *m_RtxdiResources);
+                *m_RtxdiResources,
+#if WITH_RTXGI
+                m_RTXGI.get());
+#else
+                nullptr);
+#endif
         }
 
         if (rtxdiResourcesCreated || m_ui.reloadShaders)
@@ -635,20 +742,32 @@ public:
         if (!m_ToneMappingPass)
         {
             render::ToneMappingPass::CreateParameters toneMappingParams;
-            m_ToneMappingPass = std::make_unique<render::ToneMappingPass>(GetDevice(), m_ShaderFactory, m_CommonPasses, m_RenderTargets->LdrFramebuffer, m_View, toneMappingParams);
+            m_ToneMappingPass = std::make_unique<render::ToneMappingPass>(GetDevice(), m_ShaderFactory, m_CommonPasses, m_RenderTargets->LdrFramebuffer, m_UpscaledView, toneMappingParams);
             exposureResetRequired = true;
         }
 
         if (!m_BloomPass)
         {
-            m_BloomPass = std::make_unique<render::BloomPass>(GetDevice(), m_ShaderFactory, m_CommonPasses, m_RenderTargets->ResolvedFramebuffer, m_View);
+            m_BloomPass = std::make_unique<render::BloomPass>(GetDevice(), m_ShaderFactory, m_CommonPasses, m_RenderTargets->ResolvedFramebuffer, m_UpscaledView);
         }
 
+        if (!m_VisualizationPass || renderTargetsCreated || rtxdiResourcesCreated)
+        {
+            m_VisualizationPass = std::make_unique<VisualizationPass>(GetDevice(), *m_CommonPasses, *m_ShaderFactory, *m_RenderTargets, *m_RtxdiResources);
+        }
+        
 #if WITH_NRD
         if (!m_NRD)
         {
             m_NRD = std::make_unique<NrdIntegration>(GetDevice(), m_ui.denoisingMethod);
             m_NRD->Initialize(m_RenderTargets->Size.x, m_RenderTargets->Size.y);
+        }
+#endif
+#ifdef WITH_DLSS
+        {
+            m_DLSS->SetRenderSize(m_RenderTargets->Size.x, m_RenderTargets->Size.y, m_RenderTargets->Size.x, m_RenderTargets->Size.y);
+            
+            m_ui.dlssAvailable = m_DLSS->IsAvailable();
         }
 #endif
     }
@@ -672,6 +791,46 @@ public:
             : 0.f;
     }
 
+    void Resolve(nvrhi::ICommandList* commandList, float accumulationWeight) const
+    {
+        ProfilerScope scope(*m_Profiler, commandList, ProfilerSection::Resolve);
+
+        switch (m_ui.aaMode)
+        {
+        case AntiAliasingMode::None: {
+            engine::BlitParameters blitParams;
+            blitParams.sourceTexture = m_RenderTargets->HdrColor;
+            blitParams.sourceBox.m_maxs.x = m_View.GetViewport().width() / m_UpscaledView.GetViewport().width();
+            blitParams.sourceBox.m_maxs.y = m_View.GetViewport().height() / m_UpscaledView.GetViewport().height();
+            blitParams.targetFramebuffer = m_RenderTargets->ResolvedFramebuffer->GetFramebuffer(m_UpscaledView);
+            m_CommonPasses->BlitTexture(commandList, blitParams);
+            break;
+        }
+
+        case AntiAliasingMode::Accumulation: {
+            m_AccumulationPass->Render(commandList, m_View, m_UpscaledView, accumulationWeight);
+            m_CommonPasses->BlitTexture(commandList, m_RenderTargets->ResolvedFramebuffer->GetFramebuffer(m_UpscaledView), m_RenderTargets->AccumulatedColor);
+            break;
+        }
+
+        case AntiAliasingMode::TAA: {
+            auto taaParams = m_ui.taaParams;
+            if (m_ui.resetAccumulation)
+                taaParams.newFrameWeight = 1.f;
+
+            m_TemporalAntiAliasingPass->TemporalResolve(commandList, taaParams, m_PreviousViewValid, m_View, m_UpscaledView);
+            break;
+        }
+
+#ifdef WITH_DLSS
+        case AntiAliasingMode::DLSS: {
+            m_DLSS->Render(commandList, *m_RenderTargets, m_ToneMappingPass->GetExposureBuffer(), m_ui.dlssExposureScale, m_ui.dlssSharpness, m_ui.rasterizeGBuffer, m_ui.resetAccumulation, m_View, m_ViewPrevious);
+            break;
+        }
+#endif
+        }
+    }
+
     void RenderScene(nvrhi::IFramebuffer* framebuffer) override
     {
         if (m_FrameStepMode == FrameStepMode::Wait)
@@ -680,10 +839,6 @@ public:
 
             if (m_ui.enableToneMapping)
                 finalImage = m_RenderTargets->LdrColor;
-            else if (m_ui.enableAccumulation)
-                finalImage = m_RenderTargets->AccumulatedColor;
-            else if (m_ui.enableTAA)
-                finalImage = m_RenderTargets->ResolvedColor;
             else
                 finalImage = m_RenderTargets->HdrColor;
 
@@ -701,7 +856,7 @@ public:
             m_FrameStepMode = FrameStepMode::Wait;
 
         const engine::PerspectiveCamera* activeCamera = nullptr;
-        uint effectiveFrameIndex = m_ui.freezeRandom ? 0 : GetFrameIndex();
+        uint effectiveFrameIndex = GetFrameIndex();
 
         if (m_ui.animationFrame.has_value())
         {
@@ -751,8 +906,14 @@ public:
 
         if (m_ui.resetRtxdiContext)
         {
+            GetDevice()->waitForIdle();
+
             m_RtxdiContext = nullptr;
             m_RtxdiResources = nullptr;
+#if WITH_RTXGI
+            // The RTXGI probe tracing pass depends on the RTXDI context parameters
+            m_RTXGI = nullptr;
+#endif
             m_ui.resetRtxdiContext = false;
         }
 
@@ -768,24 +929,34 @@ public:
         SetupRenderPasses(fbinfo, exposureResetRequired);
         if (!m_ui.freezeRegirPosition)
             m_RegirCenter = m_Camera.GetPosition();
+#if WITH_DLSS
+        if (!m_ui.dlssAvailable && m_ui.aaMode == AntiAliasingMode::DLSS)
+            m_ui.aaMode = AntiAliasingMode::TAA;
+#endif
 
         m_GBufferPass->NextFrame();
+        m_PostprocessGBufferPass->NextFrame();
         m_LightingPasses->NextFrame();
+        m_ConfidencePass->NextFrame();
         m_CompositingPass->NextFrame();
+        m_VisualizationPass->NextFrame();
         m_RenderTargets->NextFrame();
         m_GlassPass->NextFrame();
         m_Scene->NextFrame();
+#if WITH_RTXGI
+        m_RTXGI->NextFrame();
+#endif
         
         // Advance the TAA jitter offset at half frame rate if accumulation is used with
         // checkerboard rendering. Otherwise, the jitter pattern resonates with the checkerboard,
         // and stipple patterns appear in the accumulated results.
-        if (!(m_ui.enableAccumulation && (m_RtxdiContext->GetParameters().CheckerboardSamplingMode != rtxdi::CheckerboardMode::Off) && (GetFrameIndex() & 1)))
+        if (!((m_ui.aaMode == AntiAliasingMode::Accumulation) && (m_RtxdiContext->GetParameters().CheckerboardSamplingMode != rtxdi::CheckerboardMode::Off) && (GetFrameIndex() & 1)))
         {
             m_TemporalAntiAliasingPass->AdvanceFrame();
         }
         
         bool cameraIsStatic = m_PreviousViewValid && m_View.GetViewMatrix() == m_ViewPrevious.GetViewMatrix();
-        if (cameraIsStatic && m_ui.enableAccumulation && !m_ui.resetAccumulation)
+        if (cameraIsStatic && (m_ui.aaMode == AntiAliasingMode::Accumulation) && !m_ui.resetAccumulation)
         {
             m_ui.numAccumulatedFrames += 1;
 
@@ -801,25 +972,18 @@ public:
         }
 
         float accumulationWeight = 1.f / (float)m_ui.numAccumulatedFrames;
-        m_ui.resetAccumulation = false;
 
         m_Profiler->ResolvePreviousFrame();
-
-        if (m_MaterialReadbackCountdown > 0)
+        
+        int materialIndex = m_Profiler->GetMaterialReadback();
+        if (materialIndex >= 0)
         {
-            m_MaterialReadbackCountdown -= 1;
-
-            if (m_MaterialReadbackCountdown == 0)
+            for (const auto& material : m_Scene->GetSceneGraph()->GetMaterials())
             {
-                m_ui.selectedMaterial.reset();
-                int materialIndex = m_Profiler->GetMaterialReadback();
-                for (const auto& material : m_Scene->GetSceneGraph()->GetMaterials())
+                if (material->materialID == materialIndex)
                 {
-                    if (material->materialID == materialIndex)
-                    {
-                        m_ui.selectedMaterial = material;
-                        break;
-                    }
+                    m_ui.selectedMaterial = material;
+                    break;
                 }
             }
         }
@@ -888,10 +1052,16 @@ public:
         {
             ProfilerScope scope(*m_Profiler, m_CommandList, ProfilerSection::GBufferFill);
 
+            GBufferSettings gbufferSettings = m_ui.gbufferSettings;
+            float upscalingLodBias = ::log2f(m_View.GetViewport().width() / m_UpscaledView.GetViewport().width());
+            gbufferSettings.textureLodBias += upscalingLodBias;
+
             if (m_ui.rasterizeGBuffer)
                 m_RasterizedGBufferPass->Render(m_CommandList, m_View, m_ViewPrevious, *m_RenderTargets, m_ui.gbufferSettings);
             else
                 m_GBufferPass->Render(m_CommandList, m_View, m_ViewPrevious, m_ui.gbufferSettings);
+
+            m_PostprocessGBufferPass->Render(m_CommandList, m_View);
         }
 
         rtxdi::FrameParameters frameParameters;
@@ -920,6 +1090,7 @@ public:
             m_LocalLightPdfMipmapPass->Process(m_CommandList);
         }
 
+
 #if WITH_NRD
         if (m_RtxdiContext->GetParameters().CheckerboardSamplingMode != rtxdi::CheckerboardMode::Off)
         {
@@ -932,10 +1103,7 @@ public:
             m_ui.reblurSettings.specularSettings.checkerboardMode = nrd::CheckerboardMode::OFF;
         }
 #endif
-
-        m_Profiler->BeginSection(m_CommandList, ProfilerSection::LightingTotal);
-
-
+        
         LightingPasses::RenderSettings lightingSettings = m_ui.lightingSettings;
         lightingSettings.enablePreviousTLAS &= m_ui.enableAnimations;
         lightingSettings.enableAlphaTestedGeometry = m_ui.gbufferSettings.enableAlphaTestedGeometry;
@@ -947,21 +1115,69 @@ public:
 #else
         lightingSettings.denoiserMode = DENOISER_MODE_OFF;
 #endif
-        
+        if (lightingSettings.denoiserMode == DENOISER_MODE_OFF)
+            lightingSettings.enableGradients = false;
+
+#if WITH_RTXGI
+        if (m_ui.rtxgi.enabled)
+        {
+            m_LightingPasses->FillConstantBufferForProbeTracing(m_CommandList, *m_RtxdiContext, lightingSettings, frameParameters);
+
+            assert(m_RTXGI->GetNumVolumes() == int(m_Scene->GetRtxgiVolumes().size()));
+
+            for (int volumeIndex = 0; volumeIndex < m_RTXGI->GetNumVolumes(); volumeIndex++)
+            {
+                auto volume = m_RTXGI->GetVolume(volumeIndex);
+                assert(volume);
+
+                const auto& params = m_Scene->GetRtxgiVolumes()[volumeIndex];
+                volume->SetParameters(m_ui.rtxgi);
+                volume->SetVolumeParameters(params);
+                if (params.scrolling)
+                    volume->SetOrigin(m_Camera.GetPosition());
+            }
+
+            m_RTXGI->UpdateAllVolumes(
+                m_CommandList,
+                m_LightingPasses->GetCurrentBindingSet(),
+                m_DescriptorTableManager->GetDescriptorTable(),
+                *m_Profiler);
+
+            m_ui.rtxgi.resetRelocation = false;
+        }
+
+        const uint32_t numRtxgiVolumes = m_RTXGI && m_ui.rtxgi.enabled ? m_RTXGI->GetNumVolumes() : 0;
+#else
+        const uint32_t numRtxgiVolumes = 0;
+#endif
+
+        const bool checkerboard = m_RtxdiContext->GetParameters().CheckerboardSamplingMode != rtxdi::CheckerboardMode::Off;
+
         if (m_ui.renderingMode == RenderingMode::ReStirDirectOnly || m_ui.renderingMode == RenderingMode::ReStirDirectBrdfMIS || m_ui.renderingMode == RenderingMode::ReStirDirectBrdfIndirect)
         {
-            // In the combined mode (ReStirDirectBrdfIndirect), we don't want ReSTIR to be the NRD front-end,
+            // In the combined modes (ReStirDirectBrdfIndirect and ReStirDirectBrdfMIS), we don't want ReSTIR to be the NRD front-end,
             // it should just write out the raw color data.
-            lightingSettings.enableDenoiserInputPacking = (m_ui.renderingMode == RenderingMode::ReStirDirectBrdfMIS || m_ui.renderingMode != RenderingMode::ReStirDirectBrdfIndirect);
+            lightingSettings.enableDenoiserInputPacking = (m_ui.renderingMode == RenderingMode::ReStirDirectOnly);
+
+            m_CommandList->clearTextureFloat(m_RenderTargets->Gradients, nvrhi::AllSubresources, nvrhi::Color(0.f));
 
             m_LightingPasses->Render(m_CommandList,
                 *m_RtxdiContext,
                 m_View, m_ViewPrevious,
                 lightingSettings,
                 frameParameters,
-                /* enableSpecularMis = */ m_ui.renderingMode == RenderingMode::ReStirDirectBrdfMIS || m_ui.renderingMode == RenderingMode::ReStirDirectBrdfIndirect);
+                /* enableSpecularMis = */ m_ui.renderingMode == RenderingMode::ReStirDirectBrdfMIS || m_ui.renderingMode == RenderingMode::ReStirDirectBrdfIndirect,
+                /* enableAccumulation = */ m_ui.aaMode == AntiAliasingMode::Accumulation,
+                m_ui.visualizationMode);
+
+            // Post-process the gradients into a confidence buffer usable by NRD
+            if (lightingSettings.enableGradients)
+            {
+                m_FilterGradientsPass->Render(m_CommandList, m_View, checkerboard);
+                m_ConfidencePass->Render(m_CommandList, m_View, lightingSettings.gradientLogDarknessBias, lightingSettings.gradientSensitivity, lightingSettings.confidenceHistoryLength, checkerboard);
+            }
         }
-        
+
         if (m_ui.renderingMode == RenderingMode::BrdfDirectOnly || m_ui.renderingMode == RenderingMode::ReStirDirectBrdfMIS || m_ui.renderingMode == RenderingMode::ReStirDirectBrdfIndirect)
         {
             lightingSettings.enableDenoiserInputPacking = true;
@@ -975,11 +1191,11 @@ public:
                 *m_EnvironmentLight,
                 /* enableIndirect = */ m_ui.renderingMode == RenderingMode::ReStirDirectBrdfIndirect,
                 /* enableAdditiveBlend = */ m_ui.renderingMode == RenderingMode::ReStirDirectBrdfMIS || m_ui.renderingMode == RenderingMode::ReStirDirectBrdfIndirect,
-                /* enableSpecularMis = */ m_ui.renderingMode == RenderingMode::ReStirDirectBrdfMIS || m_ui.renderingMode == RenderingMode::ReStirDirectBrdfIndirect);
+                /* enableSpecularMis = */ m_ui.renderingMode == RenderingMode::ReStirDirectBrdfMIS || m_ui.renderingMode == RenderingMode::ReStirDirectBrdfIndirect,
+                numRtxgiVolumes,
+                /* enableAccumulation = */ m_ui.aaMode == AntiAliasingMode::Accumulation);
         }
-
-        m_Profiler->EndSection(m_CommandList, ProfilerSection::LightingTotal);
-
+        
 #if WITH_NRD
         if (m_ui.enableDenoiser)
         {
@@ -990,13 +1206,21 @@ public:
                 ? (void*)&m_ui.relaxSettings
                 : (void*)&m_ui.reblurSettings;
 
-            m_NRD->RunDenoiserPasses(m_CommandList, *m_RenderTargets, m_View, m_ViewPrevious, GetFrameIndex(), methodSettings);
+            m_NRD->RunDenoiserPasses(m_CommandList, *m_RenderTargets, m_View, m_ViewPrevious, GetFrameIndex(), lightingSettings.enableGradients, methodSettings);
             
             m_CommandList->endMarker();
         }
 #endif
 
-        m_CompositingPass->Render(m_CommandList, m_View, m_ViewPrevious, m_ui.enableTextures, denoiserMode, *m_EnvironmentLight);
+        m_CompositingPass->Render(
+            m_CommandList,
+            m_View,
+            m_ViewPrevious,
+            denoiserMode,
+            /* numRtxgiVolumes = */ m_ui.renderingMode != RenderingMode::ReStirDirectBrdfIndirect ? numRtxgiVolumes : 0,
+            checkerboard,
+            m_ui,
+            *m_EnvironmentLight);
 
         if (m_ui.gbufferSettings.enableTransparentGeometry)
         {
@@ -1009,24 +1233,27 @@ public:
                 m_ui.gbufferSettings.materialReadbackPosition);
         }
 
-        nvrhi::TextureHandle finalHdrImage = m_RenderTargets->HdrColor;
-
-        if (m_ui.enableAccumulation)
+#if WITH_RTXGI
+        if (m_ui.rtxgi.enabled && m_ui.rtxgi.showProbes)
         {
-            m_AccumulationPass->Render(m_CommandList, m_View, accumulationWeight);
-
-            finalHdrImage = m_RenderTargets->AccumulatedColor;
+            m_RTXGI->RenderDebug(m_CommandList, m_DescriptorTableManager->GetDescriptorTable(), *m_RenderTargets, m_ui.rtxgi.selectedVolumeIndex, m_View);
         }
-        else if (m_ui.enableTAA)
-        {
-            m_TemporalAntiAliasingPass->TemporalResolve(m_CommandList, m_ui.taaParams, m_PreviousViewValid, m_View, m_ViewPrevious);
-            
-            if (m_ui.enableBloom)
-            {
-                m_BloomPass->Render(m_CommandList, m_RenderTargets->ResolvedFramebuffer, m_View, m_RenderTargets->ResolvedColor, 32.f, 0.005f);
-            }
+#endif
 
-            finalHdrImage = m_RenderTargets->ResolvedColor;
+        Resolve(m_CommandList, accumulationWeight);
+
+        if (m_ui.enableBloom)
+        {
+#if WITH_DLSS
+            // Use the unresolved image for bloom when DLSS is active because DLSS can modify HDR values significantly and add bloom flicker.
+            nvrhi::ITexture* bloomSource = (m_ui.aaMode == AntiAliasingMode::DLSS && m_ui.resolutionScale == 1.f)
+                ? m_RenderTargets->HdrColor
+                : m_RenderTargets->ResolvedColor;
+#else
+            nvrhi::ITexture* bloomSource = m_RenderTargets->ResolvedColor;
+#endif
+
+            m_BloomPass->Render(m_CommandList, m_RenderTargets->ResolvedFramebuffer, m_UpscaledView, bloomSource, 32.f, 0.005f);
         }
 
         if(m_ui.enableToneMapping)
@@ -1044,26 +1271,53 @@ public:
                 ToneMappingParams.eyeAdaptationSpeedDown = 0.f;
             }
 
-            m_ToneMappingPass->SimpleRender(m_CommandList, ToneMappingParams, m_View, finalHdrImage);
+            m_ToneMappingPass->SimpleRender(m_CommandList, ToneMappingParams, m_UpscaledView, m_RenderTargets->ResolvedColor);
             
             m_CommonPasses->BlitTexture(m_CommandList, framebuffer, m_RenderTargets->LdrColor, &m_BindingCache);
         }
         else
         {
-            m_CommonPasses->BlitTexture(m_CommandList, framebuffer, finalHdrImage, &m_BindingCache);
+            m_CommonPasses->BlitTexture(m_CommandList, framebuffer, m_RenderTargets->ResolvedColor, &m_BindingCache);
+        }
+
+        if (m_ui.visualizationMode != VIS_MODE_NONE)
+        {
+            bool haveSignal = true;
+            switch(m_ui.visualizationMode)
+            {
+            case VIS_MODE_DENOISED_DIFFUSE:
+            case VIS_MODE_DENOISED_SPECULAR:
+                haveSignal = m_ui.enableDenoiser;
+                break;
+
+            case VIS_MODE_DIFFUSE_CONFIDENCE:
+            case VIS_MODE_SPECULAR_CONFIDENCE:
+                haveSignal = m_ui.lightingSettings.enableGradients && m_ui.enableDenoiser;
+                break;
+            }
+
+            if (haveSignal)
+            {
+                m_VisualizationPass->Render(
+                    m_CommandList,
+                    framebuffer,
+                    m_View,
+                    m_UpscaledView,
+                    *m_RtxdiContext,
+                    frameParameters,
+                    m_LightingPasses->GetOutputReservoirBufferIndex(),
+                    m_ui.visualizationMode,
+                    m_ui.aaMode == AntiAliasingMode::Accumulation);
+            }
         }
         
         m_Profiler->EndFrame(m_CommandList);
 
         m_CommandList->close();
         GetDevice()->executeCommandList(m_CommandList);
-
-        if (m_ui.gbufferSettings.enableMaterialReadback)
-        {
-            m_ui.gbufferSettings.enableMaterialReadback = false;
-            m_MaterialReadbackCountdown = 2; // i.e. in 2 frames read the material index
-        }
-
+        
+        m_ui.gbufferSettings.enableMaterialReadback = false;
+        
         if (m_ui.enableAnimations)
             m_FramesSinceAnimation = 0;
         else
@@ -1071,13 +1325,28 @@ public:
         
         m_ViewPrevious = m_View;
         m_PreviousViewValid = true;
+        m_ui.resetAccumulation = false;
     }
 };
+
+void ProcessCommandLine(int argc, char* const* argv, app::DeviceCreationParameters& deviceParams)
+{
+    for (int i = 1; i < argc; ++i)
+    {
+        const char* arg = argv[i];
+
+        if (strcmp(arg, "-debug") == 0)
+        {
+            deviceParams.enableDebugRuntime = true;
+            deviceParams.enableNvrhiValidationLayer = true;
+        }
+    }
+}
 
 #ifdef WIN32
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow)
 #else
-int main()
+int main(int __argc, char* const* __argv)
 #endif
 {
 #if USE_DX12 && USE_VK
@@ -1102,9 +1371,39 @@ int main()
     deviceParams.backBufferWidth = 1920;
     deviceParams.backBufferHeight = 1080;
     deviceParams.vsyncEnabled = true;
-#ifdef _DEBUG
-    deviceParams.enableDebugRuntime = true; 
-    deviceParams.enableNvrhiValidationLayer = true;
+
+    ProcessCommandLine(__argc, __argv, deviceParams);
+
+#if defined(USE_VK)
+    if (api == nvrhi::GraphicsAPI::VULKAN)
+    {
+        // Set the extra device feature bit(s)
+        deviceParams.deviceCreateInfoCallback = [](vk::DeviceCreateInfo& info) {
+            auto features = const_cast<vk::PhysicalDeviceFeatures*>(info.pEnabledFeatures);
+            features->setFragmentStoresAndAtomics(true);
+#if defined(WITH_DLSS)
+            features->setShaderStorageImageWriteWithoutFormat(true);
+#endif
+        };
+
+#if defined(WITH_DLSS)
+        DLSS::GetRequiredVulkanExtensions(
+            deviceParams.optionalVulkanInstanceExtensions,
+            deviceParams.optionalVulkanDeviceExtensions);
+
+        // Currently, DLSS on Vulkan produces these validation errors. Silence them.
+        // Re-evaluate when updating DLSS.
+
+        // VkDeviceCreateInfo->ppEnabledExtensionNames must not contain both VK_KHR_buffer_device_address and VK_EXT_buffer_device_address
+        deviceParams.ignoredVulkanValidationMessageLocations.push_back(0xffffffff83a6bda8);
+        
+        // If VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT is set, bufferDeviceAddress must be enabled.
+        deviceParams.ignoredVulkanValidationMessageLocations.push_back(0xfffffffff972dfbf);
+
+        // vkCmdCuLaunchKernelNVX: required parameter pLaunchInfo->pParams specified as NULL.
+        deviceParams.ignoredVulkanValidationMessageLocations.push_back(0x79de34d4);
+#endif
+}
 #endif
 
     const char* apiString = nvrhi::utils::GraphicsAPIToString(deviceManager->GetGraphicsAPI());
@@ -1127,7 +1426,30 @@ int main()
         log::error("The GPU (%s) or its driver does not support ray tracing.", deviceManager->GetRendererString());
         return 1;
     }
-    
+
+#if USE_DX12
+    if (api == nvrhi::GraphicsAPI::D3D12)
+    {
+        // On DX12, disable the background shader optimization because it leads to stutter on the current NV drivers (496.61).
+
+        nvrhi::RefCountPtr<ID3D12Device> device = (ID3D12Device*)deviceManager->GetDevice()->getNativeObject(nvrhi::ObjectTypes::D3D12_Device);
+        nvrhi::RefCountPtr<ID3D12Device6> device6;
+
+        if (SUCCEEDED(device->QueryInterface(IID_PPV_ARGS(&device6))))
+        {
+            HRESULT hr = device6->SetBackgroundProcessingMode(
+                D3D12_BACKGROUND_PROCESSING_MODE_DISABLE_PROFILING_BY_SYSTEM,
+                D3D12_MEASUREMENTS_ACTION_DISCARD_PREVIOUS,
+                nullptr, nullptr);
+
+            if (FAILED(hr))
+            {
+                log::info("Call to ID3D12Device6::SetBackgroundProcessingMode(...) failed, HRESULT = 0x%08x. Expect stutter.", hr);
+            }
+        }
+    }
+#endif
+
     {
         UIData ui;
         SceneRenderer sceneRenderer(deviceManager, ui);

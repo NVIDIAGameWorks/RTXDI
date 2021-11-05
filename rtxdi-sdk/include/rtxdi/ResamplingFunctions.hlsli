@@ -11,8 +11,7 @@
 #ifndef RESAMPLING_FUNCTIONS_HLSLI
 #define RESAMPLING_FUNCTIONS_HLSLI
 
-#include "RtxdiParameters.h"
-#include "RtxdiHelpers.hlsli"
+#include "Reservoir.hlsli"
 
 // This macro can be defined in the including shader file to reduce code bloat
 // and/or remove ray tracing calls from temporal and spatial resampling shaders
@@ -20,214 +19,6 @@
 #ifndef RTXDI_ALLOWED_BIAS_CORRECTION
 #define RTXDI_ALLOWED_BIAS_CORRECTION RTXDI_BIAS_CORRECTION_RAY_TRACED
 #endif
-
-// This structure represents a single light reservoir that stores the weights, the sample ref,
-// sample count (M), and visibility for reuse. It can be serialized into RTXDI_PackedReservoir for storage.
-struct RTXDI_Reservoir
-{
-    // Light index (bits 0..30) and validity bit (31)
-    uint lightData;     
-
-    // Sample UV encoded in 16-bit fixed point format
-    uint uvData;        
-
-    // Overloaded: represents RIS weight sum during streaming,
-    // then reservoir weight (inverse PDF) after FinalizeResampling
-    float weightSum;
-
-    // Target PDF of the selected sample
-    float targetPdf;
-
-    // Number of samples considered for this reservoir
-    uint M;
-
-    // Visibility information stored in the reservoir for reuse
-    uint packedVisibility;
-
-    // Screen-space distance between the current location of the reservoir
-    // and the location where the visibility information was generated,
-    // minus the motion vectors applied in temporal resampling
-    int2 spatialDistance;
-
-    // How many frames ago the visibility information was generated
-    uint age;
-
-    // Encoding helper constants for RTXDI_PackedReservoir.mVisibility
-    static const uint c_VisibilityMask = 0x3ffff;
-    static const uint c_VisibilityChannelMax = 0x3f;
-    static const uint c_VisibilityChannelShift = 6;
-    static const uint c_MShift = 18;
-    static const uint c_MaxM = 0x3fff;
-
-    // Encoding helper constants for RTXDI_PackedReservoir.distanceAge
-    static const uint c_DistanceChannelBits = 8;
-    static const uint c_DistanceXShift = 0;
-    static const uint c_DistanceYShift = 8;
-    static const uint c_AgeShift = 16;
-    static const uint c_MaxAge = 0xff;
-    static const uint c_DistanceMask = (1u << c_DistanceChannelBits) - 1;
-    static const  int c_MaxDistance = int((1u << (c_DistanceChannelBits - 1)) - 1);
-
-    // Light index helpers
-    static const uint c_LightValidBit = 0x80000000;
-    static const uint c_LightIndexMask = 0x7FFFFFFF;
-};
-
-RTXDI_PackedReservoir RTXDI_PackReservoir(const RTXDI_Reservoir reservoir)
-{
-    int2 clampedSpatialDistance = clamp(reservoir.spatialDistance, -RTXDI_Reservoir::c_MaxDistance, RTXDI_Reservoir::c_MaxDistance);
-    int clampedAge = clamp(reservoir.age, 0, RTXDI_Reservoir::c_MaxAge);
-
-    RTXDI_PackedReservoir data;
-    data.lightData = reservoir.lightData;
-    data.uvData = reservoir.uvData;
-
-    data.mVisibility = reservoir.packedVisibility
-        | (min(reservoir.M, RTXDI_Reservoir::c_MaxM) << RTXDI_Reservoir::c_MShift);
-
-    data.distanceAge = 
-          ((clampedSpatialDistance.x & RTXDI_Reservoir::c_DistanceMask) << RTXDI_Reservoir::c_DistanceXShift) 
-        | ((clampedSpatialDistance.y & RTXDI_Reservoir::c_DistanceMask) << RTXDI_Reservoir::c_DistanceYShift) 
-        | (clampedAge << RTXDI_Reservoir::c_AgeShift);
-
-    data.targetPdf = reservoir.targetPdf;
-    data.weight = reservoir.weightSum;
-
-    return data;
-}
-
-
-void RTXDI_StoreReservoir(
-    const RTXDI_Reservoir reservoir,
-    RTXDI_ResamplingRuntimeParameters params,
-    RWStructuredBuffer<RTXDI_PackedReservoir> LightReservoirs,
-    uint2 reservoirPosition,
-    uint reservoirArrayIndex)
-{
-    uint pointer = RTXDI_ReservoirPositionToPointer(params, reservoirPosition, reservoirArrayIndex);
-    LightReservoirs[pointer] = RTXDI_PackReservoir(reservoir);
-}
-
-RTXDI_Reservoir RTXDI_EmptyReservoir()
-{
-    RTXDI_Reservoir s;
-    s.lightData = 0;
-    s.uvData = 0;
-    s.targetPdf = 0;
-    s.weightSum = 0;
-    s.M = 0;
-    s.packedVisibility = 0;
-    s.spatialDistance = 0;
-    s.age = 0;
-    return s;
-}
-
-RTXDI_Reservoir RTXDI_UnpackReservoir(RTXDI_PackedReservoir data)
-{
-    RTXDI_Reservoir res;
-    res.lightData = data.lightData;
-    res.uvData = data.uvData;
-    res.targetPdf = data.targetPdf;
-    res.weightSum = data.weight;
-    res.M = (data.mVisibility >> RTXDI_Reservoir::c_MShift) & RTXDI_Reservoir::c_MaxM;
-    res.packedVisibility = data.mVisibility & RTXDI_Reservoir::c_VisibilityMask;
-    // Sign extend the shift values
-    res.spatialDistance.x = int(data.distanceAge << (32 - RTXDI_Reservoir::c_DistanceXShift - RTXDI_Reservoir::c_DistanceChannelBits)) >> (32 - RTXDI_Reservoir::c_DistanceChannelBits);
-    res.spatialDistance.y = int(data.distanceAge << (32 - RTXDI_Reservoir::c_DistanceYShift - RTXDI_Reservoir::c_DistanceChannelBits)) >> (32 - RTXDI_Reservoir::c_DistanceChannelBits);
-    res.age = data.distanceAge >> RTXDI_Reservoir::c_AgeShift;
-
-    // Discard reservoirs that have Inf/NaN
-    if (isinf(res.weightSum) || isnan(res.weightSum)) {
-        res = RTXDI_EmptyReservoir();
-    }
-
-    return res;
-}
-
-RTXDI_Reservoir RTXDI_LoadReservoir(
-    RTXDI_ResamplingRuntimeParameters params,
-    RWStructuredBuffer<RTXDI_PackedReservoir> LightReservoirs,
-    uint2 reservoirPosition,
-    uint reservoirArrayIndex)
-{
-    uint pointer = RTXDI_ReservoirPositionToPointer(params, reservoirPosition, reservoirArrayIndex);
-    return RTXDI_UnpackReservoir(LightReservoirs[pointer]);
-}
-
-void RTXDI_StoreVisibilityInReservoir(
-    inout RTXDI_Reservoir reservoir,
-    float3 visibility,
-    bool discardIfInvisible)
-{
-    reservoir.packedVisibility = uint(saturate(visibility.x) * RTXDI_Reservoir::c_VisibilityChannelMax) 
-        | (uint(saturate(visibility.y) * RTXDI_Reservoir::c_VisibilityChannelMax)) << RTXDI_Reservoir::c_VisibilityChannelShift
-        | (uint(saturate(visibility.z) * RTXDI_Reservoir::c_VisibilityChannelMax)) << (RTXDI_Reservoir::c_VisibilityChannelShift * 2);
-
-    reservoir.spatialDistance = 0;
-    reservoir.age = 0;
-
-    if (discardIfInvisible && all(visibility == 0))
-    {
-        // Keep M for correct resampling, remove the actual sample
-        reservoir.lightData = 0;
-        reservoir.weightSum = 0;
-    }
-}
-
-// Structure that groups the parameters for RTXDI_GetReservoirVisibility(...)
-// Reusing final visibility reduces the number of high-quality shadow rays needed to shade
-// the scene, at the cost of somewhat softer or laggier shadows.
-struct RTXDI_VisibilityReuseParameters
-{
-    // Controls the maximum age of the final visibility term, measured in frames, that can be reused from the
-    // previous frame(s). Higher values result in better performance.
-    uint maxAge;
-
-    // Controls the maximum distance in screen space between the current pixel and the pixel that has
-    // produced the final visibility term. The distance does not include the motion vectors.
-    // Higher values result in better performance and softer shadows.
-    float maxDistance;
-};
-
-bool RTXDI_GetReservoirVisibility(
-    const RTXDI_Reservoir reservoir,
-    const RTXDI_VisibilityReuseParameters params,
-    out float3 o_visibility)
-{
-    if (reservoir.age > 0 &&
-        reservoir.age <= params.maxAge &&
-        length(float2(reservoir.spatialDistance)) < params.maxDistance)
-    {
-        o_visibility.x = float(reservoir.packedVisibility & RTXDI_Reservoir::c_VisibilityChannelMax) / RTXDI_Reservoir::c_VisibilityChannelMax;
-        o_visibility.y = float((reservoir.packedVisibility >> RTXDI_Reservoir::c_VisibilityChannelShift) & RTXDI_Reservoir::c_VisibilityChannelMax) / RTXDI_Reservoir::c_VisibilityChannelMax;
-        o_visibility.z = float((reservoir.packedVisibility >> (RTXDI_Reservoir::c_VisibilityChannelShift * 2)) & RTXDI_Reservoir::c_VisibilityChannelMax) / RTXDI_Reservoir::c_VisibilityChannelMax;
-
-        return true;
-    }
-
-    o_visibility = 0;
-    return false;
-}
-
-bool RTXDI_IsValidReservoir(const RTXDI_Reservoir reservoir)
-{
-    return reservoir.lightData != 0;
-}
-
-uint RTXDI_GetReservoirLightIndex(const RTXDI_Reservoir reservoir)
-{
-    return reservoir.lightData & RTXDI_Reservoir::c_LightIndexMask;
-}
-
-float2 RTXDI_GetReservoirSampleUV(const RTXDI_Reservoir reservoir)
-{
-    return float2(reservoir.uvData & 0xffff, reservoir.uvData >> 16) / float(0xffff);
-}
-
-float RTXDI_GetReservoirInvPdf(const RTXDI_Reservoir reservoir)
-{
-    return reservoir.weightSum;
-}
 
 // Adds a new, non-reservoir light sample into the reservoir, returns true if this sample was selected.
 // Algorithm (3) from the ReSTIR paper, Streaming RIS using weighted reservoir sampling.
@@ -309,35 +100,6 @@ void RTXDI_FinalizeResampling(
     reservoir.weightSum = (denominator == 0.0) ? 0.0 : (reservoir.weightSum * normalizationNumerator) / denominator;
 }
 
-bool RTXDI_IsActiveCheckerboardPixel(
-    uint2 pixelPosition,
-    bool previousFrame,
-    RTXDI_ResamplingRuntimeParameters params)
-{
-    if (params.activeCheckerboardField == 0)
-        return true;
-
-    return ((pixelPosition.x + pixelPosition.y + int(previousFrame)) & 1) == (params.activeCheckerboardField & 1);
-}
-
-uint2 RTXDI_PixelPosToReservoir(uint2 pixelPosition, RTXDI_ResamplingRuntimeParameters params)
-{
-    if (params.activeCheckerboardField == 0)
-        return pixelPosition;
-
-    return uint2(pixelPosition.x >> 1, pixelPosition.y);
-}
-
-uint2 RTXDI_ReservoirToPixelPos(uint2 reservoirIndex, RTXDI_ResamplingRuntimeParameters params)
-{
-    if (params.activeCheckerboardField == 0)
-        return reservoirIndex;
-
-    uint2 pixelPosition = uint2(reservoirIndex.x << 1, reservoirIndex.y);
-    pixelPosition.x += ((pixelPosition.y + params.activeCheckerboardField) & 1);
-    return pixelPosition;
-}
-
 void RTXDI_SamplePdfMipmap(
     inout RAB_RandomSamplerState rng, 
     Texture2D<float> pdfTexture, // full mip chain starting from unnormalized sampling pdf in mip 0
@@ -354,10 +116,10 @@ void RTXDI_SamplePdfMipmap(
         position *= 2;
 
         float4 samples; // there's no version of Gather that supports mipmaps, really?
-        samples.x = max(0, pdfTexture.mips[mipLevel][position + uint2(0, 0)].x);
-        samples.y = max(0, pdfTexture.mips[mipLevel][position + uint2(0, 1)].x);
-        samples.z = max(0, pdfTexture.mips[mipLevel][position + uint2(1, 0)].x);
-        samples.w = max(0, pdfTexture.mips[mipLevel][position + uint2(1, 1)].x);
+        samples.x = max(0, pdfTexture.Load(int3(position, mipLevel), int2(0, 0)).x);
+        samples.y = max(0, pdfTexture.Load(int3(position, mipLevel), int2(0, 1)).x);
+        samples.z = max(0, pdfTexture.Load(int3(position, mipLevel), int2(1, 0)).x);
+        samples.w = max(0, pdfTexture.Load(int3(position, mipLevel), int2(1, 1)).x);
 
         float weightSum = samples.x + samples.y + samples.z + samples.w;
         if (weightSum <= 0)
@@ -919,8 +681,8 @@ RTXDI_Reservoir RTXDI_SampleLightsForSurface(
 // RTXDI_BOILING_FILTER_GROUP_SIZE must be defined - 16 is a reasonable value
 #define RTXDI_BOILING_FILTER_MIN_LANE_COUNT 32
 
-groupshared float s_weights[(RTXDI_BOILING_FILTER_GROUP_SIZE * RTXDI_BOILING_FILTER_GROUP_SIZE) / RTXDI_BOILING_FILTER_MIN_LANE_COUNT];
-groupshared uint s_count[(RTXDI_BOILING_FILTER_GROUP_SIZE * RTXDI_BOILING_FILTER_GROUP_SIZE) / RTXDI_BOILING_FILTER_MIN_LANE_COUNT];
+groupshared float s_weights[(RTXDI_BOILING_FILTER_GROUP_SIZE * RTXDI_BOILING_FILTER_GROUP_SIZE + RTXDI_BOILING_FILTER_MIN_LANE_COUNT - 1) / RTXDI_BOILING_FILTER_MIN_LANE_COUNT];
+groupshared uint s_count[(RTXDI_BOILING_FILTER_GROUP_SIZE * RTXDI_BOILING_FILTER_GROUP_SIZE + RTXDI_BOILING_FILTER_MIN_LANE_COUNT - 1) / RTXDI_BOILING_FILTER_MIN_LANE_COUNT];
 
 // Boiling filter that should be applied at the end of the temporal resampling pass.
 // Can be used inside the same shader that does temporal resampling if it's a compute shader,
@@ -958,7 +720,7 @@ void RTXDI_BoilingFilter(
     GroupMemoryBarrierWithGroupSync();
 
     // Reduce the per-wavefront averages into a global average using one wavefront
-    if (linearThreadIndex < (RTXDI_BOILING_FILTER_GROUP_SIZE * RTXDI_BOILING_FILTER_GROUP_SIZE) / WaveGetLaneCount())
+    if (linearThreadIndex < (RTXDI_BOILING_FILTER_GROUP_SIZE * RTXDI_BOILING_FILTER_GROUP_SIZE + WaveGetLaneCount() - 1) / WaveGetLaneCount())
     {
         waveWeight = s_weights[linearThreadIndex];
         waveCount = s_count[linearThreadIndex];
@@ -983,6 +745,18 @@ void RTXDI_BoilingFilter(
 }
 #endif // RTXDI_ENABLE_BOILING_FILTER
 
+
+// Internal SDK function that permutes the pixels sampled from the previous frame.
+void RTXDI_ApplyPermutationSampling(inout int2 prevPixelPos, uint uniformRandomNumber)
+{
+    int2 offset = int2(uniformRandomNumber & 3, (uniformRandomNumber >> 2) & 3);
+    prevPixelPos += offset;
+ 
+    prevPixelPos.x ^= 3;
+    prevPixelPos.y ^= 3;
+    
+    prevPixelPos -= offset;
+}
 
 // A structure that groups the application-provided settings for temporal resampling.
 struct RTXDI_TemporalResamplingParameters
@@ -1014,6 +788,15 @@ struct RTXDI_TemporalResamplingParameters
     // If the dot product of two surfaces' normals is higher than this threshold, the surfaces are considered similar.
     // Otherwise, the pixel is not reused, and the resampling shader will look for a different one.
     float normalThreshold;
+
+    // Allows the temporal resampling logic to skip the bias correction ray trace for light samples
+    // reused from the previous frame. Only safe to use when invisible light samples are discarded
+    // on the previous frame, then any sample coming from the previous frame can be assumed visible.
+    bool enableVisibilityShortcut;
+
+    // Enables permuting the pixels sampled from the previous frame in order to add temporal
+    // variation to the output signal and make it more denoiser friendly.
+    bool enablePermutationSampling;
 };
 
 // Temporal resampling pass.
@@ -1023,6 +806,8 @@ struct RTXDI_TemporalResamplingParameters
 // combined. An optional visibility ray may be cast if enabled, to reduce the resampling bias.
 // That visibility ray should ideally be traced through the previous frame BVH, but
 // can also use the current frame BVH if the previous is not available - that will produce more bias.
+// The selectedLightSample parameter is used to update and return the selected sample; it's optional,
+// and it's safe to pass a null structure there and ignore the result.
 RTXDI_Reservoir RTXDI_TemporalResampling(
     uint2 pixelPosition,
     RAB_Surface surface,
@@ -1030,7 +815,9 @@ RTXDI_Reservoir RTXDI_TemporalResampling(
     RAB_RandomSamplerState rng,
     RTXDI_TemporalResamplingParameters tparams,
     RTXDI_ResamplingRuntimeParameters params,
-    RWStructuredBuffer<RTXDI_PackedReservoir> LightReservoirs)
+    RWStructuredBuffer<RTXDI_PackedReservoir> LightReservoirs,
+    out int2 temporalSamplePixelPos,
+    inout RAB_LightSample selectedLightSample)
 {
     int historyLimit = min(RTXDI_Reservoir::c_MaxM, tparams.maxHistoryLength * curSample.M);
 
@@ -1041,12 +828,19 @@ RTXDI_Reservoir RTXDI_TemporalResampling(
         selectedLightPrevID = RAB_TranslateLightIndex(RTXDI_GetReservoirLightIndex(curSample), true);
     }
 
+    temporalSamplePixelPos = -1;
+
     RTXDI_Reservoir state = RTXDI_EmptyReservoir();
     RTXDI_CombineReservoirs(state, curSample, /* random = */ 0.5, curSample.targetPdf);
 
     // Backproject this pixel to last frame
     float3 motion = tparams.screenSpaceMotion;
-    motion.xy += float2(RAB_GetNextRandom(rng), RAB_GetNextRandom(rng)) - 0.5;
+    
+    if (!tparams.enablePermutationSampling)
+    {
+        motion.xy += float2(RAB_GetNextRandom(rng), RAB_GetNextRandom(rng)) - 0.5;
+    }
+
     float2 reprojectedSamplePosition = float2(pixelPosition) + motion.xy;
     int2 prevPos = int2(round(reprojectedSamplePosition));
 
@@ -1068,10 +862,14 @@ RTXDI_Reservoir RTXDI_TemporalResampling(
         }
 
         int2 idx = prevPos + offset;
+        if (tparams.enablePermutationSampling && i == 0)
+        {
+            RTXDI_ApplyPermutationSampling(idx, params.uniformRandomNumber);
+        }
 
         if (!RTXDI_IsActiveCheckerboardPixel(idx, true, params))
         {
-            idx.x += params.activeCheckerboardField * 2 - 3;
+            idx.x += int(params.activeCheckerboardField) * 2 - 3;
         }
 
         // Grab shading / g-buffer data from last frame
@@ -1089,6 +887,7 @@ RTXDI_Reservoir RTXDI_TemporalResampling(
         spatialOffset = idx - prevPos;
         prevPos = idx;
         foundNeighbor = true;
+
         break;
     }
 
@@ -1111,12 +910,16 @@ RTXDI_Reservoir RTXDI_TemporalResampling(
         // Map the light ID from the previous frame into the current frame, if it still exists
         if (RTXDI_IsValidReservoir(prevSample))
         {
+            if (prevSample.age <= 1)
+            {
+                temporalSamplePixelPos = prevPos;
+            }
+
             int mappedLightID = RAB_TranslateLightIndex(RTXDI_GetReservoirLightIndex(prevSample), false);
 
             if (mappedLightID < 0)
             {
                 // Kill the reservoir
-                prevSample.M = 0;
                 prevSample.weightSum = 0;
                 prevSample.lightData = 0;
             }
@@ -1130,11 +933,12 @@ RTXDI_Reservoir RTXDI_TemporalResampling(
         previousM = prevSample.M;
 
         float weightAtCurrent = 0;
+        RAB_LightSample candidateLightSample = (RAB_LightSample)0;
         if (RTXDI_IsValidReservoir(prevSample))
         {
             const RAB_LightInfo candidateLight = RAB_LoadLightInfo(RTXDI_GetReservoirLightIndex(prevSample), false);
 
-            const RAB_LightSample candidateLightSample = RAB_SamplePolymorphicLight(
+            candidateLightSample = RAB_SamplePolymorphicLight(
                 candidateLight, surface, RTXDI_GetReservoirSampleUV(prevSample));
 
             weightAtCurrent = RAB_GetLightSampleTargetPdfForSurface(candidateLightSample, surface);
@@ -1145,6 +949,7 @@ RTXDI_Reservoir RTXDI_TemporalResampling(
         {
             selectedPreviousSample = true;
             selectedLightPrevID = int(originalPrevLightID);
+            selectedLightSample = candidateLightSample;
         }
     }
 
@@ -1162,15 +967,15 @@ RTXDI_Reservoir RTXDI_TemporalResampling(
             const RAB_LightInfo selectedLightPrev = RAB_LoadLightInfo(selectedLightPrevID, true);
 
             // Get the PDF of the sample RIS selected in the first loop, above, *at this neighbor* 
-            const RAB_LightSample selectedLightSample = RAB_SamplePolymorphicLight(
+            const RAB_LightSample selectedSampleAtTemporal = RAB_SamplePolymorphicLight(
                 selectedLightPrev, temporalSurface, RTXDI_GetReservoirSampleUV(state));
         
-            temporalP = RAB_GetLightSampleTargetPdfForSurface(selectedLightSample, temporalSurface);
+            temporalP = RAB_GetLightSampleTargetPdfForSurface(selectedSampleAtTemporal, temporalSurface);
 
 #if RTXDI_ALLOWED_BIAS_CORRECTION >= RTXDI_BIAS_CORRECTION_RAY_TRACED
-            if (tparams.biasCorrectionMode == RTXDI_BIAS_CORRECTION_RAY_TRACED && temporalP > 0)
+            if (tparams.biasCorrectionMode == RTXDI_BIAS_CORRECTION_RAY_TRACED && temporalP > 0 && (!selectedPreviousSample || !tparams.enableVisibilityShortcut))
             {
-                if (!RAB_GetTemporalConservativeVisibility(surface, temporalSurface, selectedLightSample))
+                if (!RAB_GetTemporalConservativeVisibility(surface, temporalSurface, selectedSampleAtTemporal))
                 {
                     temporalP = 0;
                 }
@@ -1234,6 +1039,8 @@ struct RTXDI_SpatialResamplingParameters
 // For each pixel, considers a number of its neighbors and, if their surfaces are 
 // similar enough to the current pixel, combines their light reservoirs.
 // Optionally, one visibility ray is traced for each neighbor being considered, to reduce bias.
+// The selectedLightSample parameter is used to update and return the selected sample; it's optional,
+// and it's safe to pass a null structure there and ignore the result.
 RTXDI_Reservoir RTXDI_SpatialResampling(
     uint2 pixelPosition,
     RAB_Surface centerSurface,
@@ -1242,7 +1049,8 @@ RTXDI_Reservoir RTXDI_SpatialResampling(
     RTXDI_SpatialResamplingParameters sparams,
     RTXDI_ResamplingRuntimeParameters params,
     RWStructuredBuffer<RTXDI_PackedReservoir> LightReservoirs,
-    Buffer<float2> NeighborOffsets)
+    Buffer<float2> NeighborOffsets,
+    inout RAB_LightSample selectedLightSample)
 {
     RTXDI_Reservoir state = RTXDI_EmptyReservoir();
 
@@ -1298,8 +1106,6 @@ RTXDI_Reservoir RTXDI_SpatialResampling(
 
         if (!RAB_AreMaterialsSimilar(centerSurface, neighborSurface))
             continue;
-        
-        cachedResult |= (1u << uint(i));
 
         uint2 neighborReservoirPos = RTXDI_PixelPosToReservoir(idx, params);
 
@@ -1307,23 +1113,28 @@ RTXDI_Reservoir RTXDI_SpatialResampling(
             neighborReservoirPos, sparams.sourceBufferIndex);
         neighborSample.spatialDistance += spatialOffset;
 
+        cachedResult |= (1u << uint(i));
+
         RAB_LightInfo candidateLight;
 
         // Load that neighbor's RIS state, do resampling
+        float neighborWeight = 0;
+        RAB_LightSample candidateLightSample = (RAB_LightSample)0;
         if (RTXDI_IsValidReservoir(neighborSample))
         {   
             candidateLight = RAB_LoadLightInfo(RTXDI_GetReservoirLightIndex(neighborSample), false);
             
-            const RAB_LightSample candidateLightSample = RAB_SamplePolymorphicLight(
+            candidateLightSample = RAB_SamplePolymorphicLight(
                 candidateLight, centerSurface, RTXDI_GetReservoirSampleUV(neighborSample));
             
-            float neighborWeight = RAB_GetLightSampleTargetPdfForSurface(candidateLightSample, centerSurface);
-
-            if (RTXDI_CombineReservoirs(state, neighborSample, RAB_GetNextRandom(rng), neighborWeight))
-            {
-                selected = i;
-                selectedLight = candidateLight;
-            }
+            neighborWeight = RAB_GetLightSampleTargetPdfForSurface(candidateLightSample, centerSurface);
+        }
+        
+        if (RTXDI_CombineReservoirs(state, neighborSample, RAB_GetNextRandom(rng), neighborWeight))
+        {
+            selected = i;
+            selectedLight = candidateLight;
+            selectedLightSample = candidateLightSample;
         }
     }
 
@@ -1354,15 +1165,15 @@ RTXDI_Reservoir RTXDI_SpatialResampling(
                 RAB_Surface neighborSurface = RAB_GetGBufferSurface(idx, false);
                 
                 // Get the PDF of the sample RIS selected in the first loop, above, *at this neighbor* 
-                const RAB_LightSample selectedLightSample = RAB_SamplePolymorphicLight(
+                const RAB_LightSample selectedSampleAtNeighbor = RAB_SamplePolymorphicLight(
                     selectedLight, neighborSurface, RTXDI_GetReservoirSampleUV(state));
 
-                float ps = RAB_GetLightSampleTargetPdfForSurface(selectedLightSample, neighborSurface);
+                float ps = RAB_GetLightSampleTargetPdfForSurface(selectedSampleAtNeighbor, neighborSurface);
 
 #if RTXDI_ALLOWED_BIAS_CORRECTION >= RTXDI_BIAS_CORRECTION_RAY_TRACED
                 if (sparams.biasCorrectionMode == RTXDI_BIAS_CORRECTION_RAY_TRACED && ps > 0)
                 {
-                    if (!RAB_GetConservativeVisibility(neighborSurface, selectedLightSample))
+                    if (!RAB_GetConservativeVisibility(neighborSurface, selectedSampleAtNeighbor))
                     {
                         ps = 0;
                     }
@@ -1438,9 +1249,22 @@ struct RTXDI_SpatioTemporalResamplingParameters
 
     // Screen-space radius for spatial resampling, measured in pixels.
     float samplingRadius;
+
+    // Allows the temporal resampling logic to skip the bias correction ray trace for light samples
+    // reused from the previous frame. Only safe to use when invisible light samples are discarded
+    // on the previous frame, then any sample coming from the previous frame can be assumed visible.
+    bool enableVisibilityShortcut;
+
+    // Enables permuting the pixels sampled from the previous frame in order to add temporal
+    // variation to the output signal and make it more denoiser friendly.
+    bool enablePermutationSampling;
 };
 
 
+// Spatio-temporal resampling pass.
+// A combination of the temporal and spatial passes that operates only on the previous frame reservoirs.
+// The selectedLightSample parameter is used to update and return the selected sample; it's optional,
+// and it's safe to pass a null structure there and ignore the result.
 RTXDI_Reservoir RTXDI_SpatioTemporalResampling(
     uint2 pixelPosition,
     RAB_Surface surface,
@@ -1449,7 +1273,9 @@ RTXDI_Reservoir RTXDI_SpatioTemporalResampling(
     RTXDI_SpatioTemporalResamplingParameters stparams,
     RTXDI_ResamplingRuntimeParameters params,
     RWStructuredBuffer<RTXDI_PackedReservoir> LightReservoirs,
-    Buffer<float2> NeighborOffsets)
+    Buffer<float2> NeighborOffsets,
+    out int2 temporalSamplePixelPos,
+    inout RAB_LightSample selectedLightSample)
 {
     int historyLimit = min(RTXDI_Reservoir::c_MaxM, stparams.maxHistoryLength * curSample.M);
 
@@ -1460,6 +1286,8 @@ RTXDI_Reservoir RTXDI_SpatioTemporalResampling(
         selectedLightPrevID = RAB_TranslateLightIndex(RTXDI_GetReservoirLightIndex(curSample), true);
     }
 
+    temporalSamplePixelPos = -1;
+
     RTXDI_Reservoir state = RTXDI_EmptyReservoir();
     RTXDI_CombineReservoirs(state, curSample, /* random = */ 0.5, curSample.targetPdf);
 
@@ -1467,7 +1295,12 @@ RTXDI_Reservoir RTXDI_SpatioTemporalResampling(
 
     // Backproject this pixel to last frame
     float3 motion = stparams.screenSpaceMotion;
-    motion.xy += float2(RAB_GetNextRandom(rng), RAB_GetNextRandom(rng)) - 0.5;
+
+    if (!stparams.enablePermutationSampling)
+    {
+        motion.xy += float2(RAB_GetNextRandom(rng), RAB_GetNextRandom(rng)) - 0.5;
+    }
+
     float2 reprojectedSamplePosition = float2(pixelPosition) + motion.xy;
     int2 prevPos = int2(round(reprojectedSamplePosition));
 
@@ -1492,9 +1325,14 @@ RTXDI_Reservoir RTXDI_SpatioTemporalResampling(
 
         int2 idx = prevPos + offset;
 
+        if (stparams.enablePermutationSampling && i == 0)
+        {
+            RTXDI_ApplyPermutationSampling(idx, params.uniformRandomNumber);
+        }
+
         if (!RTXDI_IsActiveCheckerboardPixel(idx, true, params))
         {
-            idx.x += params.activeCheckerboardField * 2 - 3;
+            idx.x += int(params.activeCheckerboardField) * 2 - 3;
         }
 
         // Grab shading / g-buffer data from last frame
@@ -1550,7 +1388,7 @@ RTXDI_Reservoir RTXDI_SpatioTemporalResampling(
 
             if (!RTXDI_IsActiveCheckerboardPixel(idx, true, params))
             {
-                idx.x += params.activeCheckerboardField * 2 - 3;
+                idx.x += int(params.activeCheckerboardField) * 2 - 3;
             }
 
             temporalSurface = RAB_GetGBufferSurface(idx, true);
@@ -1582,13 +1420,17 @@ RTXDI_Reservoir RTXDI_SpatioTemporalResampling(
 
         // Map the light ID from the previous frame into the current frame, if it still exists
         if (RTXDI_IsValidReservoir(prevSample))
-        {            
+        {   
+            if (i == 0 && foundTemporalSurface && prevSample.age <= 1)
+            {
+                temporalSamplePixelPos = idx;
+            }
+
             int mappedLightID = RAB_TranslateLightIndex(RTXDI_GetReservoirLightIndex(prevSample), false);
 
             if (mappedLightID < 0)
             {
                 // Kill the reservoir
-                prevSample.M = 0;
                 prevSample.weightSum = 0;
                 prevSample.lightData = 0;
             }
@@ -1602,20 +1444,23 @@ RTXDI_Reservoir RTXDI_SpatioTemporalResampling(
         RAB_LightInfo candidateLight;
 
         // Load that neighbor's RIS state, do resampling
+        float neighborWeight = 0;
+        RAB_LightSample candidateLightSample = (RAB_LightSample)0;
         if (RTXDI_IsValidReservoir(prevSample))
         {   
             candidateLight = RAB_LoadLightInfo(RTXDI_GetReservoirLightIndex(prevSample), false);
             
-            const RAB_LightSample candidateLightSample = RAB_SamplePolymorphicLight(
+            candidateLightSample = RAB_SamplePolymorphicLight(
                 candidateLight, surface, RTXDI_GetReservoirSampleUV(prevSample));
             
-            float neighborWeight = RAB_GetLightSampleTargetPdfForSurface(candidateLightSample, surface);
+            neighborWeight = RAB_GetLightSampleTargetPdfForSurface(candidateLightSample, surface);
+        }
 
-            if (RTXDI_CombineReservoirs(state, prevSample, RAB_GetNextRandom(rng), neighborWeight))
-            {
-                selected = i;
-                selectedLightPrevID = int(originalPrevLightID);
-            }
+        if (RTXDI_CombineReservoirs(state, prevSample, RAB_GetNextRandom(rng), neighborWeight))
+        {
+            selected = i;
+            selectedLightPrevID = int(originalPrevLightID);
+            selectedLightSample = candidateLightSample;
         }
     }
 
@@ -1655,13 +1500,14 @@ RTXDI_Reservoir RTXDI_SpatioTemporalResampling(
                     RAB_Surface neighborSurface = RAB_GetGBufferSurface(idx, true);
                     
                     // Get the PDF of the sample RIS selected in the first loop, above, *at this neighbor* 
-                    const RAB_LightSample selectedLightSample = RAB_SamplePolymorphicLight(
+                    const RAB_LightSample selectedSampleAtNeighbor = RAB_SamplePolymorphicLight(
                         selectedLightPrev, neighborSurface, RTXDI_GetReservoirSampleUV(state));
 
-                    float ps = RAB_GetLightSampleTargetPdfForSurface(selectedLightSample, neighborSurface);
+                    float ps = RAB_GetLightSampleTargetPdfForSurface(selectedSampleAtNeighbor, neighborSurface);
 
 #if RTXDI_ALLOWED_BIAS_CORRECTION >= RTXDI_BIAS_CORRECTION_RAY_TRACED
-                    if (stparams.biasCorrectionMode == RTXDI_BIAS_CORRECTION_RAY_TRACED && ps > 0)
+                                                                                                              // TODO:  WHY?
+                    if (stparams.biasCorrectionMode == RTXDI_BIAS_CORRECTION_RAY_TRACED && ps > 0 && (selected != i || i != 0 || !stparams.enableVisibilityShortcut))
                     {
                         RAB_Surface fallbackSurface;
                         if (i == 0 && foundTemporalSurface)
@@ -1669,7 +1515,7 @@ RTXDI_Reservoir RTXDI_SpatioTemporalResampling(
                         else
                             fallbackSurface = neighborSurface;
 
-                        if (!RAB_GetTemporalConservativeVisibility(fallbackSurface, neighborSurface, selectedLightSample))
+                        if (!RAB_GetTemporalConservativeVisibility(fallbackSurface, neighborSurface, selectedSampleAtNeighbor))
                         {
                             ps = 0;
                         }

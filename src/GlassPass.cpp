@@ -62,7 +62,7 @@ GlassPass::GlassPass(
 
 void GlassPass::CreatePipeline(bool useRayQuery)
 {
-    m_Pass.Init(m_Device, *m_ShaderFactory, "app/GlassPass.hlsl", {}, useRayQuery, 16, m_BindingLayout, m_BindlessLayout);
+    m_Pass.Init(m_Device, *m_ShaderFactory, "app/GlassPass.hlsl", {}, useRayQuery, 16, m_BindingLayout, nullptr, m_BindlessLayout);
 }
 
 void GlassPass::CreateBindingSet(
@@ -121,7 +121,7 @@ void GlassPass::Render(
     pushConstants.rayCountBufferIndex = ProfilerSection::Glass;
 
     m_Pass.Execute(commandList, view.GetViewExtent().width(), view.GetViewExtent().height(), 
-        m_BindingSet, m_Scene->GetDescriptorTable(), &pushConstants, sizeof(pushConstants));
+        m_BindingSet, nullptr, m_Scene->GetDescriptorTable(), &pushConstants, sizeof(pushConstants));
 
     commandList->endMarker();
 }

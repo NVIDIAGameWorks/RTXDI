@@ -23,6 +23,7 @@ class RenderTargets
 {
 public:
     nvrhi::TextureHandle DeviceDepth;
+    nvrhi::TextureHandle DeviceDepthUAV;
     nvrhi::TextureHandle Depth;
     nvrhi::TextureHandle PrevDepth;
     nvrhi::TextureHandle GBufferDiffuseAlbedo;
@@ -36,7 +37,7 @@ public:
     nvrhi::TextureHandle PrevGBufferGeoNormals;
     nvrhi::TextureHandle MotionVectors;
     nvrhi::TextureHandle NormalRoughness; // for NRD
-    
+
     nvrhi::TextureHandle HdrColor;
     nvrhi::TextureHandle LdrColor;
     nvrhi::TextureHandle DiffuseLighting;
@@ -47,7 +48,16 @@ public:
     nvrhi::TextureHandle TaaFeedback2;
     nvrhi::TextureHandle ResolvedColor;
     nvrhi::TextureHandle AccumulatedColor;
-    
+    nvrhi::TextureHandle RestirLuminance;
+    nvrhi::TextureHandle PrevRestirLuminance;
+	
+    nvrhi::TextureHandle Gradients;
+    nvrhi::TextureHandle TemporalSamplePositions;
+    nvrhi::TextureHandle DiffuseConfidence;
+    nvrhi::TextureHandle SpecularConfidence;
+    nvrhi::TextureHandle PrevDiffuseConfidence;
+    nvrhi::TextureHandle PrevSpecularConfidence;
+
     std::shared_ptr<donut::engine::FramebufferFactory> LdrFramebuffer;
     std::shared_ptr<donut::engine::FramebufferFactory> ResolvedFramebuffer;
     std::shared_ptr<donut::engine::FramebufferFactory> GBufferFramebuffer;

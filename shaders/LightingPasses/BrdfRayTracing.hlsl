@@ -16,7 +16,7 @@
 
 #ifdef WITH_NRD
 #define COMPILER_DXC
-#include <NRD.hlsl>
+#include <NRD.hlsli>
 #endif
 
 #include "ShadingHelpers.hlsli"
@@ -24,7 +24,7 @@
 static const float c_MaxIndirectRadiance = 10;
 
 #if USE_RAY_QUERY
-[numthreads(16, 16, 1)]
+[numthreads(RTXDI_SCREEN_SPACE_GROUP_SIZE, RTXDI_SCREEN_SPACE_GROUP_SIZE, 1)]
 void main(uint2 GlobalIndex : SV_DispatchThreadID)
 #else
 [shader("raygeneration")]
@@ -36,10 +36,12 @@ void RayGen()
 #endif
     uint2 pixelPosition = RTXDI_ReservoirToPixelPos(GlobalIndex, g_Const.runtimeParams);
 
-    RAB_RandomSamplerState rng = RAB_InitRandomSampler(GlobalIndex, 5);
-    RAB_RandomSamplerState tileRng = RAB_InitRandomSampler(GlobalIndex / RTXDI_TILE_SIZE_IN_PIXELS, 1);
-
     RAB_Surface surface = RAB_GetGBufferSurface(pixelPosition, false);
+
+    if (!RAB_IsSurfaceValid(surface))
+        return;
+
+    RAB_RandomSamplerState rng = RAB_InitRandomSampler(GlobalIndex, 5);
     
     float3 tangent, bitangent;
     branchlessONB(surface.normal, tangent, bitangent);
@@ -114,10 +116,18 @@ void RayGen()
     payload.instanceID = ~0u;
     payload.throughput = 1.0;
 
+    uint instanceMask = INSTANCE_MASK_OPAQUE;
+    
+    if (g_Const.enableAlphaTestedGeometry)
+        instanceMask |= INSTANCE_MASK_ALPHA_TESTED;
+
+    if (g_Const.enableTransparentGeometry)
+        instanceMask |= INSTANCE_MASK_TRANSPARENT;
+
 #if USE_RAY_QUERY
     RayQuery<RAY_FLAG_SKIP_PROCEDURAL_PRIMITIVES> rayQuery;
     
-    rayQuery.TraceRayInline(SceneBVH, RAY_FLAG_NONE, INSTANCE_MASK_ALL, ray);
+    rayQuery.TraceRayInline(SceneBVH, RAY_FLAG_NONE, instanceMask, ray);
 
     while (rayQuery.Proceed())
     {
@@ -144,13 +154,17 @@ void RayGen()
         payload.committedRayT = rayQuery.CommittedRayT();
     }
 #else
-    TraceRay(SceneBVH, RAY_FLAG_NONE, INSTANCE_MASK_ALL, 0, 0, 0, ray, payload);
+    TraceRay(SceneBVH, RAY_FLAG_NONE, instanceMask, 0, 0, 0, ray, payload);
 #endif
 
     if (g_PerPassConstants.rayCountBufferIndex >= 0)
     {
         InterlockedAdd(u_RayCountBuffer[RAY_COUNT_TRACED(g_PerPassConstants.rayCountBufferIndex)], 1);
     }
+
+    const RTXDI_ResamplingRuntimeParameters params = g_Const.runtimeParams;
+    uint gbufferIndex = RTXDI_ReservoirPositionToPointer(params, GlobalIndex, 0);
+    bool secondarySurfaceStored = false;
 
     if (payload.instanceID != ~0u)
     {
@@ -198,51 +212,31 @@ void RayGen()
             radiance += ms.emissiveColor;
         }
 
+        RAB_Surface secondarySurface;
+        secondarySurface.worldPos = ray.Origin + ray.Direction * payload.committedRayT;
+        secondarySurface.viewDepth = 1.0; // don't care
+        secondarySurface.normal = (dot(gs.geometryNormal, ray.Direction) < 0) ? gs.geometryNormal : -gs.geometryNormal;
+        secondarySurface.geoNormal = secondarySurface.normal;
+        secondarySurface.diffuseAlbedo = ms.diffuseAlbedo;
+        secondarySurface.specularF0 = ms.specularF0;
+        secondarySurface.roughness = ms.roughness;
+
         if (g_Const.enableBrdfIndirect)
         {
-            RAB_Surface secondarySurface;
+            SecondarySurface secondarySurface;
             secondarySurface.worldPos = ray.Origin + ray.Direction * payload.committedRayT;
-            secondarySurface.viewDepth = 1.0; // don't care
-            secondarySurface.normal = (dot(gs.geometryNormal, ray.Direction) < 0) ? gs.geometryNormal : -gs.geometryNormal;
-            secondarySurface.geoNormal = secondarySurface.normal;
-            secondarySurface.diffuseAlbedo = ms.diffuseAlbedo;
-            secondarySurface.specularF0 = ms.specularF0;
-            secondarySurface.roughness = ms.roughness;
-
-            const RTXDI_ResamplingRuntimeParameters params = g_Const.runtimeParams;
-
-            RAB_LightSample lightSample;
-            RTXDI_Reservoir reservoir = RTXDI_SampleLightsForSurface(rng, tileRng, secondarySurface,
-                g_Const.numIndirectRegirSamples, 
-                g_Const.numIndirectLocalLightSamples, 
-                g_Const.numIndirectInfiniteLightSamples, 
-                g_Const.numIndirectEnvironmentSamples,
-                params, u_RisBuffer, lightSample);
-
-            float lightSampleScale = (lightSample.solidAnglePdf > 0) ? RTXDI_GetReservoirInvPdf(reservoir) / lightSample.solidAnglePdf : 0;
-
-            // Firefly suppression
-            float indirectLuminance = calcLuminance(lightSample.radiance) * lightSampleScale;
-            if(indirectLuminance > c_MaxIndirectRadiance)
-                lightSampleScale *= c_MaxIndirectRadiance / indirectLuminance;
-
-            float3 indirectDiffuse = 0;
-            float3 indirectSpecular = 0;
-            float lightDistance = 0;
-            ShadeSurfaceWithLightSample(reservoir, secondarySurface, lightSample, indirectDiffuse, indirectSpecular, lightDistance);
-            
-            radiance += indirectDiffuse * ms.diffuseAlbedo + indirectSpecular;
+            secondarySurface.normal = ndirToOctUnorm32((dot(gs.geometryNormal, ray.Direction) < 0) ? gs.geometryNormal : -gs.geometryNormal);
+            secondarySurface.throughput = Pack_R16G16B16A16_FLOAT(float4(payload.throughput * BRDF_over_PDF, isSpecularRay));
+            secondarySurface.diffuseAlbedo = Pack_R11G11B10_UFLOAT(ms.diffuseAlbedo);
+            secondarySurface.specularAndRoughness = Pack_R8G8B8A8_Gamma_UFLOAT(float4(ms.specularF0, ms.roughness));
+        
+            u_SecondaryGBuffer[gbufferIndex] = secondarySurface;
+            secondarySurfaceStored = true;
         }
     }
     else if (g_Const.enableEnvironmentMap && (isSpecularRay || !g_Const.enableBrdfMIS) && calcLuminance(BRDF_over_PDF) > 0.0)
     {
-        Texture2D environmentLatLongMap = t_BindlessTextures[g_Const.environmentMapTextureIndex];
-
-        float2 uv = directionToEquirectUV(ray.Direction);
-        uv.x -= g_Const.environmentRotation;
-
-        float3 environmentRadiance = environmentLatLongMap.SampleLevel(s_EnvironmentSampler, uv, 0).rgb;
-        environmentRadiance *= g_Const.environmentScale;
+        float3 environmentRadiance = GetEnvironmentRadiance(ray.Direction);
 
         if (g_Const.enableBrdfMIS)
         {
@@ -269,6 +263,13 @@ void RayGen()
         radiance += environmentRadiance;
     }
 
+    if (g_Const.enableBrdfIndirect && !secondarySurfaceStored)
+    {
+        SecondarySurface secondarySurface = (SecondarySurface)0;
+        u_SecondaryGBuffer[gbufferIndex] = secondarySurface;
+    }
+
+
     radiance *= payload.throughput;
 
     float3 diffuse = isSpecularRay ? 0.0 : radiance * BRDF_over_PDF;
@@ -276,62 +277,9 @@ void RayGen()
     float diffuseHitT = payload.committedRayT;
     float specularHitT = payload.committedRayT;
 
-    specular = DemodulateSpecular(surface, specular);
+    specular = DemodulateSpecular(surface.specularF0, specular);
 
-    uint2 lightingTexturePos = (g_Const.denoiserMode == DENOISER_MODE_REBLUR)
-        ? GlobalIndex
-        : pixelPosition;
 
-    if (g_Const.denoiserMode != DENOISER_MODE_REBLUR && g_Const.runtimeParams.activeCheckerboardField != 0)
-    {
-        diffuse *= 2;
-        specular *= 2;
-
-        int2 otherFieldPixelPosition = pixelPosition;
-        otherFieldPixelPosition.x += (g_Const.runtimeParams.activeCheckerboardField == 1) == ((pixelPosition.y & 1) != 0)
-            ? 1 : -1;
-
-        u_DiffuseLighting[otherFieldPixelPosition] = 0;
-        u_SpecularLighting[otherFieldPixelPosition] = 0;
-    }
-
-    if (g_Const.enableBrdfAdditiveBlend)
-    {
-        float4 restirDiffuse = u_DiffuseLighting[lightingTexturePos];
-        float4 restirSpecular = u_SpecularLighting[lightingTexturePos];
-
-        diffuse += restirDiffuse.rgb;
-        specular += restirSpecular.rgb;
-
-        if(isSpecularRay)
-            diffuseHitT = restirDiffuse.w;
-        else
-            specularHitT = restirSpecular.w;
-    }
-
-#if WITH_NRD
-    if(g_Const.denoiserMode != DENOISER_MODE_OFF && g_Const.enableDenoiserInputPacking)
-    {
-        const bool useReLAX = (g_Const.denoiserMode == DENOISER_MODE_RELAX);
-         
-        if (useReLAX)
-        {
-            u_DiffuseLighting[lightingTexturePos] = RELAX_FrontEnd_PackRadiance(diffuse, diffuseHitT);
-            u_SpecularLighting[lightingTexturePos] = RELAX_FrontEnd_PackRadiance(specular, specularHitT);
-        }
-        else
-        {
-            float diffNormDist = REBLUR_FrontEnd_GetNormHitDist(diffuseHitT, surface.viewDepth, g_Const.reblurDiffHitDistParams);
-            u_DiffuseLighting[lightingTexturePos] = REBLUR_FrontEnd_PackRadiance(diffuse, diffNormDist);
-            
-            float specNormDist = REBLUR_FrontEnd_GetNormHitDist(specularHitT, surface.viewDepth, g_Const.reblurSpecHitDistParams, surface.roughness);
-            u_SpecularLighting[lightingTexturePos] = REBLUR_FrontEnd_PackRadiance(specular, specNormDist);
-        }
-    }
-    else
-#endif
-    {
-        u_DiffuseLighting[lightingTexturePos] = float4(diffuse, diffuseHitT);
-        u_SpecularLighting[lightingTexturePos] = float4(specular, specularHitT);
-    }
+    StoreShadingOutput(GlobalIndex, pixelPosition, 
+        surface.viewDepth, surface.roughness, diffuse, specular, payload.committedRayT, !g_Const.enableBrdfAdditiveBlend, !g_Const.enableBrdfIndirect);
 }

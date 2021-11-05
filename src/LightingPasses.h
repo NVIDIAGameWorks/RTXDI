@@ -41,6 +41,7 @@ class RtxdiResources;
 class Profiler;
 class EnvironmentLight;
 struct ResamplingConstants;
+class RtxgiIntegration;
 
 namespace nrd
 {
@@ -65,12 +66,18 @@ private:
     RayTracingPass m_SpatialResamplingPass;
     RayTracingPass m_ShadeSamplesPass;
     RayTracingPass m_BrdfRayTracingPass;
+    RayTracingPass m_ShadeSecondarySurfacesPass;
     RayTracingPass m_FusedResamplingPass;
+    RayTracingPass m_GradientsPass;
     nvrhi::BindingLayoutHandle m_BindingLayout;
     nvrhi::BindingLayoutHandle m_BindlessLayout;
+    nvrhi::BindingLayoutHandle m_RtxgiBindingLayout;
     nvrhi::BindingSetHandle m_BindingSet;
     nvrhi::BindingSetHandle m_PrevBindingSet;
+    nvrhi::BindingSetHandle m_RtxgiBindingSet;
     nvrhi::BufferHandle m_ConstantBuffer;
+    nvrhi::BufferHandle m_LightReservoirBuffer;
+    nvrhi::BufferHandle m_SecondarySurfaceBuffer;
     dm::uint2 m_EnvironmentPdfTextureSize;
     dm::uint2 m_LocalLightPdfTextureSize;
 
@@ -84,7 +91,7 @@ private:
 
     void CreateComputePass(ComputePass& pass, const char* shaderName, const std::vector<donut::engine::ShaderMacro>& macros);
     void ExecuteComputePass(nvrhi::ICommandList* commandList, ComputePass& pass, const char* passName, dm::int2 dispatchSize, ProfilerSection::Enum profilerSection);
-    void ExecuteRayTracingPass(nvrhi::ICommandList* commandList, RayTracingPass& pass, bool enableRayCounts, const char* passName, dm::int2 dispatchSize, ProfilerSection::Enum profilerSection);
+    void ExecuteRayTracingPass(nvrhi::ICommandList* commandList, RayTracingPass& pass, bool enableRayCounts, const char* passName, dm::int2 dispatchSize, ProfilerSection::Enum profilerSection, nvrhi::IBindingSet* extraBindingSet = nullptr);
 
 public:
     struct RenderSettings
@@ -98,22 +105,28 @@ public:
         bool enableInitialVisibility = true;
         bool enableFinalVisibility = true;
         bool enableRayCounts = true;
+        bool enablePermutationSampling = true;
         bool visualizeRegirCells = false;
 
         uint32_t numPrimaryRegirSamples = 8;
         uint32_t numPrimaryLocalLightSamples = 8;
         uint32_t numPrimaryInfiniteLightSamples = 1;
-        uint32_t numPrimaryEnvironmentSamples = 2;
-        uint32_t numIndirectRegirSamples = 8;
-        uint32_t numIndirectLocalLightSamples = 8;
+        uint32_t numPrimaryEnvironmentSamples = 1;
+        uint32_t numIndirectRegirSamples = 2;
+        uint32_t numIndirectLocalLightSamples = 2;
         uint32_t numIndirectInfiniteLightSamples = 1;
-        uint32_t numIndirectEnvironmentSamples = 2;
+        uint32_t numIndirectEnvironmentSamples = 1;
+        uint32_t numRtxgiRegirSamples = 8;
+        uint32_t numRtxgiLocalLightSamples = 8;
+        uint32_t numRtxgiInfiniteLightSamples = 1;
+        uint32_t numRtxgiEnvironmentSamples = 1;
 
         bool enableTemporalResampling = true;
         float temporalNormalThreshold = 0.5f;
         float temporalDepthThreshold = 0.1f;
         uint32_t maxHistoryLength = 20;
         uint32_t temporalBiasCorrection = RTXDI_BIAS_CORRECTION_BASIC;
+        float permutationSamplingThreshold = 0.9f;
 
         bool enableBoilingFilter = true;
         float boilingFilterStrength = 0.2f;
@@ -130,15 +143,26 @@ public:
         uint32_t finalVisibilityMaxAge = 4;
         float finalVisibilityMaxDistance = 16.f;
 
+        bool enableSecondaryResampling = true;
+        uint32_t numSecondarySamples = 1;
+        float secondarySamplingRadius = 4.f;
+        float secondaryNormalThreshold = 0.9f;
+        float secondaryDepthThreshold = 0.1f;
+        uint32_t secondaryBiasCorrection = RTXDI_BIAS_CORRECTION_BASIC;
+        
         // Enables discarding the reservoirs if their lights turn out to be occluded in the final pass.
         // This mode significantly reduces the noise in the penumbra but introduces bias. That bias can be 
         // corrected by setting 'enableSpatialBiasCorrection' and 'enableTemporalBiasCorrection' to true.
         bool discardInvisibleSamples = false;
-
+        
         bool enableReGIR = true;
         uint32_t numRegirBuildSamples = 8;
 
         bool useFusedKernel = false;
+        bool enableGradients = true;
+        float gradientLogDarknessBias = -12.f;
+        float gradientSensitivity = 8.f;
+        float confidenceHistoryLength = 0.75f;
         
 #if WITH_NRD
         const nrd::HitDistanceParameters* reblurDiffHitDistanceParams = nullptr;
@@ -160,7 +184,8 @@ public:
         nvrhi::rt::IAccelStruct* topLevelAS,
         nvrhi::rt::IAccelStruct* prevTopLevelAS,
         const RenderTargets& renderTargets,
-        const RtxdiResources& resources);
+        const RtxdiResources& resources,
+        const RtxgiIntegration* rtxgi);
 
     void Render(
         nvrhi::ICommandList* commandList,
@@ -169,7 +194,9 @@ public:
         const donut::engine::IView& previousView,
         const RenderSettings& localSettings,
         const rtxdi::FrameParameters& frameParameters,
-        bool enableSpecularMis);
+        bool enableSpecularMis,
+        bool enableAccumulation,
+        uint32_t visualizationMode);
 
     void RenderBrdfRays(
         nvrhi::ICommandList* commandList,
@@ -180,9 +207,23 @@ public:
         const EnvironmentLight& environmentLight,
         bool enableIndirect,
         bool enableAdditiveBlend,
-        bool enableSpecularMis);
+        bool enableSpecularMis,
+        uint32_t numRtxgiVolumes,
+        bool enableAccumulation);
 
     void NextFrame();
+
+    [[nodiscard]] nvrhi::IBindingLayout* GetBindingLayout() const { return m_BindingLayout; }
+    [[nodiscard]] nvrhi::IBindingSet* GetCurrentBindingSet() const { return m_BindingSet; }
+    [[nodiscard]] uint32_t GetOutputReservoirBufferIndex() const { return m_CurrentFrameOutputReservoir; }
+
+    void FillConstantBufferForProbeTracing(
+        nvrhi::ICommandList* commandList,
+        rtxdi::Context& context,
+        const RenderSettings& localSettings,
+        const rtxdi::FrameParameters& frameParameters);
+
+    static donut::engine::ShaderMacro GetRegirMacro(const rtxdi::ContextParameters& contextParameters);
 
 private:
     void FillResamplingConstants(

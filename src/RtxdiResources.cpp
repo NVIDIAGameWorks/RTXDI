@@ -99,13 +99,23 @@ RtxdiResources::RtxdiResources(
 
 
     nvrhi::BufferDesc lightReservoirBufferDesc;
-    lightReservoirBufferDesc.byteSize = sizeof(RTXDI_PackedReservoir) * context.GetReservoirBufferElementCount() * 2; // Use 2 reservoir buffers for our pipeline
+    lightReservoirBufferDesc.byteSize = sizeof(RTXDI_PackedReservoir) * context.GetReservoirBufferElementCount() * c_NumReservoirBuffers;
     lightReservoirBufferDesc.structStride = sizeof(RTXDI_PackedReservoir);
     lightReservoirBufferDesc.initialState = nvrhi::ResourceStates::UnorderedAccess;
     lightReservoirBufferDesc.keepInitialState = true;
     lightReservoirBufferDesc.debugName = "LightReservoirBuffer";
     lightReservoirBufferDesc.canHaveUAVs = true;
     LightReservoirBuffer = device->createBuffer(lightReservoirBufferDesc);
+
+
+    nvrhi::BufferDesc secondarySurfaceBufferDesc;
+    secondarySurfaceBufferDesc.byteSize = sizeof(SecondarySurface) * context.GetReservoirBufferElementCount();
+    secondarySurfaceBufferDesc.structStride = sizeof(SecondarySurface);
+    secondarySurfaceBufferDesc.initialState = nvrhi::ResourceStates::UnorderedAccess;
+    secondarySurfaceBufferDesc.keepInitialState = true;
+    secondarySurfaceBufferDesc.debugName = "SecondarySurfaceBuffer";
+    secondarySurfaceBufferDesc.canHaveUAVs = true;
+    SecondarySurfaceBuffer = device->createBuffer(secondarySurfaceBufferDesc);
 
 
     nvrhi::TextureDesc environmentPdfDesc;

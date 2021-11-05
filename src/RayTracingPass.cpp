@@ -26,6 +26,7 @@ bool RayTracingPass::Init(
     bool useRayQuery,
     uint32_t computeGroupSize,
     nvrhi::IBindingLayout* bindingLayout,
+    nvrhi::IBindingLayout* extraBindingLayout,
     nvrhi::IBindingLayout* bindlessLayout)
 {
     donut::log::info("Initializing RayTracingPass %s...", shaderName);
@@ -43,7 +44,11 @@ bool RayTracingPass::Init(
             return false;
 
         nvrhi::ComputePipelineDesc pipelineDesc;
-        pipelineDesc.bindingLayouts = { bindingLayout, bindlessLayout };
+        pipelineDesc.bindingLayouts = { bindingLayout };
+        if (bindlessLayout)
+            pipelineDesc.bindingLayouts.push_back(bindlessLayout);
+        if (extraBindingLayout)
+            pipelineDesc.bindingLayouts.push_back(extraBindingLayout);
         pipelineDesc.CS = ComputeShader;
         ComputePipeline = device->createComputePipeline(pipelineDesc);
 
@@ -60,6 +65,8 @@ bool RayTracingPass::Init(
 
     nvrhi::rt::PipelineDesc rtPipelineDesc;
     rtPipelineDesc.globalBindingLayouts = { bindingLayout, bindlessLayout };
+    if (extraBindingLayout)
+        rtPipelineDesc.globalBindingLayouts.push_back(extraBindingLayout);
     rtPipelineDesc.shaders = {
         { "", ShaderLibrary->getShader("RayGen", nvrhi::ShaderType::RayGeneration), nullptr },
         { "", ShaderLibrary->getShader("Miss", nvrhi::ShaderType::Miss), nullptr }
@@ -77,7 +84,7 @@ bool RayTracingPass::Init(
     };
 
     rtPipelineDesc.maxAttributeSize = 8;
-    rtPipelineDesc.maxPayloadSize = 36;
+    rtPipelineDesc.maxPayloadSize = 40;
     rtPipelineDesc.maxRecursionDepth = 1;
 
     RayTracingPipeline = device->createRayTracingPipeline(rtPipelineDesc);
@@ -100,6 +107,7 @@ void RayTracingPass::Execute(
     int width,
     int height,
     nvrhi::IBindingSet* bindingSet,
+    nvrhi::IBindingSet* extraBindingSet,
     nvrhi::IDescriptorTable* descriptorTable,
     const void* pushConstants,
     const size_t pushConstantSize)
@@ -107,7 +115,11 @@ void RayTracingPass::Execute(
     if (ComputePipeline)
     {
         nvrhi::ComputeState state;
-        state.bindings = { bindingSet, descriptorTable };
+        state.bindings = { bindingSet };
+        if (descriptorTable)
+            state.bindings.push_back(descriptorTable);
+        if (extraBindingSet)
+            state.bindings.push_back(extraBindingSet);
         state.pipeline = ComputePipeline;
         commandList->setComputeState(state);
 
@@ -119,7 +131,11 @@ void RayTracingPass::Execute(
     else
     {
         nvrhi::rt::State state;
-        state.bindings = { bindingSet, descriptorTable };
+        state.bindings = { bindingSet };
+        if (descriptorTable)
+            state.bindings.push_back(descriptorTable);
+        if (extraBindingSet)
+            state.bindings.push_back(extraBindingSet);
         state.shaderTable = ShaderTable;
         commandList->setRayTracingState(state);
 

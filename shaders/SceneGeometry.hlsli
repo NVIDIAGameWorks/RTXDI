@@ -21,6 +21,7 @@
 
 VK_BINDING(0, 1) ByteAddressBuffer t_BindlessBuffers[] : register(t0, space1);
 VK_BINDING(1, 1) Texture2D t_BindlessTextures[] : register(t0, space2);
+VK_BINDING(2, 1) RWTexture2D<float4> u_BindlessTexturesRW[] : register(u0, space3);
 
 enum GeometryAttributes
 {
@@ -151,6 +152,8 @@ MaterialSample sampleGeometryMaterial(
     float2 texGrad_x, 
     float2 texGrad_y, 
     float mipLevel, // <-- Use a compile time constant for mipLevel, < 0 for aniso filtering
+#else
+    float lodBias,
 #endif
     MaterialAttributes attributes, 
     SamplerState materialSampler,

@@ -22,7 +22,7 @@
 
 #if USE_RAY_QUERY
 [numthreads(RTXDI_SCREEN_SPACE_GROUP_SIZE, RTXDI_SCREEN_SPACE_GROUP_SIZE, 1)] 
-void main(uint2 GlobalIndex : SV_DispatchThreadID, uint2 LocalIndex : SV_GroupThreadID)
+void main(uint2 GlobalIndex : SV_DispatchThreadID, uint2 LocalIndex : SV_GroupThreadID, uint2 GroupIdx : SV_GroupID)
 #else
 [shader("raygeneration")]
 void RayGen()
@@ -40,23 +40,38 @@ void RayGen()
 
     RAB_Surface surface = RAB_GetGBufferSurface(pixelPosition, false);
 
+    bool usePermutationSampling = false;
+    if (g_Const.enablePermutationSampling)
+    {
+        // Permutation sampling makes more noise on thin, high-detail objects.
+        usePermutationSampling = !IsComplexSurface(pixelPosition, surface);
+    }
+
     RTXDI_Reservoir temporalResult = RTXDI_EmptyReservoir();
+    int2 temporalSamplePixelPos = -1;
     
     if (RAB_IsSurfaceValid(surface))
     {
         RTXDI_Reservoir curSample = RTXDI_LoadReservoir(params, u_LightReservoirs, 
             GlobalIndex, g_Const.initialOutputBufferIndex);
 
+        float3 motionVector = t_MotionVectors[pixelPosition].xyz;
+        motionVector = convertMotionVectorToPixelSpace(g_Const.view, g_Const.prevView, pixelPosition, motionVector);
+
         RTXDI_TemporalResamplingParameters tparams;
-        tparams.screenSpaceMotion = t_MotionVectors[pixelPosition].xyz;
+        tparams.screenSpaceMotion = motionVector;
         tparams.sourceBufferIndex = g_Const.temporalInputBufferIndex;
         tparams.maxHistoryLength = g_Const.maxHistoryLength;
         tparams.biasCorrectionMode = g_Const.temporalBiasCorrection;
         tparams.depthThreshold = g_Const.temporalDepthThreshold;
         tparams.normalThreshold = g_Const.temporalNormalThreshold;
+        tparams.enableVisibilityShortcut = g_Const.discardInvisibleSamples;
+        tparams.enablePermutationSampling = usePermutationSampling;
 
+        RAB_LightSample selectedLightSample = (RAB_LightSample)0;
+        
         temporalResult = RTXDI_TemporalResampling(pixelPosition, surface, curSample,
-            rng, tparams, params, u_LightReservoirs);
+            rng, tparams, params, u_LightReservoirs, temporalSamplePixelPos, selectedLightSample);
     }
 
 #ifdef RTXDI_ENABLE_BOILING_FILTER
@@ -66,5 +81,7 @@ void RayGen()
     }
 #endif
 
+    u_TemporalSamplePositions[GlobalIndex] = temporalSamplePixelPos;
+    
     RTXDI_StoreReservoir(temporalResult, params, u_LightReservoirs, GlobalIndex, g_Const.temporalOutputBufferIndex);
 }

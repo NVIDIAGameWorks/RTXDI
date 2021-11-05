@@ -30,6 +30,8 @@ private:
     nvrhi::ComputePipelineHandle m_ComputePipeline;
     nvrhi::BindingLayoutHandle m_BindingLayout;
     nvrhi::BindingSetHandle m_BindingSet;
+    nvrhi::SamplerHandle m_Sampler;
+    nvrhi::TextureHandle m_CompositedColor;
 
     std::shared_ptr<donut::engine::ShaderFactory> m_ShaderFactory;
 
@@ -44,6 +46,7 @@ public:
 
     void Render(
         nvrhi::ICommandList* commandList,
-        const donut::engine::IView& view,
+        const donut::engine::IView& sourceView,
+        const donut::engine::IView& upscaledView,
         float accumulationWeight);
 };

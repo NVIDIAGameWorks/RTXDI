@@ -17,7 +17,7 @@ static const float RTXDI_PI = 3.1415926535;
 // Zero or negative threshold makes test always succeed, not fail.
 bool RTXDI_CompareRelativeDifference(float reference, float candidate, float threshold)
 {
-    return (threshold <= 0) || abs(reference - candidate) <= threshold * reference;
+    return (threshold <= 0) || abs(reference - candidate) <= threshold * max(reference, candidate);
 }
 
 // See if we will reuse this neighbor or history sample using

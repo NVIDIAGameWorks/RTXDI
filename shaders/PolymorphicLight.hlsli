@@ -228,6 +228,62 @@ struct SphereLight
     }
 };
 
+// Point light is a sphere light with zero radius.
+// On the host side, they are both created from LightType_Point, depending on the radius.
+// The values returned from all interface methods of PointLight are the same as SphereLight
+// would produce in the limit when radius approaches zero, with some exceptions in calcSample.
+struct PointLight
+{
+    float3 position;
+    float3 flux;
+    LightShaping shaping;
+
+    // Interface methods
+
+    PolymorphicLightSample calcSample(in const float3 viewerPosition)
+    {
+        const float3 lightVector = position - viewerPosition;
+        
+        PolymorphicLightSample lightSample;
+
+        // We cannot compute finite values for radiance and solidAnglePdf for a point light,
+        // so return the limit of (radiance / solidAnglePdf) with radius --> 0 as radiance.
+        lightSample.position = position;
+        lightSample.normal = normalize(-lightVector);
+        lightSample.radiance = flux / dot(lightVector, lightVector);
+        lightSample.solidAnglePdf = 1.0;
+
+        return lightSample;
+    }
+
+    float getPower()
+    {
+        return 4.0 * c_pi * calcLuminance(flux) * getShapingFluxFactor(shaping);
+    }
+
+    float getWeightForVolume(in const float3 volumeCenter, in const float volumeRadius)
+    {
+        if (!testSphereIntersectionForShapedLight(position, 0, shaping, volumeCenter, volumeRadius))
+            return 0.0;
+
+        float distance = length(volumeCenter - position);
+        distance = getAverageDistanceToVolume(distance, volumeRadius);
+
+        return calcLuminance(flux) / square(distance);
+    }
+
+    static PointLight Create(in const PolymorphicLightInfo lightInfo)
+    {
+        PointLight pointLight;
+
+        pointLight.position = lightInfo.center;
+        pointLight.flux = unpackLightColor(lightInfo);
+        pointLight.shaping = unpackLightShaping(lightInfo);
+
+        return pointLight;
+    }
+};
+
 struct CylinderLight
 {
     float3 position;
@@ -759,6 +815,7 @@ struct PolymorphicLight
         switch (getLightType(lightInfo))
         {
         case PolymorphicLightType::kSphere:      lightSample = SphereLight::Create(lightInfo).calcSample(random, viewerPosition); break;
+        case PolymorphicLightType::kPoint:       lightSample = PointLight::Create(lightInfo).calcSample(viewerPosition); break;
         case PolymorphicLightType::kCylinder:    lightSample = CylinderLight::Create(lightInfo).calcSample(random, viewerPosition); break;
         case PolymorphicLightType::kDisk:        lightSample = DiskLight::Create(lightInfo).calcSample(random, viewerPosition); break;
         case PolymorphicLightType::kRect:        lightSample = RectLight::Create(lightInfo).calcSample(random, viewerPosition); break;
@@ -782,6 +839,7 @@ struct PolymorphicLight
         switch (getLightType(lightInfo))
         {
         case PolymorphicLightType::kSphere:      return SphereLight::Create(lightInfo).getPower();
+        case PolymorphicLightType::kPoint:       return PointLight::Create(lightInfo).getPower();
         case PolymorphicLightType::kCylinder:    return CylinderLight::Create(lightInfo).getPower();
         case PolymorphicLightType::kDisk:        return DiskLight::Create(lightInfo).getPower();
         case PolymorphicLightType::kRect:        return RectLight::Create(lightInfo).getPower();
@@ -800,6 +858,7 @@ struct PolymorphicLight
         switch (getLightType(lightInfo))
         {
         case PolymorphicLightType::kSphere:      return SphereLight::Create(lightInfo).getWeightForVolume(volumeCenter, volumeRadius);
+        case PolymorphicLightType::kPoint:       return PointLight::Create(lightInfo).getWeightForVolume(volumeCenter, volumeRadius);
         case PolymorphicLightType::kCylinder:    return CylinderLight::Create(lightInfo).getWeightForVolume(volumeCenter, volumeRadius);
         case PolymorphicLightType::kDisk:        return DiskLight::Create(lightInfo).getWeightForVolume(volumeCenter, volumeRadius);
         case PolymorphicLightType::kRect:        return RectLight::Create(lightInfo).getWeightForVolume(volumeCenter, volumeRadius);

@@ -4,3 +4,9 @@
 [submodule "NRD"]
 	path = NRD
 	url = https://github.com/NVIDIAGameWorks/RayTracingDenoiser.git
+[submodule "DLSS"]
+	path = DLSS
+	url = https://github.com/NVIDIA/DLSS.git
+[submodule "RTXGI"]
+	path = RTXGI
+	url = https://github.com/NVIDIAGameWorks/RTXGI.git

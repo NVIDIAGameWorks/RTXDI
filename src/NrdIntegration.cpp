@@ -119,7 +119,7 @@ bool NrdIntegration::Initialize(uint32_t width, uint32_t height)
     const nvrhi::BufferDesc constantBufferDesc = nvrhi::utils::CreateVolatileConstantBufferDesc(
         denoiserDesc.constantBufferDesc.maxDataSize, 
         "NrdConstantBuffer", 
-        denoiserDesc.descriptorSetDesc.constantBufferNum * 4);
+        denoiserDesc.descriptorSetDesc.constantBufferMaxNum * 4);
 
     m_ConstantBuffer = m_Device->createBuffer(constantBufferDesc);
 
@@ -323,6 +323,7 @@ void NrdIntegration::RunDenoiserPasses(
     const donut::engine::PlanarView& view, 
     const donut::engine::PlanarView& viewPrev, 
     uint32_t frameIndex,
+    bool enableConfidenceInputs,
     const void* methodSettings)
 {
     if (methodSettings)
@@ -331,23 +332,31 @@ void NrdIntegration::RunDenoiserPasses(
     }
 
     nrd::CommonSettings commonSettings;
-    MatrixToNrd(commonSettings.worldToViewRotationMatrix, dm::affineToHomogeneous(view.GetViewMatrix()));
-    MatrixToNrd(commonSettings.worldToViewRotationMatrixPrev, dm::affineToHomogeneous(viewPrev.GetViewMatrix()));
+    MatrixToNrd(commonSettings.worldToViewMatrix, dm::affineToHomogeneous(view.GetViewMatrix()));
+    MatrixToNrd(commonSettings.worldToViewMatrixPrev, dm::affineToHomogeneous(viewPrev.GetViewMatrix()));
     MatrixToNrd(commonSettings.viewToClipMatrix, view.GetProjectionMatrix(false));
     MatrixToNrd(commonSettings.viewToClipMatrixPrev, viewPrev.GetProjectionMatrix(false));
 
-    const dm::float3 cameraMotion = viewPrev.GetViewOrigin() - view.GetViewOrigin();
-    commonSettings.cameraMotion[0] = cameraMotion.x;
-    commonSettings.cameraMotion[1] = cameraMotion.y;
-    commonSettings.cameraMotion[2] = cameraMotion.z;
+    const auto& motionVectorDesc = renderTargets.MotionVectors->getDesc();
+
+    // Convert our render size to the resolutionScale parameters
+    float widthScale = float(view.GetViewExtent().width()) / float(motionVectorDesc.width);
+    float heightScale = float(view.GetViewExtent().height()) / float(motionVectorDesc.height);
+
+    // Figure out what NRD will think our render size is based on the resolutionScale
+    float scaledWidth = round(float(motionVectorDesc.width) * widthScale);
+    float scaledHeight = round(float(motionVectorDesc.height) * heightScale);
 
     dm::float2 pixelOffset = view.GetPixelOffset();
-    commonSettings.motionVectorScale[0] = 1.f / view.GetViewExtent().width();
-    commonSettings.motionVectorScale[1] = 1.f / view.GetViewExtent().height();
+    commonSettings.motionVectorScale[0] = 1.f / scaledWidth;
+    commonSettings.motionVectorScale[1] = 1.f / scaledHeight;
+    commonSettings.resolutionScale[0] = widthScale;
+    commonSettings.resolutionScale[1] = heightScale;
     commonSettings.cameraJitter[0] = pixelOffset.x;
     commonSettings.cameraJitter[1] = pixelOffset.y;
     commonSettings.frameIndex = frameIndex;
-    commonSettings.worldSpaceMotion = false;
+    commonSettings.isMotionVectorInWorldSpace = false;
+    commonSettings.isHistoryConfidenceInputsAvailable = enableConfidenceInputs;
 
     const nrd::DispatchDesc* dispatchDescs = nullptr;
     uint32_t dispatchDescNum = 0;
@@ -410,16 +419,22 @@ void NrdIntegration::RunDenoiserPasses(
                 case nrd::ResourceType::IN_VIEWZ:
                     texture = renderTargets.Depth;
                     break;
-                case nrd::ResourceType::IN_DIFF_HIT:
+                case nrd::ResourceType::IN_DIFF_RADIANCE_HITDIST:
                     texture = renderTargets.DiffuseLighting;
                     break;
-                case nrd::ResourceType::IN_SPEC_HIT:
+                case nrd::ResourceType::IN_SPEC_RADIANCE_HITDIST:
                     texture = renderTargets.SpecularLighting;
                     break;
-                case nrd::ResourceType::OUT_DIFF_HIT:
+                case nrd::ResourceType::IN_DIFF_CONFIDENCE:
+                    texture = renderTargets.DiffuseConfidence;
+                    break;
+                case nrd::ResourceType::IN_SPEC_CONFIDENCE:
+                    texture = renderTargets.SpecularConfidence;
+                    break;
+                case nrd::ResourceType::OUT_DIFF_RADIANCE_HITDIST:
                     texture = renderTargets.DenoisedDiffuseLighting;
                     break;
-                case nrd::ResourceType::OUT_SPEC_HIT:
+                case nrd::ResourceType::OUT_SPEC_RADIANCE_HITDIST:
                     texture = renderTargets.DenoisedSpecularLighting;
                     break;
                 case nrd::ResourceType::TRANSIENT_POOL:

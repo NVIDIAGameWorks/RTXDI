@@ -1,9 +1,9 @@
-media*/
-bin/
-dxc/
-donut-*/
-build*/
+/media*
+/dxc
+/donut-*
+/build*
 .vs
 .vscode
 *.sublime-project
 *.sublime-workspace
+compile-shaders.bat

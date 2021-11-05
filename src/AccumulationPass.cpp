@@ -33,10 +33,16 @@ AccumulationPass::AccumulationPass(
     bindingLayoutDesc.bindings = {
         nvrhi::BindingLayoutItem::Texture_SRV(0),
         nvrhi::BindingLayoutItem::Texture_UAV(0),
+        nvrhi::BindingLayoutItem::Sampler(0),
         nvrhi::BindingLayoutItem::PushConstants(0, sizeof(AccumulationConstants))
     };
 
     m_BindingLayout = m_Device->createBindingLayout(bindingLayoutDesc);
+
+    auto samplerDesc = nvrhi::SamplerDesc()
+        .setAllFilters(true);
+
+    m_Sampler = m_Device->createSampler(samplerDesc);
 }
 
 void AccumulationPass::CreatePipeline()
@@ -58,20 +64,33 @@ void AccumulationPass::CreateBindingSet(const RenderTargets& renderTargets)
     bindingSetDesc.bindings = {
         nvrhi::BindingSetItem::Texture_SRV(0, renderTargets.HdrColor),
         nvrhi::BindingSetItem::Texture_UAV(0, renderTargets.AccumulatedColor),
+        nvrhi::BindingSetItem::Sampler(0, m_Sampler),
         nvrhi::BindingSetItem::PushConstants(0, sizeof(AccumulationConstants))
     };
 
     m_BindingSet = m_Device->createBindingSet(bindingSetDesc, m_BindingLayout);
+
+    m_CompositedColor = renderTargets.HdrColor;
 }
 
 void AccumulationPass::Render(
-    nvrhi::ICommandList* commandList, 
-    const donut::engine::IView& view,
+    nvrhi::ICommandList* commandList,
+    const donut::engine::IView& sourceView,
+    const donut::engine::IView& upscaledView,
     float accumulationWeight)
 {
     commandList->beginMarker("Accumulation");
 
+    const auto sourceViewport = sourceView.GetViewportState().viewports[0];
+    const auto upscaledViewport = upscaledView.GetViewportState().viewports[0];
+
+    const auto& inputDesc = m_CompositedColor->getDesc();
+
     AccumulationConstants constants = {};
+    constants.inputSize = float2(sourceViewport.width(), sourceViewport.height());
+    constants.inputTextureSizeInv = float2(1.f / float(inputDesc.width), 1.f / float(inputDesc.height));
+    constants.outputSize = float2(upscaledViewport.width(), upscaledViewport.height());
+    constants.pixelOffset = sourceView.GetPixelOffset();
     constants.blendFactor = accumulationWeight;
 
     nvrhi::ComputeState state;
@@ -82,8 +101,8 @@ void AccumulationPass::Render(
     commandList->setPushConstants(&constants, sizeof(constants));
     
     commandList->dispatch(
-        dm::div_ceil(view.GetViewExtent().width(), 8), 
-        dm::div_ceil(view.GetViewExtent().height(), 8), 
+        dm::div_ceil(upscaledView.GetViewExtent().width(), 8), 
+        dm::div_ceil(upscaledView.GetViewExtent().height(), 8), 
         1);
 
     commandList->endMarker();

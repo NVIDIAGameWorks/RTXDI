@@ -19,14 +19,14 @@
 ConstantBuffer<GBufferConstants> g_Const : register(b0);
 VK_PUSH_CONSTANT ConstantBuffer<PerPassConstants> g_PerPassConstants : register(b1);
 
-RWTexture2D<float> u_Depth : register(u0);
+RWTexture2D<float> u_ViewDepth : register(u0);
 RWTexture2D<uint> u_DiffuseAlbedo : register(u1);
 RWTexture2D<uint> u_SpecularRough : register(u2);
 RWTexture2D<uint> u_Normals : register(u3);
 RWTexture2D<uint> u_GeoNormals : register(u4);
 RWTexture2D<float4> u_Emissive : register(u5);
 RWTexture2D<float4> u_MotionVectors : register(u6);
-RWTexture2D<float4> u_NormalRoughness : register(u7);
+RWTexture2D<float> u_DeviceDepth : register(u7);
 RWBuffer<uint> u_RayCountBuffer : register(u8);
 
 RaytracingAccelerationStructure SceneBVH : register(t0);
@@ -65,6 +65,9 @@ void shadeSurface(
     float2 texGrad_x = texcoord_x - texcoord_0;
     float2 texGrad_y = texcoord_y - texcoord_0;
 
+    texGrad_x *= g_Const.textureGradientScale;
+    texGrad_y *= g_Const.textureGradientScale;
+
     MaterialSample ms = sampleGeometryMaterial(gs, texGrad_x, texGrad_y, -1, MatAttr_All, 
         s_MaterialSampler, g_Const.normalMapScale);
 
@@ -79,19 +82,20 @@ void shadeSurface(
         getReflectivity(ms.metalness, ms.baseColor, ms.diffuseAlbedo, ms.specularF0);
     }
 
+    float clipDepth = 0;
     float viewDepth = 0;
     float3 motion = getMotionVector(g_Const.view, g_Const.viewPrev, 
-        gs.instance, gs.objectSpacePosition, gs.prevObjectSpacePosition, viewDepth);
+        gs.instance, gs.objectSpacePosition, gs.prevObjectSpacePosition, clipDepth, viewDepth);
 
-    u_Depth[pixelPosition] = viewDepth;
+    u_ViewDepth[pixelPosition] = viewDepth;
+    u_DeviceDepth[pixelPosition] = clipDepth;
     u_DiffuseAlbedo[pixelPosition] = Pack_R11G11B10_UFLOAT(ms.diffuseAlbedo);
     u_SpecularRough[pixelPosition] = Pack_R8G8B8A8_Gamma_UFLOAT(float4(ms.specularF0, ms.roughness));
     u_Normals[pixelPosition] = ndirToOctUnorm32(ms.shadingNormal);
     u_GeoNormals[pixelPosition] = ndirToOctUnorm32(gs.flatNormal);
     u_Emissive[pixelPosition] = float4(ms.emissiveColor, maxGlassHitT);
     u_MotionVectors[pixelPosition] = float4(motion, 0);
-    u_NormalRoughness[pixelPosition] = float4(ms.shadingNormal * 0.5 + 0.5, ms.roughness);
-
+    
     if (all(g_Const.materialReadbackPosition == int2(pixelPosition)))
     {
         u_RayCountBuffer[g_Const.materialReadbackBufferIndex] = gs.geometry.materialIndex + 1;
@@ -279,12 +283,12 @@ void RayGen()
         return;
     }
 
-    u_Depth[pixelPosition] = 0;
+    u_ViewDepth[pixelPosition] = BACKGROUND_DEPTH;
+    u_DeviceDepth[pixelPosition] = 0;
     u_DiffuseAlbedo[pixelPosition] = 0;
     u_SpecularRough[pixelPosition] = 0;
     u_Normals[pixelPosition] = 0;
     u_GeoNormals[pixelPosition] = 0;
     u_Emissive[pixelPosition] = float4(0, 0, 0, maxGlassHitT);
     u_MotionVectors[pixelPosition] = 0;
-    u_NormalRoughness[pixelPosition] = 0;
 }

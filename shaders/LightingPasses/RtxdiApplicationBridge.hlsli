@@ -32,8 +32,13 @@ between the bridge functions.
 #include <donut/shaders/brdf.hlsli>
 #include <donut/shaders/bindless.h>
 
-#include "ShaderParameters.h"
-#include "SceneGeometry.hlsli"
+#include "../ShaderParameters.h"
+#include "../SceneGeometry.hlsli"
+#include "../GBufferHelpers.hlsli"
+
+#ifndef RAB_ENABLE_SPECULAR_MIS
+#define RAB_ENABLE_SPECULAR_MIS 1
+#endif
 
 // G-buffer resources
 Texture2D<float> t_GBufferDepth : register(t0);
@@ -46,14 +51,16 @@ Texture2D<uint> t_PrevGBufferNormals : register(t6);
 Texture2D<uint> t_PrevGBufferGeoNormals : register(t7);
 Texture2D<uint> t_PrevGBufferDiffuseAlbedo : register(t8);
 Texture2D<uint> t_PrevGBufferSpecularRough : register(t9);
-Texture2D<float4> t_MotionVectors : register(t10);
+Texture2D<float2> t_PrevRestirLuminance : register(t10);
+Texture2D<float4> t_MotionVectors : register(t11);
+Texture2D<float4> t_DenoiserNormalRoughness : register(t12);
 
 // Scene resources
-RaytracingAccelerationStructure SceneBVH : register(t11);
-RaytracingAccelerationStructure PrevSceneBVH : register(t12);
-StructuredBuffer<InstanceData> t_InstanceData : register(t13);
-StructuredBuffer<GeometryData> t_GeometryData : register(t14);
-StructuredBuffer<MaterialConstants> t_MaterialConstants : register(t15);
+RaytracingAccelerationStructure SceneBVH : register(t30);
+RaytracingAccelerationStructure PrevSceneBVH : register(t31);
+StructuredBuffer<InstanceData> t_InstanceData : register(t32);
+StructuredBuffer<GeometryData> t_GeometryData : register(t33);
+StructuredBuffer<MaterialConstants> t_MaterialConstants : register(t34);
 
 // RTXDI resources
 StructuredBuffer<PolymorphicLightInfo> t_LightDataBuffer : register(t20);
@@ -66,11 +73,15 @@ Texture2D<float> t_LocalLightPdfTexture : register(t24);
 RWStructuredBuffer<RTXDI_PackedReservoir> u_LightReservoirs : register(u0);
 RWTexture2D<float4> u_DiffuseLighting : register(u1);
 RWTexture2D<float4> u_SpecularLighting : register(u2);
+RWTexture2D<int2> u_TemporalSamplePositions : register(u3);
+RWTexture2DArray<float4> u_Gradients : register(u4);
+RWTexture2D<float2> u_RestirLuminance : register(u5);
 
 // RTXDI UAVs
 RWBuffer<uint2> u_RisBuffer : register(u10);
 RWBuffer<uint4> u_RisLightDataBuffer : register(u11);
 RWBuffer<uint> u_RayCountBuffer : register(u12);
+RWStructuredBuffer<SecondarySurface> u_SecondaryGBuffer : register(u13);
 
 // Other
 ConstantBuffer<ResamplingConstants> g_Const : register(b0);
@@ -80,7 +91,7 @@ SamplerState s_EnvironmentSampler : register(s1);
 
 #define IES_SAMPLER s_EnvironmentSampler
 
-#include "PolymorphicLight.hlsli"
+#include "../PolymorphicLight.hlsli"
 
 struct RAB_Surface
 {
@@ -90,6 +101,7 @@ struct RAB_Surface
     float3 geoNormal;
     float3 diffuseAlbedo;
     float3 specularF0;
+    float3 viewPoint; // position of the observer
     float roughness;
 };
 
@@ -112,16 +124,17 @@ struct RayPayload
     uint instanceID;
     uint geometryIndex;
     uint primitiveIndex;
+    bool frontFace;
     float2 barycentrics;
 };
 
-RayDesc setupVisibilityRay(RAB_Surface surface, RAB_LightSample lightSample)
+RayDesc setupVisibilityRay(RAB_Surface surface, RAB_LightSample lightSample, float offset = 0.001)
 {
     float3 L = lightSample.position - surface.worldPos;
 
     RayDesc ray;
-    ray.TMin = 0.001f;
-    ray.TMax = length(L) - 0.001f;
+    ray.TMin = offset;
+    ray.TMax = length(L) - offset;
     ray.Direction = normalize(L);
     ray.Origin = surface.worldPos;
 
@@ -188,6 +201,7 @@ void ClosestHit(inout RayPayload payload : SV_RayPayload, in RayAttributes attri
     payload.instanceID = InstanceID();
     payload.geometryIndex = GeometryIndex();
     payload.primitiveIndex = PrimitiveIndex();
+    payload.frontFace = HitKind() == HIT_KIND_TRIANGLE_FRONT_FACE;
     payload.barycentrics = attrib.uv;
 }
 
@@ -249,9 +263,9 @@ bool RAB_GetTemporalConservativeVisibility(RAB_Surface currentSurface, RAB_Surfa
 // Traces an expensive visibility ray that considers all alpha tested  and transparent geometry along the way.
 // Only used for final shading.
 // Not a required bridge function.
-float3 GetFinalVisibility(RAB_Surface surface, RAB_LightSample lightSample)
+float3 GetFinalVisibility(RaytracingAccelerationStructure accelStruct, RAB_Surface surface, RAB_LightSample lightSample)
 {
-    RayDesc ray = setupVisibilityRay(surface, lightSample);
+    RayDesc ray = setupVisibilityRay(surface, lightSample, 0.01);
 
     uint instanceMask = INSTANCE_MASK_OPAQUE;
     uint rayFlags = RAY_FLAG_NONE;
@@ -272,7 +286,7 @@ float3 GetFinalVisibility(RAB_Surface surface, RAB_LightSample lightSample)
 #if USE_RAY_QUERY
     RayQuery<RAY_FLAG_SKIP_PROCEDURAL_PRIMITIVES> rayQuery;
 
-    rayQuery.TraceRayInline(SceneBVH, rayFlags, instanceMask, ray);
+    rayQuery.TraceRayInline(accelStruct, rayFlags, instanceMask, ray);
 
     while (rayQuery.Proceed())
     {
@@ -297,9 +311,10 @@ float3 GetFinalVisibility(RAB_Surface surface, RAB_LightSample lightSample)
         payload.geometryIndex = rayQuery.CommittedGeometryIndex();
         payload.barycentrics = rayQuery.CommittedTriangleBarycentrics();
         payload.committedRayT = rayQuery.CommittedRayT();
+        payload.frontFace = rayQuery.CommittedTriangleFrontFace();
     }
 #else
-    TraceRay(SceneBVH, rayFlags, instanceMask, 0, 0, 0, ray, payload);
+    TraceRay(accelStruct, rayFlags, instanceMask, 0, 0, 0, ray, payload);
 #endif
 
     REPORT_RAY(payload.instanceID != ~0u);
@@ -320,9 +335,14 @@ RAB_Surface GetGBufferSurface(
     Texture2D<uint> specularRoughTexture)
 {
     RAB_Surface surface = (RAB_Surface)0;
+    surface.viewDepth = BACKGROUND_DEPTH;
+
+    if (any(pixelPosition >= view.viewportSize))
+        return surface;
+
     surface.viewDepth = depthTexture[pixelPosition];
 
-    if(surface.viewDepth == 0)
+    if(surface.viewDepth == BACKGROUND_DEPTH)
         return surface;
 
     surface.normal = octToNdirUnorm32(normalsTexture[pixelPosition]);
@@ -331,14 +351,8 @@ RAB_Surface GetGBufferSurface(
     float4 specularRough = Unpack_R8G8B8A8_Gamma_UFLOAT(specularRoughTexture[pixelPosition]);
     surface.specularF0 = specularRough.rgb;
     surface.roughness = specularRough.a;
-
-    float2 uv = (float2(pixelPosition) + 0.5) * view.viewportSizeInv;
-    float4 clipPos = float4(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0, 0.5, 1);
-    float4 viewPos = mul(clipPos, view.matClipToView);
-    viewPos.xy /= viewPos.z;
-    viewPos.zw = 1.0;
-    viewPos.xyz *= surface.viewDepth;
-    surface.worldPos = mul(viewPos, view.matViewToWorld).xyz;
+    surface.worldPos = viewDepthToWorldPos(view, pixelPosition, surface.viewDepth);
+    surface.viewPoint = view.cameraDirectionOrPosition.xyz;
 
     return surface;
 }
@@ -376,7 +390,7 @@ RAB_Surface RAB_GetGBufferSurface(int2 pixelPosition, bool previousFrame)
 // Checks if the given surface is valid, see RAB_GetGBufferSurface.
 bool RAB_IsSurfaceValid(RAB_Surface surface)
 {
-    return surface.viewDepth != 0.f;
+    return surface.viewDepth != BACKGROUND_DEPTH;
 }
 
 // Returns the world position of the given surface
@@ -447,7 +461,7 @@ float EvaluateSpecularSampledLightingWeight(RAB_Surface surface, float3 L, float
     // Empirical boost factor for the light sampling pdf, to account for ReSTIR.
     solidAnglePdf *= 50;
 
-    float3 V = normalize(g_Const.view.cameraDirectionOrPosition.xyz - surface.worldPos);
+    float3 V = normalize(surface.viewPoint - surface.worldPos);
     float ggxVndfPdf = ImportanceSampleGGX_VNDF_PDF(max(surface.roughness, 0.01), surface.normal, V, L);
 
     // Balance heuristic assuming one sample from each strategy: light sampling and BRDF sampling
@@ -470,11 +484,12 @@ float RAB_GetLightSampleTargetPdfForSurface(RAB_LightSample lightSample, RAB_Sur
     if (dot(L, surface.geoNormal) <= 0)
         return 0;
     
-    float3 V = normalize(g_Const.view.cameraDirectionOrPosition.xyz - surface.worldPos);
-    
+    float3 V = normalize(surface.viewPoint - surface.worldPos);
+
     float d = Lambert(surface.normal, -L);
     float3 s = GGX_times_NdotL(V, L, surface.normal, surface.roughness, surface.specularF0);
 
+#if RAB_ENABLE_SPECULAR_MIS
     if (lightSample.lightType == PolymorphicLightType::kTriangle || 
         lightSample.lightType == PolymorphicLightType::kEnvironment)
     {
@@ -486,6 +501,7 @@ float RAB_GetLightSampleTargetPdfForSurface(RAB_LightSample lightSample, RAB_Sur
         // and therefore cannot be hit by BRDF rays.
         s *= EvaluateSpecularSampledLightingWeight(surface, L, solidAnglePdf);
     }
+#endif
     
     float3 reflectedRadiance = lightSample.radiance * (d * surface.diffuseAlbedo + s);
     
@@ -572,19 +588,47 @@ bool RTXDI_CompareRelativeDifference(float reference, float candidate, float thr
 bool RAB_AreMaterialsSimilar(RAB_Surface a, RAB_Surface b)
 {
     const float roughnessThreshold = 0.5;
-    const float reflectivityThreshold = 0.5;
-    const float albedoThreshold = 0.5;
+    const float reflectivityThreshold = 0.25;
+    const float albedoThreshold = 0.25;
 
     if (!RTXDI_CompareRelativeDifference(a.roughness, b.roughness, roughnessThreshold))
         return false;
 
-    if (!RTXDI_CompareRelativeDifference(calcLuminance(a.specularF0), calcLuminance(b.specularF0), reflectivityThreshold))
+    if (abs(calcLuminance(a.specularF0) - calcLuminance(b.specularF0)) > reflectivityThreshold)
         return false;
     
-    if (!RTXDI_CompareRelativeDifference(calcLuminance(a.diffuseAlbedo), calcLuminance(b.diffuseAlbedo), albedoThreshold))
+    if (abs(calcLuminance(a.diffuseAlbedo) - calcLuminance(b.diffuseAlbedo)) > albedoThreshold)
         return false;
 
     return true;
+}
+
+float3 GetEnvironmentRadiance(float3 direction)
+{
+    if (!g_Const.enableEnvironmentMap)
+        return 0;
+
+    Texture2D environmentLatLongMap = t_BindlessTextures[g_Const.environmentMapTextureIndex];
+
+    float2 uv = directionToEquirectUV(direction);
+    uv.x -= g_Const.environmentRotation;
+
+    float3 environmentRadiance = environmentLatLongMap.SampleLevel(s_EnvironmentSampler, uv, 0).rgb;
+    environmentRadiance *= g_Const.environmentScale;
+
+    return environmentRadiance;
+}
+
+bool IsComplexSurface(int2 pixelPosition, RAB_Surface surface)
+{
+    // Use a simple classification of surfaces into simple and complex based on the roughness.
+    // The PostprocessGBuffer pass modifies the surface roughness and writes the DenoiserNormalRoughness
+    // channel where the roughness is preserved. The roughness stored in the regular G-buffer is modified
+    // based on the surface curvature around the current pixel. If the surface is curved, roughness increases.
+    // Detect that increase here and disable permutation sampling based on a threshold.
+    // Other classification methods can be employed for better quality.
+    float originalRoughness = t_DenoiserNormalRoughness[pixelPosition].a;
+    return originalRoughness < (surface.roughness * g_Const.permutationSamplingThreshold);
 }
 
 #endif // RTXDI_APPLICATION_BRIDGE_HLSLI

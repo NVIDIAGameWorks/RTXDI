@@ -37,6 +37,7 @@ struct GBufferSettings
     float normalMapScale = 1.f;
     bool enableAlphaTestedGeometry = true;
     bool enableTransparentGeometry = true;
+    float textureLodBias = -1.f;
 
     bool enableMaterialReadback = false;
     dm::int2 materialReadbackPosition = 0;
@@ -122,4 +123,36 @@ public:
         const donut::engine::IView& viewPrev,
         const RenderTargets& renderTargets,
         const GBufferSettings& settings);
+};
+
+class PostprocessGBufferPass
+{
+private:
+    nvrhi::DeviceHandle m_Device;
+
+    nvrhi::ShaderHandle m_ComputeShader;
+    nvrhi::ComputePipelineHandle m_ComputePipeline;
+    nvrhi::BindingLayoutHandle m_BindingLayout;
+    nvrhi::BindingLayoutHandle m_BindlessLayout;
+    nvrhi::BindingSetHandle m_BindingSet;
+    nvrhi::BindingSetHandle m_PrevBindingSet;
+    
+    std::shared_ptr<donut::engine::ShaderFactory> m_ShaderFactory;
+
+public:
+
+    PostprocessGBufferPass(
+        nvrhi::IDevice* device,
+        std::shared_ptr<donut::engine::ShaderFactory> shaderFactory);
+
+    void CreatePipeline();
+
+    void CreateBindingSet(
+        const RenderTargets& renderTargets);
+
+    void Render(
+        nvrhi::ICommandList* commandList,
+        const donut::engine::IView& view);
+
+    void NextFrame();
 };

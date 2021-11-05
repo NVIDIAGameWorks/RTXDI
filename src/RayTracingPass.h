@@ -38,6 +38,7 @@ struct RayTracingPass
         bool useRayQuery,
         uint32_t computeGroupSize,
         nvrhi::IBindingLayout* bindingLayout,
+        nvrhi::IBindingLayout* extraBindingLayout,
         nvrhi::IBindingLayout* bindlessLayout);
 
     void Execute(
@@ -45,6 +46,7 @@ struct RayTracingPass
         int width,
         int height,
         nvrhi::IBindingSet* bindingSet,
+        nvrhi::IBindingSet* extraBindingSet,
         nvrhi::IDescriptorTable* descriptorTable,
         const void* pushConstants = nullptr,
         size_t pushConstantSize = 0);

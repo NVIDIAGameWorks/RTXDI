@@ -241,6 +241,19 @@ uint32_t rtxdi::Context::GetReservoirBufferElementCount() const
     return m_ReservoirArrayPitch;
 }
 
+// 32 bit Jenkins hash
+static uint32_t JenkinsHash(uint32_t a)
+{
+    // http://burtleburtle.net/bob/hash/integer.html
+    a = (a + 0x7ed55d16) + (a << 12);
+    a = (a ^ 0xc761c23c) ^ (a >> 19);
+    a = (a + 0x165667b1) + (a << 5);
+    a = (a + 0xd3a2646c) ^ (a << 9);
+    a = (a + 0xfd7046c5) + (a << 3);
+    a = (a ^ 0xb55a4f09) ^ (a >> 16);
+    return a;
+}
+
 void rtxdi::Context::FillRuntimeParameters(
     RTXDI_ResamplingRuntimeParameters& runtimeParams,
     const FrameParameters& frame) const
@@ -276,6 +289,10 @@ void rtxdi::Context::FillRuntimeParameters(
     runtimeParams.regirOnion.cubicRootFactor = m_OnionCubicRootFactor;
     runtimeParams.regirOnion.linearFactor = m_OnionLinearFactor;
     runtimeParams.regirOnion.numLayerGroups = uint32_t(m_OnionLayers.size());
+    runtimeParams.uniformRandomNumber = JenkinsHash(frame.frameIndex);
+    runtimeParams.pad1 = 0;
+    runtimeParams.pad2 = 0;
+    runtimeParams.pad3 = 0;
 
     switch (m_Params.CheckerboardSamplingMode)
     {

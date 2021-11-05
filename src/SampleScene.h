@@ -93,6 +93,16 @@ public:
     std::shared_ptr<donut::engine::MeshInfo> CreateMesh() override;
 };
 
+struct RtxgiVolumeParameters
+{
+    bool scrolling = false;
+    float probeSpacing = 1.f;
+    dm::int3 probeCounts = 1;
+    dm::float3 origin = 0.f;
+    dm::float3 eulerAngles = 0.f;
+    std::string name;
+};
+
 class SampleScene : public donut::engine::Scene
 {
 private:
@@ -101,6 +111,7 @@ private:
     std::vector<nvrhi::rt::InstanceDesc> m_TlasInstances;
     std::shared_ptr<donut::engine::SceneGraphAnimation> m_BenchmarkAnimation;
     std::shared_ptr<donut::engine::PerspectiveCamera> m_BenchmarkCamera;
+    std::vector<RtxgiVolumeParameters> m_RtxgiVolumes;
 
     bool m_CanUpdateTLAS = false;
     bool m_CanUpdatePrevTLAS = false;
@@ -108,7 +119,10 @@ private:
     double m_WallclockTime = 0;
 
     std::vector<std::string> m_EnvironmentMaps;
-    
+
+protected:
+    bool LoadCustomData(Json::Value& rootNode, tf::Executor* executor) override;
+
 public:
     using Scene::Scene;
 
@@ -127,4 +141,5 @@ public:
     nvrhi::rt::IAccelStruct* GetPrevTopLevelAS() const { return m_PrevTopLevelAS; }
 
     std::vector<std::string>& GetEnvironmentMaps() { return m_EnvironmentMaps; }
+    std::vector<RtxgiVolumeParameters>& GetRtxgiVolumes() { return m_RtxgiVolumes; }
 };

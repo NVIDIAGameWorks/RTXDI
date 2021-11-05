@@ -51,8 +51,9 @@ void RayGen()
         sparams.depthThreshold = g_Const.spatialDepthThreshold;
         sparams.normalThreshold = g_Const.spatialNormalThreshold;
 
+        RAB_LightSample lightSample = (RAB_LightSample)0;
         spatialResult = RTXDI_SpatialResampling(pixelPosition, surface, centerSample, 
-             rng, sparams, params, u_LightReservoirs, t_NeighborOffsets);
+             rng, sparams, params, u_LightReservoirs, t_NeighborOffsets, lightSample);
     }
 
     RTXDI_StoreReservoir(spatialResult, params, u_LightReservoirs, GlobalIndex, g_Const.spatialOutputBufferIndex);

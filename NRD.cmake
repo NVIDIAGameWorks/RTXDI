@@ -1,5 +1,5 @@
 
-if (EXISTS "${CMAKE_CURRENT_LIST_DIR}/NRD")
+if (EXISTS "${CMAKE_CURRENT_LIST_DIR}/NRD/CMakeLists.txt")
 	set(NRD_DXC_PATH ${DXC_DXIL_EXECUTABLE})
 	set(NRD_DXC_SPIRV_PATH ${DXC_SPIRV_EXECUTABLE})
 	option(NRD_STATIC_LIBRARY "" ON)
@@ -7,6 +7,6 @@ if (EXISTS "${CMAKE_CURRENT_LIST_DIR}/NRD")
 	add_subdirectory(NRD)
 	
 	set_target_properties(NRD PROPERTIES FOLDER NRD)
-	set_target_properties(Shaders PROPERTIES FOLDER NRD)
+	set_target_properties(NrdShaders PROPERTIES FOLDER NRD)
 	set_target_properties(CreateFolderForShaders PROPERTIES FOLDER NRD)
 endif()

@@ -170,6 +170,27 @@ std::shared_ptr<donut::engine::MeshInfo> SampleSceneTypeFactory::CreateMesh()
     return std::make_shared<SampleMesh>();
 }
 
+bool SampleScene::LoadCustomData(Json::Value& rootNode, tf::Executor* executor)
+{
+    const Json::Value& rtxgiNode = rootNode["rtxgi-volumes"];
+    if (rtxgiNode.isArray())
+    {
+        for (const Json::Value& volumeNode : rtxgiNode)
+        {
+            RtxgiVolumeParameters volume;
+            volumeNode["name"] >> volume.name;
+            volumeNode["scrolling"] >> volume.scrolling;
+            volumeNode["origin"] >> volume.origin;
+            volumeNode["probeSpacing"] >> volume.probeSpacing;
+            volumeNode["eulerAngles"] >> volume.eulerAngles;
+            volumeNode["probeCounts"] >> volume.probeCounts;
+            m_RtxgiVolumes.push_back(volume);
+        }
+    }
+
+    return Scene::LoadCustomData(rootNode, executor);
+}
+
 bool SampleScene::LoadWithExecutor(const std::filesystem::path& jsonFileName, tf::Executor* executor)
 {
     if (!Scene::LoadWithExecutor(jsonFileName, executor))
@@ -450,7 +471,7 @@ void SampleScene::BuildTopLevelAccelStruct(nvrhi::ICommandList* commandList)
 
         auto node = instance->GetNode();
         if (node)
-            dm::affineToColumnMajor(node->GetLocalToWorldTransformFloat(), &instanceDesc.transform[0][0]);
+            dm::affineToColumnMajor(node->GetLocalToWorldTransformFloat(), instanceDesc.transform);
 
         instanceDesc.instanceID = uint(instance->GetInstanceIndex());
     }

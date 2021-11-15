@@ -1493,7 +1493,7 @@ RTXDI_Reservoir RTXDI_SpatioTemporalResampling(
 
                     if (!RTXDI_IsActiveCheckerboardPixel(idx, true, params))
                     {
-                        idx.x += params.activeCheckerboardField * 2 - 3;
+                        idx.x += int(params.activeCheckerboardField) * 2 - 3;
                     }
 
                     // Load our neighbor's G-buffer

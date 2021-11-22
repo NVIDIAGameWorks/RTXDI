@@ -173,7 +173,7 @@ MaterialSample sampleGeometryMaterial(
         else
             textures.baseOrDiffuse = diffuseTexture.SampleGrad(materialSampler, gs.texcoord, texGrad_x, texGrad_y);
 #else
-        textures.baseOrDiffuse = diffuseTexture.Sample(materialSampler, gs.texcoord);
+        textures.baseOrDiffuse = diffuseTexture.SampleBias(materialSampler, gs.texcoord, lodBias);
 #endif
     }
 
@@ -187,7 +187,7 @@ MaterialSample sampleGeometryMaterial(
         else
             textures.emissive = emissiveTexture.SampleGrad(materialSampler, gs.texcoord, texGrad_x, texGrad_y);
 #else
-        textures.emissive = emissiveTexture.Sample(materialSampler, gs.texcoord);
+        textures.emissive = emissiveTexture.SampleBias(materialSampler, gs.texcoord, lodBias);
 #endif
     }
     
@@ -201,7 +201,7 @@ MaterialSample sampleGeometryMaterial(
         else
             textures.normal = normalsTexture.SampleGrad(materialSampler, gs.texcoord, texGrad_x, texGrad_y);
 #else
-        textures.normal = normalsTexture.Sample(materialSampler, gs.texcoord);
+        textures.normal = normalsTexture.SampleBias(materialSampler, gs.texcoord, lodBias);
 #endif
     }
 
@@ -215,7 +215,7 @@ MaterialSample sampleGeometryMaterial(
         else
             textures.metalRoughOrSpecular = specularTexture.SampleGrad(materialSampler, gs.texcoord, texGrad_x, texGrad_y);
 #else
-        textures.metalRoughOrSpecular = specularTexture.Sample(materialSampler, gs.texcoord);
+        textures.metalRoughOrSpecular = specularTexture.SampleBias(materialSampler, gs.texcoord, lodBias);
 #endif
     }
 
@@ -229,7 +229,7 @@ MaterialSample sampleGeometryMaterial(
         else
             textures.transmission = transmissionTexture.SampleGrad(materialSampler, gs.texcoord, texGrad_x, texGrad_y);
 #else
-        textures.transmission = transmissionTexture.Sample(materialSampler, gs.texcoord);
+        textures.transmission = transmissionTexture.SampleBias(materialSampler, gs.texcoord, lodBias);
 #endif
     }
 

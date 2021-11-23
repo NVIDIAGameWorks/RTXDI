@@ -48,6 +48,9 @@ namespace nrd
     struct HitDistanceParameters;
 }
 
+// A 32-bit bool type to directly use from the command line parser.
+typedef int ibool;
+
 class LightingPasses
 {
 private:
@@ -99,14 +102,14 @@ public:
         uint32_t denoiserMode = 0;
         bool enableDenoiserInputPacking = false;
 
-        bool enablePreviousTLAS = true;
-        bool enableAlphaTestedGeometry = true;
-        bool enableTransparentGeometry = true;
-        bool enableInitialVisibility = true;
-        bool enableFinalVisibility = true;
-        bool enableRayCounts = true;
-        bool enablePermutationSampling = true;
-        bool visualizeRegirCells = false;
+        ibool enablePreviousTLAS = true;
+        ibool enableAlphaTestedGeometry = true;
+        ibool enableTransparentGeometry = true;
+        ibool enableInitialVisibility = true;
+        ibool enableFinalVisibility = true;
+        ibool enableRayCounts = true;
+        ibool enablePermutationSampling = true;
+        ibool visualizeRegirCells = false;
 
         uint32_t numPrimaryRegirSamples = 8;
         uint32_t numPrimaryLocalLightSamples = 8;
@@ -121,17 +124,17 @@ public:
         uint32_t numRtxgiInfiniteLightSamples = 1;
         uint32_t numRtxgiEnvironmentSamples = 1;
 
-        bool enableTemporalResampling = true;
+        ibool enableTemporalResampling = true;
         float temporalNormalThreshold = 0.5f;
         float temporalDepthThreshold = 0.1f;
         uint32_t maxHistoryLength = 20;
         uint32_t temporalBiasCorrection = RTXDI_BIAS_CORRECTION_BASIC;
         float permutationSamplingThreshold = 0.9f;
 
-        bool enableBoilingFilter = true;
+        ibool enableBoilingFilter = true;
         float boilingFilterStrength = 0.2f;
 
-        bool enableSpatialResampling = true;
+        ibool enableSpatialResampling = true;
         uint32_t numSpatialSamples = 1;
         uint32_t numDisocclusionBoostSamples = 8;
         float spatialSamplingRadius = 32.f;
@@ -139,11 +142,11 @@ public:
         float spatialDepthThreshold = 0.1f;
         uint32_t spatialBiasCorrection = RTXDI_BIAS_CORRECTION_BASIC;
 
-        bool reuseFinalVisibility = true;
+        ibool reuseFinalVisibility = true;
         uint32_t finalVisibilityMaxAge = 4;
         float finalVisibilityMaxDistance = 16.f;
 
-        bool enableSecondaryResampling = true;
+        ibool enableSecondaryResampling = true;
         uint32_t numSecondarySamples = 1;
         float secondarySamplingRadius = 4.f;
         float secondaryNormalThreshold = 0.9f;
@@ -153,13 +156,13 @@ public:
         // Enables discarding the reservoirs if their lights turn out to be occluded in the final pass.
         // This mode significantly reduces the noise in the penumbra but introduces bias. That bias can be 
         // corrected by setting 'enableSpatialBiasCorrection' and 'enableTemporalBiasCorrection' to true.
-        bool discardInvisibleSamples = false;
+        ibool discardInvisibleSamples = false;
         
-        bool enableReGIR = true;
+        ibool enableReGIR = true;
         uint32_t numRegirBuildSamples = 8;
 
-        bool useFusedKernel = false;
-        bool enableGradients = true;
+        ibool useFusedKernel = false;
+        ibool enableGradients = true;
         float gradientLogDarknessBias = -12.f;
         float gradientSensitivity = 8.f;
         float confidenceHistoryLength = 0.75f;

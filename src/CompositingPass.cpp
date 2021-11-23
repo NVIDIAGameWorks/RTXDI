@@ -79,7 +79,7 @@ CompositingPass::CompositingPass(
 
 void CompositingPass::CreatePipeline()
 {
-    donut::log::info("Initializing CompositingPass...");
+    donut::log::debug("Initializing CompositingPass...");
 
     m_ComputeShader = m_ShaderFactory->CreateShader("app/CompositingPass.hlsl", "main", nullptr, nvrhi::ShaderType::Compute);
 

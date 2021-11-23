@@ -207,7 +207,7 @@ void LightingPasses::CreateBindingSet(
 
 void LightingPasses::CreateComputePass(ComputePass& pass, const char* shaderName, const std::vector<donut::engine::ShaderMacro>& macros)
 {
-    donut::log::info("Initializing ComputePass %s...", shaderName);
+    donut::log::debug("Initializing ComputePass %s...", shaderName);
 
     pass.Shader = m_ShaderFactory->CreateShader(shaderName, "main", &macros, nvrhi::ShaderType::Compute);
 

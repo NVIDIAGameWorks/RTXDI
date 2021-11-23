@@ -59,7 +59,7 @@ PrepareLightsPass::PrepareLightsPass(
 
 void PrepareLightsPass::CreatePipeline()
 {
-    donut::log::info("Initializing PrepareLightsPass...");
+    donut::log::debug("Initializing PrepareLightsPass...");
 
     m_ComputeShader = m_ShaderFactory->CreateShader("app/PrepareLights.hlsl", "main", nullptr, nvrhi::ShaderType::Compute);
 

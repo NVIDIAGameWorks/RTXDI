@@ -41,7 +41,7 @@ FilterGradientsPass::FilterGradientsPass(
 
 void FilterGradientsPass::CreatePipeline()
 {
-    donut::log::info("Initializing FilterGradientsPass...");
+    donut::log::debug("Initializing FilterGradientsPass...");
 
     m_ComputeShader = m_ShaderFactory->CreateShader("app/FilterGradientsPass.hlsl", "main", nullptr, nvrhi::ShaderType::Compute);
 

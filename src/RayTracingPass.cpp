@@ -29,7 +29,7 @@ bool RayTracingPass::Init(
     nvrhi::IBindingLayout* extraBindingLayout,
     nvrhi::IBindingLayout* bindlessLayout)
 {
-    donut::log::info("Initializing RayTracingPass %s...", shaderName);
+    donut::log::debug("Initializing RayTracingPass %s...", shaderName);
 
     ComputeGroupSize = computeGroupSize;
 

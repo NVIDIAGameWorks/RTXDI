@@ -9,15 +9,22 @@ set(CMAKE_CXX_EXTENSIONS ON)
 if (MSVC)
 	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /W3 /MP")
 
-	set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /MTd")
-	set(CMAKE_CXX_FLAGS_MINSIZEREL "${CMAKE_CXX_FLAGS_MINSIZEREL} /MT")
-	set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /MT")
-	set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} /MT")
+    macro(replace_msvcrt var value)
+        # Remove the existing /MD-type flags, if any
+        string(REGEX REPLACE "/M[TD]d?\\s*" "" ${var} ${${var}})
+        # Append the new flag
+        set(${var} "${${var}} ${value}")
+    endmacro(replace_msvcrt)
+    
+    replace_msvcrt(CMAKE_C_FLAGS_DEBUG "/MTd")
+    replace_msvcrt(CMAKE_C_FLAGS_MINSIZEREL "/MT")
+    replace_msvcrt(CMAKE_C_FLAGS_RELEASE "/MT")
+    replace_msvcrt(CMAKE_C_FLAGS_RELWITHDEBINFO "/MT")
 
-	set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} /MTd")
-	set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} /MT")
-	set(CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} /MT")
-	set(CMAKE_C_FLAGS_MINSIZEREL "${CMAKE_C_FLAGS_MINSIZEREL} /MT")
+    replace_msvcrt(CMAKE_CXX_FLAGS_DEBUG "/MTd")
+    replace_msvcrt(CMAKE_CXX_FLAGS_MINSIZEREL "/MT")
+    replace_msvcrt(CMAKE_CXX_FLAGS_RELEASE "/MT")
+    replace_msvcrt(CMAKE_CXX_FLAGS_RELWITHDEBINFO "/MT")
 
 elseif (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
 

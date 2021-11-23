@@ -27,7 +27,7 @@ GenerateMipsPass::GenerateMipsPass(
     : m_SourceTexture(sourceEnvironmentMap)
     , m_DestinationTexture(destinationTexture)
 {
-    donut::log::info("Initializing GenerateMipsPass...");
+    donut::log::debug("Initializing GenerateMipsPass...");
 
     const auto& destinationDesc = m_DestinationTexture->getDesc();
 

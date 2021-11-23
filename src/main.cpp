@@ -50,6 +50,7 @@
 #include "Profiler.h"
 #include "UserInterface.h"
 #include "VisualizationPass.h"
+#include "Testing.h"
 
 #if WITH_NRD
 #include "NrdIntegration.h"
@@ -63,7 +64,7 @@
 #include "RtxgiIntegration.h"
 #endif
 
-#ifndef WIN32
+#ifndef _WIN32
 #include <unistd.h>
 #endif
 
@@ -72,6 +73,8 @@ using namespace donut::math;
 using namespace std::chrono;
 
 #include "../shaders/ShaderParameters.h"
+
+static int g_ExitCode = 0;
 
 class SceneRenderer : public app::ApplicationBase
 {
@@ -115,6 +118,8 @@ private:
     std::unique_ptr<RtxdiResources> m_RtxdiResources;
     std::unique_ptr<engine::IesProfileLoader> m_IesProfileLoader;
     std::shared_ptr<Profiler> m_Profiler;
+
+    uint32_t m_RenderFrameIndex = 0;
     
 #if WITH_NRD
     std::unique_ptr<NrdIntegration> m_NRD;
@@ -129,6 +134,7 @@ private:
 #endif
 
     UIData& m_ui;
+    CommandLineArguments& m_args;
     uint m_FramesSinceAnimation = 0;
     bool m_PreviousViewValid = false;
     time_point<steady_clock> m_PreviousFrameTimeStamp;
@@ -147,12 +153,13 @@ private:
     FrameStepMode m_FrameStepMode = FrameStepMode::Disabled;
 
 public:
-    SceneRenderer(app::DeviceManager* deviceManager, UIData& ui)
+    SceneRenderer(app::DeviceManager* deviceManager, UIData& ui, CommandLineArguments& args)
         : ApplicationBase(deviceManager)
         , m_BindingCache(deviceManager->GetDevice())
         , m_ui(ui)
+        , m_args(args)
     { 
-        m_ui.camera = &m_Camera;
+        m_ui.resources->camera = &m_Camera;
     }
 
     [[nodiscard]] std::shared_ptr<engine::ShaderFactory> GetShaderFactory() const
@@ -181,9 +188,9 @@ public:
         std::filesystem::path frameworkShaderPath = app::GetDirectoryWithExecutable() / "shaders/framework" / app::GetShaderTypeName(GetDevice()->getGraphicsAPI());
         std::filesystem::path appShaderPath = app::GetDirectoryWithExecutable() / "shaders/rtxdi-sample" / app::GetShaderTypeName(GetDevice()->getGraphicsAPI());
 
-        log::info("Mounting %s to %s", mediaPath.string().c_str(), "/media");
-        log::info("Mounting %s to %s", frameworkShaderPath.string().c_str(), "/shaders/donut");
-        log::info("Mounting %s to %s", appShaderPath.string().c_str(), "/shaders/app");
+        log::debug("Mounting %s to %s", mediaPath.string().c_str(), "/media");
+        log::debug("Mounting %s to %s", frameworkShaderPath.string().c_str(), "/shaders/donut");
+        log::debug("Mounting %s to %s", appShaderPath.string().c_str(), "/shaders/app");
 
         m_RootFs = std::make_shared<vfs::RootFileSystem>();
         m_RootFs->mount("/media", mediaPath);
@@ -211,12 +218,13 @@ public:
         m_DescriptorTableManager = std::make_shared<engine::DescriptorTableManager>(GetDevice(), m_BindlessLayout);
 
         m_TextureCache = std::make_shared<donut::engine::TextureCache>(GetDevice(), m_RootFs, m_DescriptorTableManager);
+        m_TextureCache->SetInfoLogSeverity(donut::log::Severity::Debug);
         
         m_IesProfileLoader = std::make_unique<engine::IesProfileLoader>(GetDevice(), m_ShaderFactory, m_DescriptorTableManager);
 
         auto sceneTypeFactory = std::make_shared<SampleSceneTypeFactory>();
         m_Scene = std::make_shared<SampleScene>(GetDevice(), *m_ShaderFactory, m_RootFs, m_TextureCache, m_DescriptorTableManager, sceneTypeFactory);
-        m_ui.scene = m_Scene;
+        m_ui.resources->scene = m_Scene;
 
         SetAsynchronousLoadingEnabled(true);
         BeginLoadingScene(m_RootFs, scenePath);
@@ -226,7 +234,7 @@ public:
             m_ui.useRayQuery = false;
 
         m_Profiler = std::make_shared<Profiler>(*GetDeviceManager());
-        m_ui.profiler = m_Profiler;
+        m_ui.resources->profiler = m_Profiler;
 
         m_FilterGradientsPass = std::make_unique<FilterGradientsPass>(GetDevice(), m_ShaderFactory);
         m_ConfidencePass = std::make_unique<ConfidencePass>(GetDevice(), m_ShaderFactory);
@@ -265,7 +273,7 @@ public:
                 m_IesProfiles.push_back(profile);
             }
         }
-        m_ui.iesProfiles = m_IesProfiles;
+        m_ui.resources->iesProfiles = m_IesProfiles;
 
         m_CommandList = GetDevice()->createCommandList();
 
@@ -447,6 +455,9 @@ public:
     {
         if (m_ui.isLoading)
             return;
+
+        if (!m_args.saveFrameFileName.empty())
+            fElapsedTimeSeconds = 1.f / 60.f;
 
         m_Camera.Animate(fElapsedTimeSeconds);
 
@@ -856,7 +867,7 @@ public:
             m_FrameStepMode = FrameStepMode::Wait;
 
         const engine::PerspectiveCamera* activeCamera = nullptr;
-        uint effectiveFrameIndex = GetFrameIndex();
+        uint effectiveFrameIndex = m_RenderFrameIndex;
 
         if (m_ui.animationFrame.has_value())
         {
@@ -889,7 +900,7 @@ public:
 
                 if(currentFrametime >= expectedFrametime)
                     break;
-#ifdef WIN32
+#ifdef _WIN32
                 Sleep(0);
 #else
                 usleep(100);
@@ -982,7 +993,7 @@ public:
             {
                 if (material->materialID == materialIndex)
                 {
-                    m_ui.selectedMaterial = material;
+                    m_ui.resources->selectedMaterial = material;
                     break;
                 }
             }
@@ -1272,12 +1283,10 @@ public:
             }
 
             m_ToneMappingPass->SimpleRender(m_CommandList, ToneMappingParams, m_UpscaledView, m_RenderTargets->ResolvedColor);
-            
-            m_CommonPasses->BlitTexture(m_CommandList, framebuffer, m_RenderTargets->LdrColor, &m_BindingCache);
         }
         else
         {
-            m_CommonPasses->BlitTexture(m_CommandList, framebuffer, m_RenderTargets->ResolvedColor, &m_BindingCache);
+            m_CommonPasses->BlitTexture(m_CommandList, m_RenderTargets->LdrFramebuffer->GetFramebuffer(m_UpscaledView), m_RenderTargets->ResolvedColor, &m_BindingCache);
         }
 
         if (m_ui.visualizationMode != VIS_MODE_NONE)
@@ -1300,7 +1309,7 @@ public:
             {
                 m_VisualizationPass->Render(
                     m_CommandList,
-                    framebuffer,
+                    m_RenderTargets->LdrFramebuffer->GetFramebuffer(m_UpscaledView),
                     m_View,
                     m_UpscaledView,
                     *m_RtxdiContext,
@@ -1310,11 +1319,22 @@ public:
                     m_ui.aaMode == AntiAliasingMode::Accumulation);
             }
         }
+
+        m_CommonPasses->BlitTexture(m_CommandList, framebuffer, m_RenderTargets->LdrColor, &m_BindingCache);
         
         m_Profiler->EndFrame(m_CommandList);
 
         m_CommandList->close();
         GetDevice()->executeCommandList(m_CommandList);
+
+        if (!m_args.saveFrameFileName.empty() && m_RenderFrameIndex == m_args.saveFrameIndex)
+        {
+            bool success = SaveTexture(GetDevice(), m_RenderTargets->LdrColor, m_args.saveFrameFileName.c_str());
+
+            g_ExitCode = success ? 0 : 1;
+            
+            glfwSetWindowShouldClose(GetDeviceManager()->GetWindow(), 1);
+        }
         
         m_ui.gbufferSettings.enableMaterialReadback = false;
         
@@ -1326,56 +1346,42 @@ public:
         m_ViewPrevious = m_View;
         m_PreviousViewValid = true;
         m_ui.resetAccumulation = false;
+        ++m_RenderFrameIndex;
     }
 };
 
-void ProcessCommandLine(int argc, char* const* argv, app::DeviceCreationParameters& deviceParams)
-{
-    for (int i = 1; i < argc; ++i)
-    {
-        const char* arg = argv[i];
-
-        if (strcmp(arg, "-debug") == 0)
-        {
-            deviceParams.enableDebugRuntime = true;
-            deviceParams.enableNvrhiValidationLayer = true;
-        }
-    }
-}
-
-#ifdef WIN32
+#if defined(_WIN32) && !defined(IS_CONSOLE_APP)
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow)
 #else
-int main(int __argc, char* const* __argv)
+int main(int argc, char** argv)
 #endif
 {
-#if USE_DX12 && USE_VK
-    const nvrhi::GraphicsAPI api = app::GetGraphicsAPIFromCommandLine(__argc, __argv);
-
-    if (api == nvrhi::GraphicsAPI::D3D11)
-    {
-        log::error("D3D11 is not supported by this application.");
-        return 1;
-    }
-#elif USE_DX12
-    const nvrhi::GraphicsAPI api = nvrhi::GraphicsAPI::D3D12;
-#elif USE_VK
-    const nvrhi::GraphicsAPI api = nvrhi::GraphicsAPI::VULKAN;
-#endif
-
-    app::DeviceManager* deviceManager = app::DeviceManager::Create(api);
-
+    log::SetCallback(&ApplicationLogCallback);
+    
     app::DeviceCreationParameters deviceParams;
     deviceParams.swapChainBufferCount = 3;
     deviceParams.enableRayTracingExtensions = true;
     deviceParams.backBufferWidth = 1920;
     deviceParams.backBufferHeight = 1080;
     deviceParams.vsyncEnabled = true;
+    deviceParams.infoLogSeverity = log::Severity::Debug;
 
-    ProcessCommandLine(__argc, __argv, deviceParams);
+    UIData ui;
+    CommandLineArguments args;
+
+#if defined(_WIN32) && !defined(IS_CONSOLE_APP)
+    ProcessCommandLine(__argc, __argv, deviceParams, ui, args);
+#else
+    ProcessCommandLine(argc, argv, deviceParams, ui, args);
+#endif
+
+    if (args.verbose)
+        log::SetMinSeverity(log::Severity::Debug);
+    
+    app::DeviceManager* deviceManager = app::DeviceManager::Create(args.graphicsApi);
 
 #if defined(USE_VK)
-    if (api == nvrhi::GraphicsAPI::VULKAN)
+    if (args.graphicsApi == nvrhi::GraphicsAPI::VULKAN)
     {
         // Set the extra device feature bit(s)
         deviceParams.deviceCreateInfoCallback = [](vk::DeviceCreateInfo& info) {
@@ -1408,7 +1414,7 @@ int main(int __argc, char* const* __argv)
 
     const char* apiString = nvrhi::utils::GraphicsAPIToString(deviceManager->GetGraphicsAPI());
 
-    std::string windowTitle = "RTX Direct Illumination SDK Sample (" + std::string(apiString) + ")";
+    std::string windowTitle = std::string(g_ApplicationTitle) + " (" + std::string(apiString) + ")";
     
     log::SetErrorMessageCaption(windowTitle.c_str());
 
@@ -1428,7 +1434,7 @@ int main(int __argc, char* const* __argv)
     }
 
 #if USE_DX12
-    if (api == nvrhi::GraphicsAPI::D3D12)
+    if (args.graphicsApi == nvrhi::GraphicsAPI::D3D12)
     {
         // On DX12, disable the background shader optimization because it leads to stutter on the current NV drivers (496.61).
 
@@ -1451,8 +1457,7 @@ int main(int __argc, char* const* __argv)
 #endif
 
     {
-        UIData ui;
-        SceneRenderer sceneRenderer(deviceManager, ui);
+        SceneRenderer sceneRenderer(deviceManager, ui, args);
         if (sceneRenderer.Init())
         {
             UserInterface userInterface(deviceManager, *sceneRenderer.GetRootFs(), ui);
@@ -1465,11 +1470,14 @@ int main(int __argc, char* const* __argv)
             deviceManager->RemoveRenderPass(&sceneRenderer);
             deviceManager->RemoveRenderPass(&userInterface);
         }
+
+        // Clear the shared pointers from 'ui' to graphics objects
+        ui.resources.reset();
     }
     
     deviceManager->Shutdown();
 
     delete deviceManager;
 
-    return 0;
+    return g_ExitCode;
 }

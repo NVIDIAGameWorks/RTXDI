@@ -54,7 +54,7 @@ ConfidencePass::ConfidencePass(
 
 void ConfidencePass::CreatePipeline()
 {
-    donut::log::info("Initializing ConfidencePass...");
+    donut::log::debug("Initializing ConfidencePass...");
 
     m_ComputeShader = m_ShaderFactory->CreateShader("app/ConfidencePass.hlsl", "main", nullptr, nvrhi::ShaderType::Compute);
 

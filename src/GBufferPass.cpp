@@ -206,7 +206,7 @@ void RasterizedGBufferPass::CreateBindingSet()
 
 void RasterizedGBufferPass::CreatePipeline(const RenderTargets& renderTargets)
 {
-    donut::log::info("Initializing RasterizedGBufferPass...");
+    donut::log::debug("Initializing RasterizedGBufferPass...");
 
     std::vector<ShaderMacro> macros = { { "ALPHA_TESTED", "0"} };
 

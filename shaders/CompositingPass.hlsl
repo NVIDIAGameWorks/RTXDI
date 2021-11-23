@@ -131,5 +131,5 @@ void main(uint2 globalIdx : SV_DispatchThreadID)
     if(any(isnan(compositedColor)))
         compositedColor = float3(0, 0, 1);
 
-    u_Output[globalIdx] = float4(compositedColor, 0);
+    u_Output[globalIdx] = float4(compositedColor, 1.0);
 }

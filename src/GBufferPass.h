@@ -28,6 +28,8 @@ class RenderTargets;
 class Profiler;
 class SampleScene;
 
+typedef int ibool;
+
 struct GBufferSettings
 {
     float roughnessOverride = 0.5f;
@@ -35,8 +37,8 @@ struct GBufferSettings
     bool enableRoughnessOverride = false;
     bool enableMetalnessOverride = false;
     float normalMapScale = 1.f;
-    bool enableAlphaTestedGeometry = true;
-    bool enableTransparentGeometry = true;
+    ibool enableAlphaTestedGeometry = true;
+    ibool enableTransparentGeometry = true;
     float textureLodBias = -1.f;
 
     bool enableMaterialReadback = false;

@@ -30,7 +30,7 @@ RenderEnvironmentMapPass::RenderEnvironmentMapPass(
     uint32_t textureWidth)
     : m_DescriptorTable(std::move(descriptorTable))
 {
-    donut::log::info("Initializing RenderEnvironmentMapPass...");
+    donut::log::debug("Initializing RenderEnvironmentMapPass...");
 
     nvrhi::TextureDesc destDesc;
     destDesc.width = textureWidth;

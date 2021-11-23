@@ -138,22 +138,21 @@ void UserInterface::PerformanceWindow()
     double frameTime = GetDeviceManager()->GetAverageFrameTimeSeconds();
     ImGui::Text("%05.2f ms/frame (%05.1f FPS)", frameTime * 1e3f, (frameTime > 0.0) ? 1.0 / frameTime : 0.0);
 
-    bool enableProfiler = m_ui.profiler->IsEnabled();
+    bool enableProfiler = m_ui.resources->profiler->IsEnabled();
     ImGui::Checkbox("Enable Profiler", &enableProfiler);
-    m_ui.profiler->EnableProfiler(enableProfiler);
+    m_ui.resources->profiler->EnableProfiler(enableProfiler);
 
     if (enableProfiler)
     {
         ImGui::SameLine();
-        ImGui::Checkbox("Count Rays", &m_ui.lightingSettings.enableRayCounts);
+        ImGui::Checkbox("Count Rays", (bool*)&m_ui.lightingSettings.enableRayCounts);
 
-        m_ui.profiler->BuildUI(m_ui.lightingSettings.enableRayCounts);
+        m_ui.resources->profiler->BuildUI(m_ui.lightingSettings.enableRayCounts);
     }
 }
 
 void UserInterface::ApplyPreset()
 {
-    m_ui.lightingSettings = LightingPasses::RenderSettings();
     bool enableCheckerboardSampling = (m_ui.rtxdiContextParams.CheckerboardSamplingMode != rtxdi::CheckerboardMode::Off);
 
     switch (m_Preset)
@@ -284,21 +283,21 @@ void UserInterface::GeneralRenderingSettings()
         {
             if (GetDevice()->queryFeatureSupport(nvrhi::Feature::RayTracingPipeline))
             {
-                m_ui.reloadShaders |= ImGui::Checkbox("Use RayQuery", &m_ui.useRayQuery);
+                m_ui.reloadShaders |= ImGui::Checkbox("Use RayQuery", (bool*)&m_ui.useRayQuery);
             }
             else
             {
-                ImGui::Checkbox("Use RayQuery (No other options)", &m_ui.useRayQuery);
+                ImGui::Checkbox("Use RayQuery (No other options)", (bool*)&m_ui.useRayQuery);
                 m_ui.useRayQuery = true;
             }
         }
         else
         {
-            ImGui::Checkbox("Use RayQuery (Not available)", &m_ui.useRayQuery);
+            ImGui::Checkbox("Use RayQuery (Not available)", (bool*)&m_ui.useRayQuery);
             m_ui.useRayQuery = false;
         }
 
-        ImGui::Checkbox("Rasterize G-Buffer", &m_ui.rasterizeGBuffer);
+        ImGui::Checkbox("Rasterize G-Buffer", (bool*)&m_ui.rasterizeGBuffer);
 
         int resolutionScalePercents = int(m_ui.resolutionScale * 100.f);
         ImGui::SliderInt("Resolution Scale (%)", &resolutionScalePercents, 50, 100);
@@ -311,7 +310,7 @@ void UserInterface::GeneralRenderingSettings()
         ImGui::SliderInt("FPS Limit", (int*)&m_ui.fpsLimit, 10, 60);
         ImGui::PopItemWidth();
 
-        m_ui.resetAccumulation |= ImGui::Checkbox("##enablePixelJitter", &m_ui.enablePixelJitter);
+        m_ui.resetAccumulation |= ImGui::Checkbox("##enablePixelJitter", (bool*)&m_ui.enablePixelJitter);
         ImGui::SameLine();
         ImGui::PushItemWidth(69.f);
         m_ui.resetAccumulation |= ImGui::Combo("Pixel Jitter", (int*)&m_ui.temporalJitter, "MSAA\0Halton\0R2\0White Noise\0");
@@ -379,7 +378,7 @@ void UserInterface::SamplingSettings()
                 samplingSettingsChanged |= ImGui::Checkbox("Importance Sample Env. Map", &m_ui.environmentMapImportanceSampling);
             }
 
-            samplingSettingsChanged |= ImGui::Checkbox("Use Fused Kernel", &m_ui.lightingSettings.useFusedKernel);
+            samplingSettingsChanged |= ImGui::Checkbox("Use Fused Kernel", (bool*)&m_ui.lightingSettings.useFusedKernel);
             ShowHelpMarker(
                 "Use a single spatio-temporal resampling pass that covers everything from initial sampling to final shading.");
 
@@ -413,14 +412,14 @@ void UserInterface::SamplingSettings()
 
             if (ImGui::TreeNode("ReGIR Settings"))
             {
-                samplingSettingsChanged |= ImGui::Checkbox("Use ReGIR", &m_ui.lightingSettings.enableReGIR);
+                samplingSettingsChanged |= ImGui::Checkbox("Use ReGIR", (bool*)&m_ui.lightingSettings.enableReGIR);
                 samplingSettingsChanged |= ImGui::SliderFloat("Cell Size", &m_ui.regirCellSize, 0.1f, 4.f);
                 samplingSettingsChanged |= ImGui::SliderInt("Grid Build Samples", (int*)&m_ui.lightingSettings.numRegirBuildSamples, 0, 32);
                 samplingSettingsChanged |= ImGui::SliderFloat("Sampling Jitter", &m_ui.regirSamplingJitter, 0.0f, 2.f);
 
                 ImGui::Checkbox("Freeze Position", &m_ui.freezeRegirPosition);
                 ImGui::SameLine(0.f, 10.f);
-                ImGui::Checkbox("Visualize Cells", &m_ui.lightingSettings.visualizeRegirCells);
+                ImGui::Checkbox("Visualize Cells", (bool*)&m_ui.lightingSettings.visualizeRegirCells);
 
                 ImGui::TreePop();
             }
@@ -444,7 +443,7 @@ void UserInterface::SamplingSettings()
                 ShowHelpMarker(
                     "Number of samples drawn from the environment map when it is importance sampled.");
 
-                samplingSettingsChanged |= ImGui::Checkbox("Enable Initial Visibility", &m_ui.lightingSettings.enableInitialVisibility);
+                samplingSettingsChanged |= ImGui::Checkbox("Enable Initial Visibility", (bool*)&m_ui.lightingSettings.enableInitialVisibility);
 
                 ImGui::TreePop();
             }
@@ -453,14 +452,14 @@ void UserInterface::SamplingSettings()
             {
                 if (!m_ui.lightingSettings.useFusedKernel)
                 {
-                    samplingSettingsChanged |= ImGui::Checkbox("Enable Temporal Resampling", &m_ui.lightingSettings.enableTemporalResampling);
+                    samplingSettingsChanged |= ImGui::Checkbox("Enable Temporal Resampling", (bool*)&m_ui.lightingSettings.enableTemporalResampling);
                 }
-                samplingSettingsChanged |= ImGui::Checkbox("Enable Previous Frame TLAS/BLAS", &m_ui.lightingSettings.enablePreviousTLAS);
+                samplingSettingsChanged |= ImGui::Checkbox("Enable Previous Frame TLAS/BLAS", (bool*)&m_ui.lightingSettings.enablePreviousTLAS);
                 ShowHelpMarker(
                     "Use the previous frame TLAS for bias correction rays during temporal resampling and gradient computation. "
                     "Resutls in less biased results under motion and brighter, more complete gradients.");
 
-                samplingSettingsChanged |= ImGui::Checkbox("Enable Permutation Sampling", &m_ui.lightingSettings.enablePermutationSampling);
+                samplingSettingsChanged |= ImGui::Checkbox("Enable Permutation Sampling", (bool*)&m_ui.lightingSettings.enablePermutationSampling);
                 ShowHelpMarker(
                     "Shuffle the pixels from the previous frame when resampling from them. This makes pixel colors less correllated "
                     "temporally and therefore better suited for temporal accumulation and denoising. Also results in a higher positive "
@@ -485,7 +484,7 @@ void UserInterface::SamplingSettings()
                 }
                 samplingSettingsChanged |= ImGui::SliderInt("Max History Length", (int*)&m_ui.lightingSettings.maxHistoryLength, 1, 100);
 
-                samplingSettingsChanged |= ImGui::Checkbox("##enableBoilingFilter", &m_ui.lightingSettings.enableBoilingFilter);
+                samplingSettingsChanged |= ImGui::Checkbox("##enableBoilingFilter", (bool*)&m_ui.lightingSettings.enableBoilingFilter);
                 ImGui::SameLine();
                 ImGui::PushItemWidth(69.f);
                 samplingSettingsChanged |= ImGui::SliderFloat("Boiling Filter", &m_ui.lightingSettings.boilingFilterStrength, 0.f, 1.f);
@@ -499,7 +498,7 @@ void UserInterface::SamplingSettings()
 
             if (ImGui::TreeNode("Spatial Resampling"))
             {
-                samplingSettingsChanged |= ImGui::Checkbox("Enable Spatial Resampling", &m_ui.lightingSettings.enableSpatialResampling);
+                samplingSettingsChanged |= ImGui::Checkbox("Enable Spatial Resampling", (bool*)&m_ui.lightingSettings.enableSpatialResampling);
                 if (!m_ui.lightingSettings.useFusedKernel)
                 {
                     samplingSettingsChanged |= ImGui::Combo("Spatial Bias Correction", (int*)&m_ui.lightingSettings.spatialBiasCorrection, "Off\0Basic\0Ray Traced\0");
@@ -533,15 +532,15 @@ void UserInterface::SamplingSettings()
 
             if (ImGui::TreeNode("Final Shading"))
             {
-                samplingSettingsChanged |= ImGui::Checkbox("Enable Final Visibility", &m_ui.lightingSettings.enableFinalVisibility);
+                samplingSettingsChanged |= ImGui::Checkbox("Enable Final Visibility", (bool*)&m_ui.lightingSettings.enableFinalVisibility);
 
-                samplingSettingsChanged |= ImGui::Checkbox("Discard Invisible Samples", &m_ui.lightingSettings.discardInvisibleSamples);
+                samplingSettingsChanged |= ImGui::Checkbox("Discard Invisible Samples", (bool*)&m_ui.lightingSettings.discardInvisibleSamples);
                 ShowHelpMarker(
                     "When a sample is determined to be occluded during final shading, its reservoir is discarded. "
                     "This can significantly reduce noise, but also introduce some bias near shadow boundaries beacuse the reservoirs' M values are kept. "
                     "Also, enabling this option speeds up temporal resampling with Ray Traced bias correction by skipping most of the bias correction rays.");
 
-                samplingSettingsChanged |= ImGui::Checkbox("Reuse Final Visibility", &m_ui.lightingSettings.reuseFinalVisibility);
+                samplingSettingsChanged |= ImGui::Checkbox("Reuse Final Visibility", (bool*)&m_ui.lightingSettings.reuseFinalVisibility);
                 ShowHelpMarker(
                     "Store the fractional final visibility term in the reservoirs and reuse it later if the reservoir is not too old and has not "
                     "moved too far away from its original location. Enable the Advanced Settings option to control the thresholds.");
@@ -567,7 +566,7 @@ void UserInterface::SamplingSettings()
 
             if (m_ui.renderingMode == RenderingMode::ReStirDirectBrdfIndirect && ImGui::TreeNode("Secondary Resampling"))
             {
-                samplingSettingsChanged |= ImGui::Checkbox("Enable Secondary Resampling", &m_ui.lightingSettings.enableSecondaryResampling);
+                samplingSettingsChanged |= ImGui::Checkbox("Enable Secondary Resampling", (bool*)&m_ui.lightingSettings.enableSecondaryResampling);
                 ShowHelpMarker(
                     "When shading a secondary surface, try to find a matching surface in screen space and reuse its light reservoir. "
                     "This feature uses the Spatial Resampling function and has similar controls.");
@@ -599,7 +598,7 @@ void UserInterface::SamplingSettings()
 #if WITH_RTXGI
     if (ImGui_ColoredTreeNode("RTXGI", c_ColorRegularHeader))
     {
-        ImGui::Checkbox("Enable RTXGI", &m_ui.rtxgi.enabled);
+        ImGui::Checkbox("Enable RTXGI", (bool*)&m_ui.rtxgi.enabled);
 
         ImGui::SliderFloat("Hysteresis", &m_ui.rtxgi.hysteresis, 0.9f, 1.0f);
         ImGui::SliderFloat("Irradiance Threshold", &m_ui.rtxgi.irradianceThreshold, 0.f, 1.0f);
@@ -618,7 +617,7 @@ void UserInterface::SamplingSettings()
         ImGui::SliderInt("Environment Samples", (int*)&m_ui.lightingSettings.numRtxgiEnvironmentSamples, 0, 32);
         ImGui::Separator();
 
-        auto& volumes = m_ui.scene->GetRtxgiVolumes();
+        auto& volumes = m_ui.resources->scene->GetRtxgiVolumes();
         auto* selectedVolume = m_ui.rtxgi.selectedVolumeIndex >= 0 && m_ui.rtxgi.selectedVolumeIndex < int(volumes.size())
             ? &volumes[m_ui.rtxgi.selectedVolumeIndex] : nullptr;
 
@@ -638,7 +637,7 @@ void UserInterface::SamplingSettings()
             ImGui::EndCombo();
         }
         ImGui::SameLine();
-        ImGui::Checkbox("Show Probes", &m_ui.rtxgi.showProbes);
+        ImGui::Checkbox("Show Probes", (bool*)&m_ui.rtxgi.showProbes);
 
         if (selectedVolume)
         {
@@ -697,13 +696,13 @@ void UserInterface::PostProcessSettings()
             // ImGui::SliderFloat("DLSS Sharpness", &m_ui.dlssSharpness, 0.f, 1.f);
         }
 #endif
-        m_ui.resetAccumulation |= ImGui::Checkbox("Apply Textures in Compositing", &m_ui.enableTextures);
+        m_ui.resetAccumulation |= ImGui::Checkbox("Apply Textures in Compositing", (bool*)&m_ui.enableTextures);
         
-        ImGui::Checkbox("Tone mapping", &m_ui.enableToneMapping);
+        ImGui::Checkbox("Tone mapping", (bool*)&m_ui.enableToneMapping);
         ImGui::SameLine();
         ImGui::SliderFloat("Exposure bias", &m_ui.exposureBias, -4.f, 2.f);
 
-        ImGui::Checkbox("Bloom", &m_ui.enableBloom);
+        ImGui::Checkbox("Bloom", (bool*)&m_ui.enableBloom);
 
         ImGui::PushItemWidth(150.f);
         ImGui::Combo("Visualization", (int*)&m_ui.visualizationMode,
@@ -750,7 +749,7 @@ void UserInterface::DenoiserSettings()
         {
             ImGui::Checkbox("Show Advanced Denoiser Settings", &m_showAdvancedDenoisingSettings);
 
-            ImGui::Checkbox("Use Confidence Input", &m_ui.lightingSettings.enableGradients);
+            ImGui::Checkbox("Use Confidence Input", (bool*)&m_ui.lightingSettings.enableGradients);
             if (m_ui.lightingSettings.enableGradients)
             {
                 if (m_showAdvancedDenoisingSettings)
@@ -899,8 +898,8 @@ void UserInterface::CopySelectedLight() const
 
 void UserInterface::CopyCamera() const
 {
-    dm::float3 cameraPos = m_ui.camera->GetPosition();
-    dm::float3 cameraDir = m_ui.camera->GetDir();
+    dm::float3 cameraPos = m_ui.resources->camera->GetPosition();
+    dm::float3 cameraDir = m_ui.resources->camera->GetDir();
 
     std::stringstream text;
     text.precision(4);
@@ -927,18 +926,18 @@ void UserInterface::SceneSettings()
 {
     if (ImGui_ColoredTreeNode("Scene Settings", c_ColorRegularHeader))
     {
-        ImGui::Checkbox("##enableAnimations", &m_ui.enableAnimations);
+        ImGui::Checkbox("##enableAnimations", (bool*)&m_ui.enableAnimations);
         ImGui::SameLine();
         ImGui::PushItemWidth(89.f);
         ImGui::SliderFloat("Animation Speed", &m_ui.animationSpeed, 0.f, 2.f);
         ImGui::PopItemWidth();
 
-        m_ui.resetAccumulation |= ImGui::Checkbox("Alpha-Tested Geometry", &m_ui.gbufferSettings.enableAlphaTestedGeometry);
-        m_ui.resetAccumulation |= ImGui::Checkbox("Transparent Geometry", &m_ui.gbufferSettings.enableTransparentGeometry);
+        m_ui.resetAccumulation |= ImGui::Checkbox("Alpha-Tested Geometry", (bool*)&m_ui.gbufferSettings.enableAlphaTestedGeometry);
+        m_ui.resetAccumulation |= ImGui::Checkbox("Transparent Geometry", (bool*)&m_ui.gbufferSettings.enableTransparentGeometry);
 
-        const auto& environmentMaps = m_ui.scene->GetEnvironmentMaps();
+        const auto& environmentMaps = m_ui.resources->scene->GetEnvironmentMaps();
 
-        const std::string selectedEnvironmentMap = getEnvironmentMapName(*m_ui.scene, m_ui.environmentMapIndex);
+        const std::string selectedEnvironmentMap = getEnvironmentMapName(*m_ui.resources->scene, m_ui.environmentMapIndex);
 
         ImGui::PushItemWidth(120.f);
         if (ImGui::BeginCombo("Environment", selectedEnvironmentMap.c_str()))
@@ -946,7 +945,7 @@ void UserInterface::SceneSettings()
             for (int index = -1; index < int(environmentMaps.size()); index++)
             {
                 bool selected = (index == m_ui.environmentMapIndex);
-                ImGui::Selectable(getEnvironmentMapName(*m_ui.scene, index).c_str(), &selected);
+                ImGui::Selectable(getEnvironmentMapName(*m_ui.resources->scene, index).c_str(), &selected);
                 if (selected)
                 {
                     if (index != m_ui.environmentMapIndex)
@@ -986,10 +985,10 @@ void UserInterface::SceneSettings()
         ImGui::SliderFloat("Texture LOD Bias", &m_ui.gbufferSettings.textureLodBias, -2.f, 2.f);
 
         bool resetSelection = false;
-        if (m_ui.selectedMaterial)
+        if (m_ui.resources->selectedMaterial)
         {
             ImGui::AlignTextToFramePadding();
-            ImGui::Text("%s", m_ui.selectedMaterial->name.c_str());
+            ImGui::Text("%s", m_ui.resources->selectedMaterial->name.c_str());
             ImGui::SameLine(0.f, 10.f);
             ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 10.f);
             if (ImGui::Button(" X "))
@@ -997,14 +996,14 @@ void UserInterface::SceneSettings()
             ImGui::PopStyleVar();
 
             ImGui::PushItemWidth(200.f);
-            bool materialChanged = donut::app::MaterialEditor(m_ui.selectedMaterial.get(), false);
+            bool materialChanged = donut::app::MaterialEditor(m_ui.resources->selectedMaterial.get(), false);
             ImGui::PopItemWidth();
 
             if (materialChanged)
-                m_ui.selectedMaterial->dirty = true;
+                m_ui.resources->selectedMaterial->dirty = true;
 
             if (resetSelection)
-                m_ui.selectedMaterial.reset();
+                m_ui.resources->selectedMaterial.reset();
         }
         else
             ImGui::Text("Use RMB to select materials");
@@ -1018,7 +1017,7 @@ void UserInterface::SceneSettings()
     {
         if (ImGui::BeginCombo("Select Light", m_SelectedLight ? m_SelectedLight->GetName().c_str() : "(None)"))
         {
-            for (const auto& light : m_ui.scene->GetSceneGraph()->GetLights())
+            for (const auto& light : m_ui.resources->scene->GetSceneGraph()->GetLights())
             {
                 if (light->GetLightType() == LightType_Environment)
                     continue;
@@ -1061,7 +1060,7 @@ void UserInterface::SceneSettings()
                         spotLight.profileTextureIndex = -1;
                     }
 
-                    for (auto profile : m_ui.iesProfiles)
+                    for (auto profile : m_ui.resources->iesProfiles)
                     {
                         selected = profile->name == spotLight.profileName;
                         if (ImGui::Selectable(profile->name.c_str(), &selected) && selected)
@@ -1082,13 +1081,13 @@ void UserInterface::SceneSettings()
 
                 if (ImGui::Button("Place Here"))
                 {
-                    spotLight.SetPosition(dm::double3(m_ui.camera->GetPosition()));
-                    spotLight.SetDirection(dm::double3(m_ui.camera->GetDir()));
+                    spotLight.SetPosition(dm::double3(m_ui.resources->camera->GetPosition()));
+                    spotLight.SetDirection(dm::double3(m_ui.resources->camera->GetDir()));
                 }
                 ImGui::SameLine();
                 if (ImGui::Button("Camera to Light"))
                 {
-                    m_ui.camera->LookAt(dm::float3(spotLight.GetPosition()), dm::float3(spotLight.GetPosition() + spotLight.GetDirection()));
+                    m_ui.resources->camera->LookAt(dm::float3(spotLight.GetPosition()), dm::float3(spotLight.GetPosition() + spotLight.GetDirection()));
                 }
                 break;
             }
@@ -1100,7 +1099,7 @@ void UserInterface::SceneSettings()
                 ImGui::SliderFloat("Intensity", &pointLight.intensity, 0.f, 100.f, "%.2f", ImGuiSliderFlags_Logarithmic);
                 if (ImGui::Button("Place Here"))
                 {
-                    pointLight.SetPosition(dm::double3(m_ui.camera->GetPosition()));
+                    pointLight.SetPosition(dm::double3(m_ui.resources->camera->GetPosition()));
                 }
                 break;
             }
@@ -1121,7 +1120,7 @@ void UserInterface::SceneSettings()
                 ImGui::ColorEdit3("Color", &cylinderLight.color.x);
                 if (ImGui::Button("Place Here"))
                 {
-                    cylinderLight.SetPosition(dm::double3(m_ui.camera->GetPosition()));
+                    cylinderLight.SetPosition(dm::double3(m_ui.resources->camera->GetPosition()));
                 }
                 break;
             }
@@ -1141,8 +1140,8 @@ void UserInterface::SceneSettings()
                 ImGui::ColorEdit3("Color", &diskLight.color.x);
                 if (ImGui::Button("Place Here"))
                 {
-                    diskLight.SetPosition(dm::double3(m_ui.camera->GetPosition()));
-                    diskLight.SetDirection(dm::double3(m_ui.camera->GetDir()));
+                    diskLight.SetPosition(dm::double3(m_ui.resources->camera->GetPosition()));
+                    diskLight.SetDirection(dm::double3(m_ui.resources->camera->GetDir()));
                 }
                 break;
             }
@@ -1163,8 +1162,8 @@ void UserInterface::SceneSettings()
                 ImGui::ColorEdit3("Color", &rectLight.color.x);
                 if (ImGui::Button("Place Here"))
                 {
-                    rectLight.SetPosition(dm::double3(m_ui.camera->GetPosition()));
-                    rectLight.SetDirection(dm::double3(m_ui.camera->GetDir()));
+                    rectLight.SetPosition(dm::double3(m_ui.resources->camera->GetPosition()));
+                    rectLight.SetDirection(dm::double3(m_ui.resources->camera->GetDir()));
                 }
                 break;
             }
@@ -1186,7 +1185,7 @@ void UserInterface::SceneSettings()
     {
         ImGui::SliderFloat("Camera vFOV", &m_ui.verticalFov, 10.f, 110.f);
 
-        dm::float3 cameraPos = m_ui.camera->GetPosition();
+        dm::float3 cameraPos = m_ui.resources->camera->GetPosition();
         ImGui::Text("Camera: %.2f %.2f %.2f", cameraPos.x, cameraPos.y, cameraPos.z);
         if (ImGui::Button("Copy Camera to Clipboard"))
         {

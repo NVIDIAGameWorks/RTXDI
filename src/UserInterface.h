@@ -56,8 +56,8 @@ enum class QualityPreset : uint32_t
 
 struct RtxgiParameters
 {
-    bool enabled = true;
-    bool showProbes = false;
+    ibool enabled = true;
+    ibool showProbes = false;
     int selectedVolumeIndex = 0;
     float hysteresis = 0.99f;
     float irradianceThreshold = 0.25f;
@@ -78,6 +78,18 @@ enum class AntiAliasingMode : uint32_t
 #endif
 };
 
+struct UIResources
+{
+    std::shared_ptr<Profiler> profiler;
+
+    std::shared_ptr<SampleScene> scene;
+    donut::app::FirstPersonCamera* camera = nullptr;
+
+    std::vector<std::shared_ptr<donut::engine::IesProfile>> iesProfiles;
+
+    std::shared_ptr<donut::engine::Material> selectedMaterial;
+};
+
 struct UIData
 {
     bool reloadShaders = false;
@@ -87,13 +99,13 @@ struct UIData
 
     float loadingPercentage = 0.f;
 
-    bool enableTextures = true;
+    ibool enableTextures = true;
     uint32_t framesToAccumulate = 0;
-    bool enableToneMapping = true;
-    bool enablePixelJitter = true;
-    bool rasterizeGBuffer = true;
-    bool useRayQuery = true;
-    bool enableBloom = true;
+    ibool enableToneMapping = true;
+    ibool enablePixelJitter = true;
+    ibool rasterizeGBuffer = true;
+    ibool useRayQuery = true;
+    ibool enableBloom = true;
     float exposureBias = -1.0f;
     float verticalFov = 60.f;
 
@@ -106,7 +118,7 @@ struct UIData
     uint32_t numAccumulatedFrames = 1;
 
     RenderingMode renderingMode = RenderingMode::ReStirDirectOnly;
-    bool enableAnimations = true;
+    ibool enableAnimations = true;
     float animationSpeed = 1.f;
     int environmentMapDirty = 0; // 1 -> needs to be rendered; 2 -> passes/textures need to be created
     int environmentMapIndex = -1;
@@ -156,14 +168,7 @@ struct UIData
 
     donut::render::TemporalAntiAliasingJitter temporalJitter = donut::render::TemporalAntiAliasingJitter::Halton;
 
-    std::shared_ptr<Profiler> profiler;
-
-    std::shared_ptr<SampleScene> scene;
-    donut::app::FirstPersonCamera* camera = nullptr;
-
-    std::vector<std::shared_ptr<donut::engine::IesProfile>> iesProfiles;
-
-    std::shared_ptr<donut::engine::Material> selectedMaterial;
+    std::unique_ptr<UIResources> resources = std::make_unique<UIResources>();
 
     UIData();
 };

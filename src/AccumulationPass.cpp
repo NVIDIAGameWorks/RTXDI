@@ -47,7 +47,7 @@ AccumulationPass::AccumulationPass(
 
 void AccumulationPass::CreatePipeline()
 {
-    donut::log::info("Initializing AccumulationPass...");
+    donut::log::debug("Initializing AccumulationPass...");
 
     m_ComputeShader = m_ShaderFactory->CreateShader("app/AccumulationPass.hlsl", "main", nullptr, nvrhi::ShaderType::Compute);
 

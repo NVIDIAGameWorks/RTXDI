@@ -30,6 +30,7 @@ struct CommandLineArguments
     uint32_t saveFrameIndex = 0;
     std::string saveFrameFileName;
     bool verbose = false;
+    bool benchmark = false;
 };
 
 void ProcessCommandLine(int argc, char** argv, donut::app::DeviceCreationParameters& deviceParams, UIData& ui, CommandLineArguments& args);

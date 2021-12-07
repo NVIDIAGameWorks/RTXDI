@@ -106,13 +106,16 @@ void ProcessCommandLine(int argc, char** argv, donut::app::DeviceCreationParamet
 
     bool help = false;
     bool useVk = false;
+    ibool checkerboard = false;
     std::string denoiserMode;
 
     options.add_options()
         ("aa-mode", "Anti-aliasing mode: OFF, ACC, TAA, DLSS (if supported)", value(ui.aaMode))
         ("alpha-tested", "Alpha-tested materials toggle", value(ui.gbufferSettings.enableAlphaTestedGeometry))
         ("animation", "Animations toggle", value(ui.enableAnimations))
+        ("benchmark", "Run the benchmark", value(args.benchmark))
         ("bloom", "Bloom effect toggle", value(ui.enableBloom))
+        ("checkerboard", "Use checkerboard rendering", value(checkerboard))
         ("d,debug", "Enable the DX12 or Vulkan validation layers", value(deviceParams.enableDebugRuntime))
         ("fused-kernel", "Fused vs Separate kernel switch", value(ui.lightingSettings.useFusedKernel))
         ("h,help", "Display this help message", value(help))
@@ -199,6 +202,12 @@ void ProcessCommandLine(int argc, char** argv, donut::app::DeviceCreationParamet
 #endif
     
     deviceParams.enableNvrhiValidationLayer = deviceParams.enableDebugRuntime;
+
+    if (args.benchmark)
+        ui.animationFrame = 0;
+
+    if (checkerboard)
+        ui.rtxdiContextParams.CheckerboardSamplingMode = rtxdi::CheckerboardMode::Black;
 }
 
 void ApplicationLogCallback(log::Severity severity, const char* message)

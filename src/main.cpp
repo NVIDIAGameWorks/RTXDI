@@ -885,6 +885,12 @@ public:
             {
                 m_ui.benchmarkResults = m_Profiler->GetAsText();
                 m_ui.animationFrame.reset();
+
+                if (m_args.benchmark)
+                {
+                    glfwSetWindowShouldClose(GetDeviceManager()->GetWindow(), GLFW_TRUE);
+                    log::info("BENCHMARK RESULTS >>>\n\n%s<<<", m_ui.benchmarkResults.c_str());
+                }
             }
         }
 

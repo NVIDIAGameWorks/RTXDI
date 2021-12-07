@@ -109,6 +109,8 @@ struct UIData
     float exposureBias = -1.0f;
     float verticalFov = 60.f;
 
+    QualityPreset preset = QualityPreset::Medium;
+
 #ifdef WITH_DLSS
     AntiAliasingMode aaMode = AntiAliasingMode::DLSS;
 #else
@@ -171,6 +173,8 @@ struct UIData
     std::unique_ptr<UIResources> resources = std::make_unique<UIResources>();
 
     UIData();
+
+    void ApplyPreset();
 };
 
 
@@ -180,14 +184,12 @@ private:
     UIData& m_ui;
     ImFont* m_FontOpenSans = nullptr;
     std::shared_ptr<donut::engine::Light> m_SelectedLight;
-    QualityPreset m_Preset = QualityPreset::Custom;
 
     bool m_showAdvancedSamplingSettings = false;
     bool m_showAdvancedDenoisingSettings = false;
 
     void CopySelectedLight() const;
     void CopyCamera() const;
-    void ApplyPreset();
     
     void PerformanceWindow();
     void SceneSettings();

@@ -51,10 +51,123 @@ UIData::UIData()
     taaParams.newFrameWeight = 0.04f;
     taaParams.maxRadiance = 200.f;
     taaParams.clampingFactor = 1.3f;
+    
+    ApplyPreset();
 
 #ifdef WITH_NRD
     SetDefaultDenoiserSettings();
 #endif
+}
+
+void UIData::ApplyPreset()
+{
+    bool enableCheckerboardSampling = (rtxdiContextParams.CheckerboardSamplingMode != rtxdi::CheckerboardMode::Off);
+
+    if (preset != QualityPreset::Custom)
+        lightingSettings = LightingPasses::RenderSettings();
+
+    switch (preset)
+    {
+    case QualityPreset::Fast:
+        enableCheckerboardSampling = true;
+        lightingSettings.numPrimaryRegirSamples = 0;
+        lightingSettings.numPrimaryLocalLightSamples = 4;
+        lightingSettings.numPrimaryInfiniteLightSamples = 1;
+        lightingSettings.enableReGIR = false;
+        lightingSettings.temporalBiasCorrection = RTXDI_BIAS_CORRECTION_OFF;
+        lightingSettings.spatialBiasCorrection = RTXDI_BIAS_CORRECTION_OFF;
+        lightingSettings.numSpatialSamples = 1;
+        lightingSettings.numDisocclusionBoostSamples = 2;
+        lightingSettings.discardInvisibleSamples = true;
+        lightingSettings.reuseFinalVisibility = true;
+        lightingSettings.enableBoilingFilter = true;
+        lightingSettings.enableSecondaryResampling = false;
+        lightingSettings.enableGradients = false;
+        break;
+
+    case QualityPreset::Medium:
+        enableCheckerboardSampling = false;
+        lightingSettings.numPrimaryRegirSamples = 8;
+        lightingSettings.numPrimaryLocalLightSamples = 8;
+        lightingSettings.numPrimaryInfiniteLightSamples = 2;
+        lightingSettings.enableReGIR = true;
+        lightingSettings.temporalBiasCorrection = RTXDI_BIAS_CORRECTION_RAY_TRACED;
+        lightingSettings.spatialBiasCorrection = RTXDI_BIAS_CORRECTION_BASIC;
+        lightingSettings.numSpatialSamples = 1;
+        lightingSettings.numDisocclusionBoostSamples = 8;
+        lightingSettings.discardInvisibleSamples = true;
+        lightingSettings.reuseFinalVisibility = true;
+        lightingSettings.enableBoilingFilter = true;
+        lightingSettings.enableSecondaryResampling = true;
+        lightingSettings.secondarySamplingRadius = 1.f;
+        lightingSettings.numSecondarySamples = 1;
+        lightingSettings.secondaryBiasCorrection = RTXDI_BIAS_CORRECTION_BASIC;
+        lightingSettings.enableGradients = true;
+        break;
+
+    case QualityPreset::Unbiased:
+        enableCheckerboardSampling = false;
+        lightingSettings.numPrimaryRegirSamples = 16;
+        lightingSettings.numPrimaryLocalLightSamples = 8;
+        lightingSettings.numPrimaryInfiniteLightSamples = 2;
+        lightingSettings.enableReGIR = true;
+        lightingSettings.temporalBiasCorrection = RTXDI_BIAS_CORRECTION_RAY_TRACED;
+        lightingSettings.spatialBiasCorrection = RTXDI_BIAS_CORRECTION_RAY_TRACED;
+        lightingSettings.numSpatialSamples = 1;
+        lightingSettings.numDisocclusionBoostSamples = 8;
+        lightingSettings.discardInvisibleSamples = false;
+        lightingSettings.reuseFinalVisibility = false;
+        lightingSettings.enableBoilingFilter = false;
+        lightingSettings.enableSecondaryResampling = true;
+        lightingSettings.secondarySamplingRadius = 1.f;
+        lightingSettings.numSecondarySamples = 1;
+        lightingSettings.secondaryBiasCorrection = RTXDI_BIAS_CORRECTION_RAY_TRACED;
+        lightingSettings.enableGradients = true;
+        break;
+
+    case QualityPreset::Ultra:
+        enableCheckerboardSampling = false;
+        lightingSettings.numPrimaryRegirSamples = 16;
+        lightingSettings.numPrimaryLocalLightSamples = 16;
+        lightingSettings.numPrimaryInfiniteLightSamples = 16;
+        lightingSettings.enableReGIR = true;
+        lightingSettings.temporalBiasCorrection = RTXDI_BIAS_CORRECTION_RAY_TRACED;
+        lightingSettings.spatialBiasCorrection = RTXDI_BIAS_CORRECTION_RAY_TRACED;
+        lightingSettings.numSpatialSamples = 4;
+        lightingSettings.numDisocclusionBoostSamples = 16;
+        lightingSettings.discardInvisibleSamples = false;
+        lightingSettings.reuseFinalVisibility = false;
+        lightingSettings.enableBoilingFilter = false;
+        lightingSettings.enableSecondaryResampling = true;
+        lightingSettings.secondarySamplingRadius = 4.f;
+        lightingSettings.numSecondarySamples = 2;
+        lightingSettings.secondaryBiasCorrection = RTXDI_BIAS_CORRECTION_RAY_TRACED;
+        lightingSettings.enableGradients = true;
+        break;
+
+    case QualityPreset::Reference:
+        enableCheckerboardSampling = false;
+        lightingSettings.numPrimaryRegirSamples = 0;
+        lightingSettings.numPrimaryLocalLightSamples = 16;
+        lightingSettings.numPrimaryInfiniteLightSamples = 16;
+        lightingSettings.enableReGIR = false;
+        lightingSettings.enableTemporalResampling = false;
+        lightingSettings.enableSpatialResampling = false;
+        lightingSettings.enableBoilingFilter = false;
+        lightingSettings.enableSecondaryResampling = false;
+        lightingSettings.enableGradients = false;
+        break;
+
+    case QualityPreset::Custom:
+    default:;
+    }
+
+    rtxdi::CheckerboardMode newCheckerboardMode = enableCheckerboardSampling ? rtxdi::CheckerboardMode::Black : rtxdi::CheckerboardMode::Off;
+    if (newCheckerboardMode != rtxdiContextParams.CheckerboardSamplingMode)
+    {
+        rtxdiContextParams.CheckerboardSamplingMode = newCheckerboardMode;
+        resetRtxdiContext = true;
+    }
 }
 
 #ifdef WITH_NRD
@@ -114,9 +227,6 @@ UserInterface::UserInterface(app::DeviceManager* deviceManager, vfs::IFileSystem
     , m_ui(ui)
 {
     m_FontOpenSans = LoadFont(rootFS, "/media/fonts/OpenSans/OpenSans-Regular.ttf", 17.f);
-
-    m_Preset = QualityPreset::Medium;
-    ApplyPreset();
 }
 
 static void ShowHelpMarker(const char* desc)
@@ -148,113 +258,6 @@ void UserInterface::PerformanceWindow()
         ImGui::Checkbox("Count Rays", (bool*)&m_ui.lightingSettings.enableRayCounts);
 
         m_ui.resources->profiler->BuildUI(m_ui.lightingSettings.enableRayCounts);
-    }
-}
-
-void UserInterface::ApplyPreset()
-{
-    bool enableCheckerboardSampling = (m_ui.rtxdiContextParams.CheckerboardSamplingMode != rtxdi::CheckerboardMode::Off);
-
-    switch (m_Preset)
-    {
-    case QualityPreset::Fast:
-        enableCheckerboardSampling = true;
-        m_ui.lightingSettings.numPrimaryRegirSamples = 0;
-        m_ui.lightingSettings.numPrimaryLocalLightSamples = 4;
-        m_ui.lightingSettings.numPrimaryInfiniteLightSamples = 1;
-        m_ui.lightingSettings.enableReGIR = false;
-        m_ui.lightingSettings.temporalBiasCorrection = RTXDI_BIAS_CORRECTION_OFF;
-        m_ui.lightingSettings.spatialBiasCorrection = RTXDI_BIAS_CORRECTION_OFF;
-        m_ui.lightingSettings.numSpatialSamples = 1;
-        m_ui.lightingSettings.numDisocclusionBoostSamples = 2;
-        m_ui.lightingSettings.discardInvisibleSamples = true;
-        m_ui.lightingSettings.reuseFinalVisibility = true;
-        m_ui.lightingSettings.enableBoilingFilter = true;
-        m_ui.lightingSettings.enableSecondaryResampling = false;
-        m_ui.lightingSettings.enableGradients = false;
-        break;
-
-    case QualityPreset::Medium:
-        enableCheckerboardSampling = false;
-        m_ui.lightingSettings.numPrimaryRegirSamples = 8;
-        m_ui.lightingSettings.numPrimaryLocalLightSamples = 8;
-        m_ui.lightingSettings.numPrimaryInfiniteLightSamples = 2;
-        m_ui.lightingSettings.enableReGIR = true;
-        m_ui.lightingSettings.temporalBiasCorrection = RTXDI_BIAS_CORRECTION_RAY_TRACED;
-        m_ui.lightingSettings.spatialBiasCorrection = RTXDI_BIAS_CORRECTION_BASIC;
-        m_ui.lightingSettings.numSpatialSamples = 1;
-        m_ui.lightingSettings.numDisocclusionBoostSamples = 8;
-        m_ui.lightingSettings.discardInvisibleSamples = true;
-        m_ui.lightingSettings.reuseFinalVisibility = true;
-        m_ui.lightingSettings.enableBoilingFilter = true;
-        m_ui.lightingSettings.enableSecondaryResampling = true;
-        m_ui.lightingSettings.secondarySamplingRadius = 1.f;
-        m_ui.lightingSettings.numSecondarySamples = 1;
-        m_ui.lightingSettings.secondaryBiasCorrection = RTXDI_BIAS_CORRECTION_BASIC;
-        m_ui.lightingSettings.enableGradients = true;
-        break;
-
-    case QualityPreset::Unbiased:
-        enableCheckerboardSampling = false;
-        m_ui.lightingSettings.numPrimaryRegirSamples = 16;
-        m_ui.lightingSettings.numPrimaryLocalLightSamples = 8;
-        m_ui.lightingSettings.numPrimaryInfiniteLightSamples = 2;
-        m_ui.lightingSettings.enableReGIR = true;
-        m_ui.lightingSettings.temporalBiasCorrection = RTXDI_BIAS_CORRECTION_RAY_TRACED;
-        m_ui.lightingSettings.spatialBiasCorrection = RTXDI_BIAS_CORRECTION_RAY_TRACED;
-        m_ui.lightingSettings.numSpatialSamples = 1;
-        m_ui.lightingSettings.numDisocclusionBoostSamples = 8;
-        m_ui.lightingSettings.discardInvisibleSamples = false;
-        m_ui.lightingSettings.reuseFinalVisibility = false;
-        m_ui.lightingSettings.enableBoilingFilter = false;
-        m_ui.lightingSettings.enableSecondaryResampling = true;
-        m_ui.lightingSettings.secondarySamplingRadius = 1.f;
-        m_ui.lightingSettings.numSecondarySamples = 1;
-        m_ui.lightingSettings.secondaryBiasCorrection = RTXDI_BIAS_CORRECTION_RAY_TRACED;
-        m_ui.lightingSettings.enableGradients = true;
-        break;
-
-    case QualityPreset::Ultra:
-        enableCheckerboardSampling = false;
-        m_ui.lightingSettings.numPrimaryRegirSamples = 16;
-        m_ui.lightingSettings.numPrimaryLocalLightSamples = 16;
-        m_ui.lightingSettings.numPrimaryInfiniteLightSamples = 16;
-        m_ui.lightingSettings.enableReGIR = true;
-        m_ui.lightingSettings.temporalBiasCorrection = RTXDI_BIAS_CORRECTION_RAY_TRACED;
-        m_ui.lightingSettings.spatialBiasCorrection = RTXDI_BIAS_CORRECTION_RAY_TRACED;
-        m_ui.lightingSettings.numSpatialSamples = 4;
-        m_ui.lightingSettings.numDisocclusionBoostSamples = 16;
-        m_ui.lightingSettings.discardInvisibleSamples = false;
-        m_ui.lightingSettings.reuseFinalVisibility = false;
-        m_ui.lightingSettings.enableBoilingFilter = false;
-        m_ui.lightingSettings.enableSecondaryResampling = true;
-        m_ui.lightingSettings.secondarySamplingRadius = 4.f;
-        m_ui.lightingSettings.numSecondarySamples = 2;
-        m_ui.lightingSettings.secondaryBiasCorrection = RTXDI_BIAS_CORRECTION_RAY_TRACED;
-        m_ui.lightingSettings.enableGradients = true;
-        break;
-
-    case QualityPreset::Reference:
-        enableCheckerboardSampling = false;
-        m_ui.lightingSettings.numPrimaryRegirSamples = 0;
-        m_ui.lightingSettings.numPrimaryLocalLightSamples = 16;
-        m_ui.lightingSettings.numPrimaryInfiniteLightSamples = 16;
-        m_ui.lightingSettings.enableReGIR = false;
-        m_ui.lightingSettings.enableTemporalResampling = false;
-        m_ui.lightingSettings.enableSpatialResampling = false;
-        m_ui.lightingSettings.enableBoilingFilter = false;
-        m_ui.lightingSettings.enableSecondaryResampling = false;
-        m_ui.lightingSettings.enableGradients = false;
-        break;
-
-    default: ;
-    }
-
-    rtxdi::CheckerboardMode newCheckerboardMode = enableCheckerboardSampling ? rtxdi::CheckerboardMode::Black : rtxdi::CheckerboardMode::Off;
-    if (newCheckerboardMode != m_ui.rtxdiContextParams.CheckerboardSamplingMode)
-    {
-        m_ui.rtxdiContextParams.CheckerboardSamplingMode = newCheckerboardMode;
-        m_ui.resetRtxdiContext = true;
     }
 }
 
@@ -360,9 +363,9 @@ void UserInterface::SamplingSettings()
         default: ;
         }
 
-        if (ImGui::Combo("Preset", (int*)&m_Preset, "(Custom)\0Fast\0Medium\0Unbiased\0Ultra\0Reference\0"))
+        if (ImGui::Combo("Preset", (int*)&m_ui.preset, "(Custom)\0Fast\0Medium\0Unbiased\0Ultra\0Reference\0"))
         {
-            ApplyPreset();
+            m_ui.ApplyPreset();
             m_ui.resetAccumulation = true;
         }
 
@@ -586,7 +589,7 @@ void UserInterface::SamplingSettings()
         
         if (samplingSettingsChanged)
         {
-            m_Preset = QualityPreset::Custom;
+            m_ui.preset = QualityPreset::Custom;
             m_ui.resetAccumulation = true;
         }
 

@@ -73,6 +73,31 @@ std::istream& operator>> (std::istream& is, RenderingMode& mode)
     return is;
 }
 
+// A hacky operator to allow selecting the preset
+std::istream& operator>> (std::istream& is, UIData& ui)
+{
+    std::string s;
+    is >> s;
+    toupper(s);
+
+    if (s == "FAST")
+        ui.preset = QualityPreset::Fast;
+    else if (s == "MEDIUM")
+        ui.preset = QualityPreset::Medium;
+    else if (s == "UNBIASED")
+        ui.preset = QualityPreset::Unbiased;
+    else if (s == "ULTRA")
+        ui.preset = QualityPreset::Ultra;
+    else if (s == "REFERENCE")
+        ui.preset = QualityPreset::Reference;
+    else
+        throw cxxopts::OptionException("Unrecognized value passed to the --preset argument.");
+
+    ui.ApplyPreset();
+
+    return is;
+}
+
 void ProcessCommandLine(int argc, char** argv, donut::app::DeviceCreationParameters& deviceParams, UIData& ui, CommandLineArguments& args)
 {
     using namespace cxxopts;
@@ -94,6 +119,7 @@ void ProcessCommandLine(int argc, char** argv, donut::app::DeviceCreationParamet
         ("height", "Window height", value(deviceParams.backBufferHeight))
         ("noise-mix", "Amount of noise to mix in after denoising", value(ui.noiseMix))
         ("pixel-jitter", "Pixel jitter toggle", value(ui.enablePixelJitter))
+        ("preset", "Rendering settings preset: FAST, MEDIUM, UNBIASED, ULTRA, REFERENCE", value(ui))
         ("rasterize-gbuffer", "G-buffer rasterization toggle", value(ui.rasterizeGBuffer))
         ("ray-query", "Ray Query toggle", value(ui.useRayQuery))
         ("render-mode", "Rendering mode: BRDF, RESTIR, MIS, INDIRECT", value(ui.renderingMode))

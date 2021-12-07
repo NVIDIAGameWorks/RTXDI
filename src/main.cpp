@@ -1440,10 +1440,10 @@ int main(int argc, char** argv)
     }
 
 #if USE_DX12
-    if (args.graphicsApi == nvrhi::GraphicsAPI::D3D12)
+    if (args.graphicsApi == nvrhi::GraphicsAPI::D3D12 && args.disableBackgroundOptimization)
     {
-        // On DX12, disable the background shader optimization because it leads to stutter on the current NV drivers (496.61).
-
+        // On DX12, optionally disable the background shader optimization because it leads to stutter on some NV driver versions (496.61 specifically).
+        
         nvrhi::RefCountPtr<ID3D12Device> device = (ID3D12Device*)deviceManager->GetDevice()->getNativeObject(nvrhi::ObjectTypes::D3D12_Device);
         nvrhi::RefCountPtr<ID3D12Device6> device6;
 

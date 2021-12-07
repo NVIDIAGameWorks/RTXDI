@@ -31,6 +31,7 @@ struct CommandLineArguments
     std::string saveFrameFileName;
     bool verbose = false;
     bool benchmark = false;
+    bool disableBackgroundOptimization = false;
 };
 
 void ProcessCommandLine(int argc, char** argv, donut::app::DeviceCreationParameters& deviceParams, UIData& ui, CommandLineArguments& args);

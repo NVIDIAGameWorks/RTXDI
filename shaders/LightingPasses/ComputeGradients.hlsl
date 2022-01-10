@@ -1,5 +1,5 @@
 /***************************************************************************
- # Copyright (c) 2020-2021, NVIDIA CORPORATION.  All rights reserved.
+ # Copyright (c) 2020-2022, NVIDIA CORPORATION.  All rights reserved.
  #
  # NVIDIA CORPORATION and its licensors retain all intellectual property
  # and proprietary rights in and to this software, related documentation
@@ -101,7 +101,7 @@ void RayGen()
         int2 selectedCurrentOrPrevReservoirPos = RTXDI_PixelPosToReservoir(selectedCurrentOrPrevPixelPos, g_Const.runtimeParams);
 
         // Load the reservoir that was selected for gradient evaluation, either from the current or the previous frame.
-        RTXDI_Reservoir selectedReservoir = RTXDI_LoadReservoir(params, u_LightReservoirs,
+        RTXDI_Reservoir selectedReservoir = RTXDI_LoadReservoir(params,
             selectedCurrentOrPrevReservoirPos,
             usePrevSample ? g_Const.temporalInputBufferIndex : g_Const.shadeInputBufferIndex);
 

@@ -1,5 +1,5 @@
 /*
-* Copyright (c) 2019-2021, NVIDIA CORPORATION.  All rights reserved.
+* Copyright (c) 2019-2022, NVIDIA CORPORATION.  All rights reserved.
 *
 * NVIDIA CORPORATION and its licensors retain all intellectual property
 * and proprietary rights in and to this software, related documentation
@@ -199,7 +199,7 @@ void RayGen()
         g_Const.numIndirectLocalLightSamples, 
         g_Const.numIndirectInfiniteLightSamples, 
         g_Const.numIndirectEnvironmentSamples,
-        params, u_RisBuffer, lightSample);
+        params, lightSample);
 
     float lightSampleScale = (lightSample.solidAnglePdf > 0) ? RTXDI_GetReservoirInvPdf(reservoir) / lightSample.solidAnglePdf : 0;
 

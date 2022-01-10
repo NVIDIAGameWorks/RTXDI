@@ -1,5 +1,5 @@
 /***************************************************************************
- # Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
+ # Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
  #
  # NVIDIA CORPORATION and its licensors retain all intellectual property
  # and proprietary rights in and to this software, related documentation
@@ -15,7 +15,6 @@
 
 #include <rtxdi/RtxdiParameters.h>
 #include <rtxdi/RtxdiHelpers.hlsli>
-#include <rtxdi/Reservoir.hlsli>
 
 ConstantBuffer<VisualizationConstants> g_Const : register(b0);
 Texture2D<float4> t_CompositedColor : register(t0);
@@ -26,7 +25,11 @@ Texture2D<float4> t_Specular : register(t4);
 Texture2D<float4> t_DenoisedDiffuse : register(t5);
 Texture2D<float4> t_DenoisedSpecular : register(t6);
 Texture2D<float4> t_Gradients : register(t7);
-StructuredBuffer<RTXDI_PackedReservoir> u_Reservoirs : register(t8);
+StructuredBuffer<RTXDI_PackedReservoir> t_Reservoirs : register(t8);
+
+#define RTXDI_LIGHT_RESERVOIR_BUFFER t_Reservoirs
+#define RTXDI_ENABLE_STORE_RESERVOIR 0
+#include <rtxdi/Reservoir.hlsli>
 
 float4 blend(float4 top, float4 bottom)
 {
@@ -78,15 +81,13 @@ float4 main(float4 i_position : SV_Position) : SV_Target
         break;
         
     case VIS_MODE_RESERVOIR_WEIGHT: {
-        RTXDI_Reservoir reservoir = RTXDI_LoadReservoir(g_Const.runtimeParams,
-            u_Reservoirs, reservoirPos, g_Const.inputBufferIndex);
+        RTXDI_Reservoir reservoir = RTXDI_LoadReservoir(g_Const.runtimeParams, reservoirPos, g_Const.inputBufferIndex);
         input = reservoir.weightSum;
         break;
     }
 
     case VIS_MODE_RESERVOIR_M: {
-        RTXDI_Reservoir reservoir = RTXDI_LoadReservoir(g_Const.runtimeParams,
-            u_Reservoirs, reservoirPos, g_Const.inputBufferIndex);
+        RTXDI_Reservoir reservoir = RTXDI_LoadReservoir(g_Const.runtimeParams, reservoirPos, g_Const.inputBufferIndex);
         input = reservoir.M;
         break;
     }

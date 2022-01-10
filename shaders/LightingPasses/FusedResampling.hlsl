@@ -1,5 +1,5 @@
 /***************************************************************************
- # Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
+ # Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
  #
  # NVIDIA CORPORATION and its licensors retain all intellectual property
  # and proprietary rights in and to this software, related documentation
@@ -53,7 +53,7 @@ void RayGen()
         g_Const.numPrimaryLocalLightSamples, 
         g_Const.numPrimaryInfiniteLightSamples, 
         g_Const.numPrimaryEnvironmentSamples,
-        params, u_RisBuffer, lightSample);
+        params, lightSample);
 
     if (g_Const.enableInitialVisibility && RTXDI_IsValidReservoir(reservoir))
     {
@@ -89,7 +89,7 @@ void RayGen()
     stparams.enablePermutationSampling = usePermutationSampling;
 
     reservoir = RTXDI_SpatioTemporalResampling(pixelPosition, surface, reservoir,
-            rng, stparams, params, u_LightReservoirs, t_NeighborOffsets, temporalSamplePixelPos, lightSample);
+            rng, stparams, params, temporalSamplePixelPos, lightSample);
 
     u_TemporalSamplePositions[GlobalIndex] = temporalSamplePixelPos;
 
@@ -120,7 +120,7 @@ void RayGen()
     // Discard the pixels where the visibility was reused, as gradients need actual visibility.
     u_RestirLuminance[GlobalIndex] = currLuminance * (reservoir.age > 0 ? 0 : 1);
 
-    RTXDI_StoreReservoir(reservoir, params, u_LightReservoirs, GlobalIndex, g_Const.shadeInputBufferIndex);
+    RTXDI_StoreReservoir(reservoir, params, GlobalIndex, g_Const.shadeInputBufferIndex);
 
 #if RTXDI_REGIR_MODE != RTXDI_REGIR_DISABLED
     if (g_Const.visualizeRegirCells)

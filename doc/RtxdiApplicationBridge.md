@@ -36,6 +36,27 @@ The application can use the same `RAB_LightSample` instances to compute final sh
 Stores the mutable state of a random number generator (RNG), that is, the random seed, sample index, and anything else that is necessary to generate random numbers. The application is expected to initialize the random sampler on its own and pass the state to the sampling functions. The sampling functions then pass the RNG state to [`RAB_GetNextRandom`](#rab_getnextrandom), multiple times per resampling function call.
 
 
+## Constructors
+
+### `RAB_EmptySurface`
+
+`RAB_Surface RAB_EmptySurface()`
+
+Returns an empty `RAB_Surface` object. It is expected that `RAB_IsSurfaceValid` returns `false` when such object is passed to it.
+
+### `RAB_EmptyLightInfo`
+
+`RAB_LightInfo RAB_EmptyLightInfo()`
+
+Returns an empty `RAB_LightInfo` object.
+
+### `RAB_EmptyLightSample`
+
+`RAB_LightSample RAB_EmptyLightSample()`
+
+Returns an empty `RAB_LightSample` object.
+
+
 ## G-buffer Input and Accessor Functions
 
 ### `RAB_GetGBufferSurface`

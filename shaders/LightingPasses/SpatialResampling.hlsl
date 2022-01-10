@@ -1,5 +1,5 @@
 /***************************************************************************
- # Copyright (c) 2020-2021, NVIDIA CORPORATION.  All rights reserved.
+ # Copyright (c) 2020-2022, NVIDIA CORPORATION.  All rights reserved.
  #
  # NVIDIA CORPORATION and its licensors retain all intellectual property
  # and proprietary rights in and to this software, related documentation
@@ -38,7 +38,7 @@ void RayGen()
     
     if (RAB_IsSurfaceValid(surface))
     {
-        RTXDI_Reservoir centerSample = RTXDI_LoadReservoir(params, u_LightReservoirs, 
+        RTXDI_Reservoir centerSample = RTXDI_LoadReservoir(params,
             GlobalIndex, g_Const.temporalOutputBufferIndex);
 
         RTXDI_SpatialResamplingParameters sparams;
@@ -53,8 +53,8 @@ void RayGen()
 
         RAB_LightSample lightSample = (RAB_LightSample)0;
         spatialResult = RTXDI_SpatialResampling(pixelPosition, surface, centerSample, 
-             rng, sparams, params, u_LightReservoirs, t_NeighborOffsets, lightSample);
+             rng, sparams, params, lightSample);
     }
 
-    RTXDI_StoreReservoir(spatialResult, params, u_LightReservoirs, GlobalIndex, g_Const.spatialOutputBufferIndex);
+    RTXDI_StoreReservoir(spatialResult, params, GlobalIndex, g_Const.spatialOutputBufferIndex);
 }

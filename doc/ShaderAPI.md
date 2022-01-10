@@ -4,6 +4,33 @@ Most of the RTXDI functionality is implemented in shaders. To use this functiona
 
 Below is the list of shader structures and functions provided by RTXDI that can be useful to applications. Some internal functions are not shown.
 
+## GLSL Compatibility
+
+The RTXDI header files can be compiled as either HLSL or GLSL, with HLSL being the default language. To compile them as GLSL, define the `RTXDI_GLSL` macro. The compatibility is achieved through a small number of preprocessor macros that mostly map HLSL types and functions to GLSL. These macros can be found in `RtxdiTypes.h`.
+
+
+## User-Defined Macros
+
+### `RTXDI_ENABLE_PRESAMPLING`
+
+Define this macro to `0` in order to disable the pre-sampling features and required resources (i.e. the RIS buffer).
+
+### `RTXDI_ENABLE_STORE_RESERVOIR`
+
+Define this macro to `0` in order to remove the `RTXDI_StoreReservoir` function. This is useful in shaders that have read-only access to the light reservoir buffer, e.g. for debugging purposes.
+
+### `RTXDI_LIGHT_RESERVOIR_BUFFER`
+
+Define this macro to a resource name for the reservoir buffer, which should have HLSL type `RWStructuredBuffer<RTXDI_PackedReservoir>`.
+
+### `RTXDI_NEIGHBOR_OFFSETS_BUFFER`
+
+Define this macro to a resource name for the neighbor offset buffer, which should have HLSL type `Buffer<float2>`.
+
+### `RTXDI_RIS_BUFER`
+
+Define this macro to a resource name for the RIS buffer, which should have HLSL type `RWBuffer<uint2>`. Not necessary when `RTXDI_ENABLE_PRESAMPLING` is `0`.
+
 
 ## Structures
 
@@ -56,7 +83,6 @@ Returns the inverse PDF of the reservoir. This value should be used to scale the
 
     RTXDI_Reservoir RTXDI_LoadReservoir(
         RTXDI_ResamplingRuntimeParameters params,
-        RWStructuredBuffer<RTXDI_PackedReservoir> LightReservoirs,
         uint2 reservoirPosition,
         uint reservoirArrayIndex)
 
@@ -67,7 +93,6 @@ Loads and unpacks a reservoir from the provided reservoir storage buffer. The bu
     void RTXDI_StoreReservoir(
         const RTXDI_Reservoir reservoir,
         RTXDI_ResamplingRuntimeParameters params,
-        RWStructuredBuffer<RTXDI_PackedReservoir> LightReservoirs,
         uint2 reservoirPosition,
         uint reservoirArrayIndex)
 
@@ -147,7 +172,7 @@ This function implements Equation (6) from the ReSTIR paper.
 
     void RTXDI_SamplePdfMipmap(
         inout RAB_RandomSamplerState rng, 
-        Texture2D<float> pdfTexture,
+        RTXDI_TEX2D pdfTexture,
         uint2 pdfTextureSize,
         out uint2 position,
         out float pdf)
@@ -161,12 +186,11 @@ The function returns the position of the final selected texel in the `position` 
 
     void RTXDI_PresampleLocalLights(
         inout RAB_RandomSamplerState rng, 
-        Texture2D<float> pdfTexture,
+        RTXDI_TEX2D pdfTexture,
         uint2 pdfTextureSize,
         uint tileIndex,
         uint sampleInTile,
-        RTXDI_ResamplingRuntimeParameters params,
-        RWBuffer<uint2> RisBuffer)
+        RTXDI_ResamplingRuntimeParameters params)
 
 Selects one local light using the provided PDF texture and stores its information in the RIS buffer at the position identified by the `tileIndex` and `sampleInTile` parameters. Additionally, stores compact light information in the companion buffer that is managed by the application, through the `RAB_StoreCompactLightInfo` function.
 
@@ -174,12 +198,11 @@ Selects one local light using the provided PDF texture and stores its informatio
 
     void RTXDI_PresampleEnvironmentMap(
         inout RAB_RandomSamplerState rng, 
-        Texture2D<float> pdfTexture,
+        RTXDI_TEX2D pdfTexture,
         uint2 pdfTextureSize,
         uint tileIndex,
         uint sampleInTile,
-        RTXDI_ResamplingRuntimeParameters params,
-        RWBuffer<uint2> RisBuffer)
+        RTXDI_ResamplingRuntimeParameters params)
 
 Selects one environment map texel using the provided PDF texture and stores its information in the RIS buffer at the position identified by the `tileIndex` and `sampleInTile` parameters.
 
@@ -190,8 +213,7 @@ Selects one environment map texel using the provided PDF texture and stores its 
         inout RAB_RandomSamplerState coherentRng,
         uint lightSlot,
         uint numSamples,
-        RTXDI_ResamplingRuntimeParameters params, 
-        RWBuffer<uint2> RisBuffer)
+        RTXDI_ResamplingRuntimeParameters params)
 
 Selects one local light using RIS with `numSamples` proposals weighted relative to a specific ReGIR world space cell. The cell position and size are derived from its index; the cell index is derived from the `lightSlot` parameter: each cell contains a number of light slots packed together and stored in the RIS buffer. Additionally, stores compact light information in the companion buffer that is managed by the application, through the `RAB_StoreCompactLightInfo` function.
 
@@ -205,7 +227,6 @@ The weights of lights relative to ReGIR cells are computed using the [`RAB_GetLi
         RAB_Surface surface, 
         uint numSamples,
         RTXDI_ResamplingRuntimeParameters params,
-        RWBuffer<uint2> RisBuffer,
         out RAB_LightSample o_selectedSample)
 
 Selects one local light sample using RIS with `numSamples` proposals weighted relative to the provided `surface`, and returns a reservoir with the selected light sample. The sample itself is returned in the `o_selectedSample` parameter.
@@ -221,7 +242,6 @@ The proposals are picked from a RIS buffer tile that's picked using `coherentRng
         uint numRegirSamples,
         uint numLocalLightSamples,
         RTXDI_ResamplingRuntimeParameters params,
-        RWBuffer<uint2> RisBuffer,
         out RAB_LightSample o_selectedSample)
 
 A variant of [`RTXDI_SampleLocalLights`](#rtxdi_samplelocallights) that samples from a ReGIR cell instead of the RIS buffer, if ReGIR is available and a cell exists at the surface position. If ReGIR is not available or the surface is out of bounds of the ReGIR spatial structure, the initial proposals will be drawn from the RIS buffer if that is available, or from the local lights with a uniform PDF.
@@ -235,7 +255,6 @@ The ReGIR cells are matched to the surface with jitter applied, and the magnitud
         RAB_Surface surface, 
         uint numSamples,
         RTXDI_ResamplingRuntimeParameters params,
-        RWBuffer<uint2> RisBuffer,
         out RAB_LightSample o_selectedSample)
 
 Selects one infinite light sample using RIS with `numSamples` proposals weighted relative to the provided `surface`, and returns a reservoir with the selected light sample. The sample itself is returned in the `o_selectedSample` parameter.
@@ -248,7 +267,6 @@ Selects one infinite light sample using RIS with `numSamples` proposals weighted
         RAB_Surface surface, 
         uint numSamples,
         RTXDI_ResamplingRuntimeParameters params,
-        RWBuffer<uint2> RisBuffer,
         out RAB_LightSample o_selectedSample)
 
 Selects one sample from the importance sampled environment light using RIS with `numSamples` proposals weighted relative to the provided `surface`, and returns a reservoir with the selected light sample. The sample itself is returned in the `o_selectedSample` parameter.
@@ -269,7 +287,6 @@ The proposals are picked from a RIS buffer tile, similar to [`RTXDI_SampleLocalL
         uint numInfiniteLightSamples,
         uint numEnvironmentMapSamples,
         RTXDI_ResamplingRuntimeParameters params, 
-        RWBuffer<uint2> RisBuffer,
         out RAB_LightSample o_lightSample)
 
 This function is a combination of `RTXDI_SampleLocalLightsFromReGIR` (or `RTXDI_SampleLocalLights` if compiled without ReGIR support), `RTXDI_SampleInfiniteLights`, and `RTXDI_SampleEnvironmentMap`. Reservoirs returned from each function are combined into one final reservoir, which is returned. 
@@ -294,7 +311,6 @@ This function is a combination of `RTXDI_SampleLocalLightsFromReGIR` (or `RTXDI_
         RAB_RandomSamplerState rng,
         RTXDI_TemporalResamplingParameters tparams,
         RTXDI_ResamplingRuntimeParameters params,
-        RWStructuredBuffer<RTXDI_PackedReservoir> LightReservoirs,
         out int2 temporalSamplePixelPos,
         inout RAB_LightSample selectedLightSample)
 
@@ -324,8 +340,6 @@ For more information on the members of the `RTXDI_TemporalResamplingParameters` 
         RAB_RandomSamplerState rng,
         RTXDI_SpatialResamplingParameters sparams,
         RTXDI_ResamplingRuntimeParameters params,
-        RWStructuredBuffer<RTXDI_PackedReservoir> LightReservoirs,
-        Buffer<float2> NeighborOffsets,
         inout RAB_LightSample selectedLightSample)
 
 
@@ -358,8 +372,6 @@ For more information on the members of the `RTXDI_SpatialResamplingParameters` s
         RAB_RandomSamplerState rng,
         RTXDI_SpatioTemporalResamplingParameters stparams,
         RTXDI_ResamplingRuntimeParameters params,
-        RWStructuredBuffer<RTXDI_PackedReservoir> LightReservoirs,
-        Buffer<float2> NeighborOffsets,
         out int2 temporalSamplePixelPos,
         inout RAB_LightSample selectedLightSample)
 

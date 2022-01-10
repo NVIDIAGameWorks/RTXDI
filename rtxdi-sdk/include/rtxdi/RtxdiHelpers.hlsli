@@ -1,5 +1,5 @@
 /***************************************************************************
- # Copyright (c) 2020-2021, NVIDIA CORPORATION.  All rights reserved.
+ # Copyright (c) 2020-2022, NVIDIA CORPORATION.  All rights reserved.
  #
  # NVIDIA CORPORATION and its licensors retain all intellectual property
  # and proprietary rights in and to this software, related documentation
@@ -43,7 +43,8 @@ int RTXDI_ReGIR_WorldPosToCellIndex(RTXDI_ResamplingRuntimeParameters params, fl
     
     int3 gridCell = int3(floor((worldPos - gridOrigin) / params.regirCommon.cellSize));
 
-    if (any(gridCell < 0) || any(gridCell >= gridCellCount))
+    if (gridCell.x < 0 || gridCell.y < 0 || gridCell.z < 0 ||
+        gridCell.x >= gridCellCount.x || gridCell.y >= gridCellCount.y || gridCell.z >= gridCellCount.z)
         return -1;
 
     return gridCell.x + (gridCell.y + (gridCell.z * gridCellCount.y)) * gridCellCount.x;
@@ -99,7 +100,7 @@ int RTXDI_ReGIR_WorldPosToCellIndex(RTXDI_ResamplingRuntimeParameters params, fl
     if (r <= params.regirOnion.layers[0].innerRadius)
         return 0;
 
-    RTXDI_OnionLayerGroup layerGroup = (RTXDI_OnionLayerGroup)0;
+    RTXDI_OnionLayerGroup layerGroup;
 
     int layerGroupIndex;
     for (layerGroupIndex = 0; layerGroupIndex < params.regirOnion.numLayerGroups; layerGroupIndex++)
@@ -117,10 +118,10 @@ int RTXDI_ReGIR_WorldPosToCellIndex(RTXDI_ResamplingRuntimeParameters params, fl
     uint layerIndex = uint(floor(max(0, log(r / layerGroup.innerRadius) * layerGroup.invLogLayerScale)));
     layerIndex = min(layerIndex, layerGroup.layerCount - 1); // Guard against numeric errors at the outer shell
 
-    float ringIndex = floor(abs(elevation) * layerGroup.invEquatorialCellAngle + 0.5);
+    uint ringIndex = uint(floor(abs(elevation) * layerGroup.invEquatorialCellAngle + 0.5));
     RTXDI_OnionRing ring = params.regirOnion.rings[layerGroup.ringOffset + ringIndex];
 
-    if (layerIndex & 1)
+    if ((layerIndex & 1) != 0)
     {
         azimuth -= ring.cellAngle * 0.5; // Add some variation to the repetitive layers
         if (azimuth < 0)
@@ -140,7 +141,7 @@ bool RTXDI_ReGIR_CellIndexToWorldPos(RTXDI_ResamplingRuntimeParameters params, i
 {
     const float3 onionCenter = float3(params.regirCommon.centerX, params.regirCommon.centerY, params.regirCommon.centerZ);
 
-    cellCenter = 0;
+    cellCenter = float3(0, 0, 0);
     cellRadius = 0;
 
     if (cellIndex < 0)
@@ -153,7 +154,7 @@ bool RTXDI_ReGIR_CellIndexToWorldPos(RTXDI_ResamplingRuntimeParameters params, i
         return true;
     }
 
-    RTXDI_OnionLayerGroup layerGroup = (RTXDI_OnionLayerGroup)0;
+    RTXDI_OnionLayerGroup layerGroup;
     
     cellIndex -= 1;
 
@@ -175,7 +176,7 @@ bool RTXDI_ReGIR_CellIndexToWorldPos(RTXDI_ResamplingRuntimeParameters params, i
     int layerIndex = cellIndex / layerGroup.cellsPerLayer;
     cellIndex -= layerIndex * layerGroup.cellsPerLayer;
 
-    RTXDI_OnionRing ring = (RTXDI_OnionRing)0;
+    RTXDI_OnionRing ring;
 
     int ringIndex;
     for (ringIndex = 0; ringIndex < layerGroup.ringCount; ringIndex++)
@@ -198,7 +199,7 @@ bool RTXDI_ReGIR_CellIndexToWorldPos(RTXDI_ResamplingRuntimeParameters params, i
 
     float azimuth = (float(cellIndex) + 0.5) * ring.cellAngle;
 
-    if (layerIndex & 1)
+    if ((layerIndex & 1) != 0)
         azimuth += ring.cellAngle * 0.5; // Match the variation added in ...WorldPosToCellIndex()
 
     azimuth -= RTXDI_PI; // Reverse the PI addition in the position -> cell index translation
@@ -230,7 +231,7 @@ bool RTXDI_ReGIR_CellIndexToWorldPos(RTXDI_ResamplingRuntimeParameters params, i
 
 float3 RTXDI_VisualizeReGIRCells(RTXDI_ResamplingRuntimeParameters params, float3 worldPos)
 {
-    uint cellIndex = RTXDI_ReGIR_WorldPosToCellIndex(params, worldPos);
+    int cellIndex = RTXDI_ReGIR_WorldPosToCellIndex(params, worldPos);
     
     uint cellHash = RTXDI_JenkinsHash(cellIndex);
 

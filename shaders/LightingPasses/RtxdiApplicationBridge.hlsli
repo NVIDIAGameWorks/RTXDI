@@ -1,5 +1,5 @@
 /***************************************************************************
- # Copyright (c) 2020-2021, NVIDIA CORPORATION.  All rights reserved.
+ # Copyright (c) 2020-2022, NVIDIA CORPORATION.  All rights reserved.
  #
  # NVIDIA CORPORATION and its licensors retain all intellectual property
  # and proprietary rights in and to this software, related documentation
@@ -66,8 +66,8 @@ StructuredBuffer<MaterialConstants> t_MaterialConstants : register(t34);
 StructuredBuffer<PolymorphicLightInfo> t_LightDataBuffer : register(t20);
 Buffer<float2> t_NeighborOffsets : register(t21);
 Buffer<uint> t_LightIndexMappingBuffer : register(t22);
-Texture2D<float> t_EnvironmentPdfTexture : register(t23);
-Texture2D<float> t_LocalLightPdfTexture : register(t24);
+Texture2D t_EnvironmentPdfTexture : register(t23);
+Texture2D t_LocalLightPdfTexture : register(t24);
 
 // Screen-sized UAVs
 RWStructuredBuffer<RTXDI_PackedReservoir> u_LightReservoirs : register(u0);
@@ -88,6 +88,10 @@ ConstantBuffer<ResamplingConstants> g_Const : register(b0);
 VK_PUSH_CONSTANT ConstantBuffer<PerPassConstants> g_PerPassConstants : register(b1);
 SamplerState s_MaterialSampler : register(s0);
 SamplerState s_EnvironmentSampler : register(s1);
+
+#define RTXDI_RIS_BUFFER u_RisBuffer
+#define RTXDI_LIGHT_RESERVOIR_BUFFER u_LightReservoirs
+#define RTXDI_NEIGHBOR_OFFSETS_BUFFER t_NeighborOffsets
 
 #define IES_SAMPLER s_EnvironmentSampler
 
@@ -116,6 +120,23 @@ struct RAB_LightSample
 
 typedef PolymorphicLightInfo RAB_LightInfo;
 typedef RandomSamplerState RAB_RandomSamplerState;
+
+RAB_Surface RAB_EmptySurface()
+{
+    RAB_Surface surface = (RAB_Surface)0;
+    surface.viewDepth = BACKGROUND_DEPTH;
+    return surface;
+}
+
+RAB_LightInfo RAB_EmptyLightInfo()
+{
+    return (RAB_LightInfo)0;
+}
+
+RAB_LightSample RAB_EmptyLightSample()
+{
+    return (RAB_LightSample)0;
+}
 
 struct RayPayload
 {
@@ -334,8 +355,7 @@ RAB_Surface GetGBufferSurface(
     Texture2D<uint> diffuseAlbedoTexture, 
     Texture2D<uint> specularRoughTexture)
 {
-    RAB_Surface surface = (RAB_Surface)0;
-    surface.viewDepth = BACKGROUND_DEPTH;
+    RAB_Surface surface = RAB_EmptySurface();
 
     if (any(pixelPosition >= view.viewportSize))
         return surface;
@@ -447,8 +467,8 @@ float EvaluateEnvironmentMapSamplingPdf(float3 L)
     
     int lastMipLevel = max(0, int(floor(log2(max(pdfTextureSize.x, pdfTextureSize.y)))) - 1);
     float averageValue = 0.5 * (
-        t_EnvironmentPdfTexture.mips[lastMipLevel][uint2(0, 0)] +
-        t_EnvironmentPdfTexture.mips[lastMipLevel][uint2(1, 0)]);
+        t_EnvironmentPdfTexture.mips[lastMipLevel][uint2(0, 0)].x +
+        t_EnvironmentPdfTexture.mips[lastMipLevel][uint2(1, 0)].x);
 
     return texelValue / averageValue;
 }

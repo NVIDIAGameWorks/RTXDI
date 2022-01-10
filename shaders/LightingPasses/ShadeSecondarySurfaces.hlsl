@@ -1,5 +1,5 @@
 /***************************************************************************
- # Copyright (c) 2020-2021, NVIDIA CORPORATION.  All rights reserved.
+ # Copyright (c) 2020-2022, NVIDIA CORPORATION.  All rights reserved.
  #
  # NVIDIA CORPORATION and its licensors retain all intellectual property
  # and proprietary rights in and to this software, related documentation
@@ -86,7 +86,7 @@ void RayGen()
             g_Const.numIndirectLocalLightSamples, 
             g_Const.numIndirectInfiniteLightSamples, 
             g_Const.numIndirectEnvironmentSamples,
-            params, u_RisBuffer, lightSample);
+            params, lightSample);
 
         if (g_Const.numSecondarySamples)
         {
@@ -112,7 +112,7 @@ void RayGen()
                 sparams.normalThreshold = g_Const.secondaryNormalThreshold;
 
                 reservoir = RTXDI_SpatialResampling(secondaryPixelPos, surface, reservoir,
-                    rng, sparams,params, u_LightReservoirs, t_NeighborOffsets, lightSample);
+                    rng, sparams,params, lightSample);
             }
         }
 

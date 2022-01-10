@@ -8,11 +8,20 @@
  # license agreement from NVIDIA CORPORATION is strictly prohibited.
  **************************************************************************/
 
-// This shader file is intended for testing the RTXDI header files to make sure
-// that they do not make any undeclared assumptions about the contents of the 
-// user-defined structures and about the functions being available.
+// This shader file is intended for testing the RTXDI header files 
+// for GLSL compatibility.
 
-#include <rtxdi/RtxdiParameters.h>
+#version 460
+#extension GL_GOOGLE_include_directive : enable
+
+// Subgroup arithmetic is used in the boiling filter
+#extension GL_KHR_shader_subgroup_arithmetic : enable
+#extension GL_KHR_shader_subgroup_ballot : enable
+
+#define RTXDI_GLSL
+#define RTXDI_REGIR_MODE RTXDI_REGIR_ONION
+
+#include "rtxdi/RtxdiParameters.h"
 
 struct RAB_RandomSamplerState
 {
@@ -29,7 +38,7 @@ struct RAB_LightSample
     uint unused;
 };
 
-struct RAB_LightInfo
+struct RAB_LightInfo 
 {
     uint unused;
 };
@@ -61,7 +70,7 @@ bool RAB_GetTemporalConservativeVisibility(RAB_Surface currentSurface, RAB_Surfa
 
 RAB_Surface RAB_GetGBufferSurface(int2 pixelPosition, bool previousFrame)
 {
-    return (RAB_Surface)0;
+    return RAB_Surface(0);
 }
 
 bool RAB_IsSurfaceValid(RAB_Surface surface)
@@ -71,12 +80,12 @@ bool RAB_IsSurfaceValid(RAB_Surface surface)
 
 float3 RAB_GetSurfaceWorldPos(RAB_Surface surface)
 {
-    return 0.0;
+    return float3(0.0);
 }
 
 float3 RAB_GetSurfaceNormal(RAB_Surface surface)
 {
-    return 0.0;
+    return float3(0.0);
 }
 
 float RAB_GetSurfaceLinearDepth(RAB_Surface surface)
@@ -101,17 +110,17 @@ float RAB_GetLightTargetPdfForVolume(RAB_LightInfo light, float3 volumeCenter, f
 
 RAB_LightSample RAB_SamplePolymorphicLight(RAB_LightInfo lightInfo, RAB_Surface surface, float2 uv)
 {
-    return (RAB_LightSample)0;
+    return RAB_LightSample(0);
 }
 
 RAB_LightInfo RAB_LoadLightInfo(uint index, bool previousFrame)
 {
-    return (RAB_LightInfo)0;
+    return RAB_LightInfo(0);
 }
 
 RAB_LightInfo RAB_LoadCompactLightInfo(uint linearIndex)
 {
-    return (RAB_LightInfo)0;
+    return RAB_LightInfo(0);
 }
 
 bool RAB_StoreCompactLightInfo(uint linearIndex, RAB_LightInfo lightInfo)
@@ -132,18 +141,26 @@ bool RAB_AreMaterialsSimilar(RAB_Surface a, RAB_Surface b)
 #define RTXDI_ENABLE_BOILING_FILTER
 #define RTXDI_BOILING_FILTER_GROUP_SIZE 16
 
-RWBuffer<uint2> u_RisBuffer;
-RWStructuredBuffer<RTXDI_PackedReservoir> u_LightReservoirs;
-Buffer<float2> t_NeighborOffsets;
+layout(set = 0, binding = 0) buffer RIS_BUFFER {
+    uvec2 u_RisBuffer[];
+};
+
+layout(set = 0, binding = 1) buffer LIGHT_RESERVOIR_BUFFER {
+    RTXDI_PackedReservoir u_LightReservoirs[];
+};
+
+layout(set = 0, binding = 2) readonly buffer NEIGHBOR_OFFSET_BUFFER {
+    vec2 t_NeighborOffsets[];
+};
 
 #define RTXDI_RIS_BUFFER u_RisBuffer
 #define RTXDI_LIGHT_RESERVOIR_BUFFER u_LightReservoirs
 #define RTXDI_NEIGHBOR_OFFSETS_BUFFER t_NeighborOffsets
 
+#include "rtxdi/ResamplingFunctions.hlsli"
 
-#include <rtxdi/ResamplingFunctions.hlsli>
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
 
-[numthreads(1, 1, 1)]
 void main()
 {
 }

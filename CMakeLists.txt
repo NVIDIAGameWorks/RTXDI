@@ -85,6 +85,8 @@ if (EXISTS "${CMAKE_CURRENT_LIST_DIR}/RTXGI/rtxgi-sdk/CMakeLists.txt")
 	endif()
 endif()
 
+set(GLSLANG_EXECUTABLE "" CACHE STRING "Path to glslangValidator for GLSL header verification (optional)")
+
 add_subdirectory(rtxdi-sdk)
 add_subdirectory(shaders)
 add_subdirectory(src)

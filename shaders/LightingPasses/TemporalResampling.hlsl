@@ -1,5 +1,5 @@
 /***************************************************************************
- # Copyright (c) 2020-2021, NVIDIA CORPORATION.  All rights reserved.
+ # Copyright (c) 2020-2022, NVIDIA CORPORATION.  All rights reserved.
  #
  # NVIDIA CORPORATION and its licensors retain all intellectual property
  # and proprietary rights in and to this software, related documentation
@@ -52,7 +52,7 @@ void RayGen()
     
     if (RAB_IsSurfaceValid(surface))
     {
-        RTXDI_Reservoir curSample = RTXDI_LoadReservoir(params, u_LightReservoirs, 
+        RTXDI_Reservoir curSample = RTXDI_LoadReservoir(params,
             GlobalIndex, g_Const.initialOutputBufferIndex);
 
         float3 motionVector = t_MotionVectors[pixelPosition].xyz;
@@ -71,7 +71,7 @@ void RayGen()
         RAB_LightSample selectedLightSample = (RAB_LightSample)0;
         
         temporalResult = RTXDI_TemporalResampling(pixelPosition, surface, curSample,
-            rng, tparams, params, u_LightReservoirs, temporalSamplePixelPos, selectedLightSample);
+            rng, tparams, params, temporalSamplePixelPos, selectedLightSample);
     }
 
 #ifdef RTXDI_ENABLE_BOILING_FILTER
@@ -83,5 +83,5 @@ void RayGen()
 
     u_TemporalSamplePositions[GlobalIndex] = temporalSamplePixelPos;
     
-    RTXDI_StoreReservoir(temporalResult, params, u_LightReservoirs, GlobalIndex, g_Const.temporalOutputBufferIndex);
+    RTXDI_StoreReservoir(temporalResult, params, GlobalIndex, g_Const.temporalOutputBufferIndex);
 }

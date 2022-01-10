@@ -1,5 +1,5 @@
 /***************************************************************************
- # Copyright (c) 2020-2021, NVIDIA CORPORATION.  All rights reserved.
+ # Copyright (c) 2020-2022, NVIDIA CORPORATION.  All rights reserved.
  #
  # NVIDIA CORPORATION and its licensors retain all intellectual property
  # and proprietary rights in and to this software, related documentation
@@ -10,6 +10,8 @@
 
 #ifndef RTXDI_PARAMETERS_H
 #define RTXDI_PARAMETERS_H
+
+#include "RtxdiTypes.h"
 
 // Flag that is used in the RIS buffer to identify that a light is 
 // stored in a compact form.
@@ -40,10 +42,6 @@
 #ifndef RTXDI_REGIR_MODE
 #define RTXDI_REGIR_MODE RTXDI_REGIR_DISABLED
 #endif 
-
-#ifndef __cplusplus
-typedef uint uint32_t;
-#endif
 
 struct RTXDI_OnionLayerGroup
 {

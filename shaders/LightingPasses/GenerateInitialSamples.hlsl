@@ -1,5 +1,5 @@
 /***************************************************************************
- # Copyright (c) 2020-2021, NVIDIA CORPORATION.  All rights reserved.
+ # Copyright (c) 2020-2022, NVIDIA CORPORATION.  All rights reserved.
  #
  # NVIDIA CORPORATION and its licensors retain all intellectual property
  # and proprietary rights in and to this software, related documentation
@@ -41,7 +41,7 @@ void RayGen()
         g_Const.numPrimaryLocalLightSamples, 
         g_Const.numPrimaryInfiniteLightSamples, 
         g_Const.numPrimaryEnvironmentSamples,
-        params, u_RisBuffer, lightSample);
+        params, lightSample);
 
     if (g_Const.enableInitialVisibility && RTXDI_IsValidReservoir(reservoir))
     {
@@ -51,5 +51,5 @@ void RayGen()
         }
     }
 
-    RTXDI_StoreReservoir(reservoir, params, u_LightReservoirs, GlobalIndex, g_Const.initialOutputBufferIndex);
+    RTXDI_StoreReservoir(reservoir, params, GlobalIndex, g_Const.initialOutputBufferIndex);
 }

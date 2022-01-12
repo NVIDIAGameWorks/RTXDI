@@ -119,6 +119,7 @@ void ProcessCommandLine(int argc, char** argv, donut::app::DeviceCreationParamet
         ("d,debug", "Enable the DX12 or Vulkan validation layers", value(deviceParams.enableDebugRuntime))
         ("disable-bg-opt", "Disable DX12 driver background optimization", value(args.disableBackgroundOptimization))
         ("fused-kernel", "Fused vs Separate kernel switch", value(ui.lightingSettings.useFusedKernel))
+        ("fullscreen", "Run in full screen", value(deviceParams.startFullscreen))
         ("h,help", "Display this help message", value(help))
         ("height", "Window height", value(deviceParams.backBufferHeight))
         ("noise-mix", "Amount of noise to mix in after denoising", value(ui.noiseMix))

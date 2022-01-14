@@ -128,6 +128,8 @@ void ProcessCommandLine(int argc, char** argv, donut::app::DeviceCreationParamet
         ("rasterize-gbuffer", "G-buffer rasterization toggle", value(ui.rasterizeGBuffer))
         ("ray-query", "Ray Query toggle", value(ui.useRayQuery))
         ("render-mode", "Rendering mode: BRDF, RESTIR, MIS, INDIRECT", value(ui.renderingMode))
+        ("render-width", "Internal render target width, overrides window size", value(args.renderWidth))
+        ("render-height", "Internal render target height, overrides window size", value(args.renderHeight))
         ("save-file", "Save frame to file and exit", value(args.saveFrameFileName))
         ("save-frame", "Index of the frame to save, default is 0", value(args.saveFrameIndex))
         ("spatial-resampling", "Spatial resampling toggle", value(ui.lightingSettings.enableSpatialResampling))

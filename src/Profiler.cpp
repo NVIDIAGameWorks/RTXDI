@@ -13,6 +13,8 @@
 #include <imgui.h>
 #include <sstream>
 
+#include "RenderTargets.h"
+
 
 static const char* g_SectionNames[ProfilerSection::Count] = {
     "TLAS Update",
@@ -220,9 +222,11 @@ int Profiler::GetMaterialReadback()
 
 void Profiler::BuildUI(const bool enableRayCounts)
 {
-    int windowWidth, windowHeight;
-    m_DeviceManager.GetWindowDimensions(windowWidth, windowHeight);
-    const int windowPixels = windowWidth * windowHeight;
+    auto renderTargets = m_RenderTargets.lock();
+    if (!renderTargets)
+        return;
+
+    const int renderPixels = renderTargets->Size.x * renderTargets->Size.y;
 
     const float timeColumnWidth = 70.f;
     const float otherColumnsWidth = 40.f;
@@ -270,7 +274,7 @@ void Profiler::BuildUI(const bool enableRayCounts)
         
         if (enableRayCounts && rayCount != 0.0)
         {
-            double raysPerPixel = rayCount / windowPixels;
+            double raysPerPixel = rayCount / renderPixels;
             double hitPercentage = 100.0 * hitCount / rayCount;
 
             ImGui::TableSetColumnIndex(2);
@@ -289,13 +293,15 @@ void Profiler::BuildUI(const bool enableRayCounts)
 
 std::string Profiler::GetAsText()
 {
-    int windowWidth, windowHeight;
-    m_DeviceManager.GetWindowDimensions(windowWidth, windowHeight);
-    const int windowPixels = windowWidth * windowHeight;
+    auto renderTargets = m_RenderTargets.lock();
+    if (!renderTargets)
+        return "";
 
+    const int renderPixels = renderTargets->Size.x * renderTargets->Size.y;
+    
     std::stringstream text;
     text << "Renderer: " << m_DeviceManager.GetRendererString() << std::endl;
-    text << "Resolution: " << windowWidth << " x " << windowHeight << std::endl;
+    text << "Resolution: " << renderTargets->Size.x << " x " << renderTargets->Size.y << std::endl;
 
     for (uint32_t section = 0; section < ProfilerSection::MaterialReadback; section++)
     {
@@ -318,7 +324,7 @@ std::string Profiler::GetAsText()
         }
         else if (rayCount != 0.0)
         {
-            const double raysPerPixel = rayCount / windowPixels;
+            const double raysPerPixel = rayCount / renderPixels;
             const double hitPercentage = 100.0 * hitCount / rayCount;
 
             text.precision(3);

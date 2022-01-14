@@ -12,8 +12,11 @@
 
 #include <nvrhi/nvrhi.h>
 #include <array>
+#include <memory>
 
 #include "ProfilerSections.h"
+
+class RenderTargets;
 
 namespace donut::app
 {
@@ -38,6 +41,7 @@ private:
     nvrhi::DeviceHandle m_Device;
     nvrhi::BufferHandle m_RayCountBuffer;
     std::array<nvrhi::BufferHandle, 2> m_RayCountReadback;
+    std::weak_ptr<RenderTargets> m_RenderTargets;
     
 public:
     explicit Profiler(donut::app::DeviceManager& deviceManager);
@@ -51,6 +55,7 @@ public:
     void EndFrame(nvrhi::ICommandList* commandList);
     void BeginSection(nvrhi::ICommandList* commandList, ProfilerSection::Enum section);
     void EndSection(nvrhi::ICommandList* commandList, ProfilerSection::Enum section);
+    void SetRenderTargets(const std::shared_ptr<RenderTargets>& renderTargets) { m_RenderTargets = renderTargets; }
 
     double GetTimer(ProfilerSection::Enum section);
     double GetRayCount(ProfilerSection::Enum section);

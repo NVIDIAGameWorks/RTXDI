@@ -90,7 +90,7 @@ private:
     std::unique_ptr<render::ToneMappingPass> m_ToneMappingPass;
     std::unique_ptr<render::TemporalAntiAliasingPass> m_TemporalAntiAliasingPass;
     std::unique_ptr<render::BloomPass> m_BloomPass;
-    std::unique_ptr<RenderTargets> m_RenderTargets;
+    std::shared_ptr<RenderTargets> m_RenderTargets;
     app::FirstPersonCamera m_Camera;
     engine::PlanarView m_View;
     engine::PlanarView m_ViewPrevious;
@@ -470,6 +470,10 @@ public:
 
     virtual void BackBufferResized(const uint32_t width, const uint32_t height, const uint32_t sampleCount) override
     {
+        // If the render size is overridden from the command line, ignore the window size.
+        if (m_args.renderWidth > 0 && m_args.renderHeight > 0)
+            return;
+
         if (m_RenderTargets && m_RenderTargets->Size.x == int(width) && m_RenderTargets->Size.y == int(height))
             return;
 
@@ -528,9 +532,9 @@ public:
         }
     }
 
-    void SetupView(const nvrhi::FramebufferInfo& fbinfo, uint effectiveFrameIndex, const engine::PerspectiveCamera* activeCamera)
+    void SetupView(uint32_t renderWidth, uint32_t renderHeight, const engine::PerspectiveCamera* activeCamera)
     {
-        nvrhi::Viewport windowViewport(float(fbinfo.width), float(fbinfo.height));
+        nvrhi::Viewport windowViewport((float)renderWidth, (float)renderHeight);
 
         if (m_TemporalAntiAliasingPass)
             m_TemporalAntiAliasingPass->SetJitter(m_ui.temporalJitter);
@@ -564,7 +568,7 @@ public:
         m_UpscaledView.SetViewport(windowViewport);
     }
 
-    void SetupRenderPasses(const nvrhi::FramebufferInfo& fbinfo, bool& exposureResetRequired)
+    void SetupRenderPasses(uint32_t renderWidth, uint32_t renderHeight, bool& exposureResetRequired)
     {
         if (m_ui.environmentMapDirty == 2)
         {
@@ -621,8 +625,8 @@ public:
 
         if (!m_RtxdiContext)
         {
-            m_ui.rtxdiContextParams.RenderWidth = fbinfo.width;
-            m_ui.rtxdiContextParams.RenderHeight = fbinfo.height;
+            m_ui.rtxdiContextParams.RenderWidth = renderWidth;
+            m_ui.rtxdiContextParams.RenderHeight = renderHeight;
 
             m_RtxdiContext = std::make_unique<rtxdi::Context>(m_ui.rtxdiContextParams);
 
@@ -645,7 +649,9 @@ public:
 
         if (!m_RenderTargets)
         {
-            m_RenderTargets = std::make_unique<RenderTargets>(GetDevice(), int2(fbinfo.width, fbinfo.height));
+            m_RenderTargets = std::make_shared<RenderTargets>(GetDevice(), int2((int)renderWidth, (int)renderHeight));
+
+            m_Profiler->SetRenderTargets(m_RenderTargets);
 
             m_GBufferPass->CreateBindingSet(m_Scene->GetTopLevelAS(), m_Scene->GetPrevTopLevelAS(), *m_RenderTargets);
 
@@ -942,8 +948,15 @@ public:
         m_Scene->RefreshSceneGraph(GetFrameIndex());
 
         const auto& fbinfo = framebuffer->getFramebufferInfo();
-        SetupView(fbinfo, effectiveFrameIndex, activeCamera);
-        SetupRenderPasses(fbinfo, exposureResetRequired);
+        uint32_t renderWidth = fbinfo.width;
+        uint32_t renderHeight = fbinfo.height;
+        if (m_args.renderWidth > 0 && m_args.renderHeight > 0)
+        {
+            renderWidth = m_args.renderWidth;
+            renderHeight = m_args.renderHeight;
+        }
+        SetupView(renderWidth, renderHeight, activeCamera);
+        SetupRenderPasses(renderWidth, renderHeight, exposureResetRequired);
         if (!m_ui.freezeRegirPosition)
             m_RegirCenter = m_Camera.GetPosition();
 #if WITH_DLSS

@@ -32,6 +32,8 @@ struct CommandLineArguments
     bool verbose = false;
     bool benchmark = false;
     bool disableBackgroundOptimization = false;
+    int renderWidth = 0;
+    int renderHeight = 0;
 };
 
 void ProcessCommandLine(int argc, char** argv, donut::app::DeviceCreationParameters& deviceParams, UIData& ui, CommandLineArguments& args);

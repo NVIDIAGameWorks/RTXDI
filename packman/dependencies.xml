@@ -1,6 +1,6 @@
 <project toolsVersion="5.0">
     <dependency name="rtxdi-media" linkPath="../media" >
-        <package name="rtxdi-media" version="p4sw-30605221" />
+        <package name="rtxdi-media" version="p4sw-30874147" />
     </dependency>
     <dependency name="dxc" linkPath="../dxc" >
         <package name="dxc" version="1.6.2106-${platform}" platforms="windows-x86_64 linux-x86_64" />

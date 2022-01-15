@@ -90,6 +90,8 @@ set(GLSLANG_EXECUTABLE "" CACHE STRING "Path to glslangValidator for GLSL header
 add_subdirectory(rtxdi-sdk)
 add_subdirectory(shaders)
 add_subdirectory(src)
+add_subdirectory(minimal/src)
+add_subdirectory(minimal/shaders)
 
 if (MSVC)
 	set_property(DIRECTORY PROPERTY VS_STARTUP_PROJECT rtxdi-sample)

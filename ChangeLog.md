@@ -1,5 +1,25 @@
 # RTXDI SDK Change Log
 
+## 1.2.1
+
+**Breaking changes:**
+
+- Added support for compiling the RTXDI shader headers in a GLSL environment. Some functions have changed their signatures to remove resource-type parameters, which are now passed through macros.
+
+**Fixed issues:**
+
+- Fixed the remaining [Slang](https://github.com/shader-slang/slang) compatibility issue in the RTXDI shader headers.
+
+**New features:**
+
+- Added various command line options for automated functional and performance testing.
+- Added a minimal sample app to demonstrate a basic mesh lighting setup.
+
+**Misc improvements:**
+
+- Updated [NRD](https://github.com/NVIDIAGameWorks/RayTracingDenoiser) to version 2.10.
+
+
 ## 1.2.0
 
 **Release highlights:**

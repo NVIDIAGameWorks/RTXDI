@@ -468,10 +468,11 @@ void UserInterface::SamplingSettings()
                     "temporally and therefore better suited for temporal accumulation and denoising. Also results in a higher positive "
                     "bias when the Reuse Final Visibility setting is on, which somewhat counteracts the negative bias from spatial resampling.");
 
-                samplingSettingsChanged |= ImGui::Combo("Temporal Bias Correction", (int*)&m_ui.lightingSettings.temporalBiasCorrection, "Off\0Basic\0Ray Traced\0");
+                samplingSettingsChanged |= ImGui::Combo("Temporal Bias Correction", (int*)&m_ui.lightingSettings.temporalBiasCorrection, "Off\0Basic\0Pairwise\0Ray Traced\0");
                 ShowHelpMarker(
                     "Off = use the 1/M normalization.\n"
                     "Basic = use the MIS normalization but assume that every sample is visible.\n"
+                    "Pairwise = pairwise MIS improves perf and specular quality (assumes every sample is visible).\n"
                     "Ray Traced = use the MIS normalization and verify visibility.");
 
                 if (m_showAdvancedSamplingSettings)
@@ -504,10 +505,11 @@ void UserInterface::SamplingSettings()
                 samplingSettingsChanged |= ImGui::Checkbox("Enable Spatial Resampling", (bool*)&m_ui.lightingSettings.enableSpatialResampling);
                 if (!m_ui.lightingSettings.useFusedKernel)
                 {
-                    samplingSettingsChanged |= ImGui::Combo("Spatial Bias Correction", (int*)&m_ui.lightingSettings.spatialBiasCorrection, "Off\0Basic\0Ray Traced\0");
+                    samplingSettingsChanged |= ImGui::Combo("Spatial Bias Correction", (int*)&m_ui.lightingSettings.spatialBiasCorrection, "Off\0Basic\0Pairwise\0Ray Traced\0");
                     ShowHelpMarker(
                         "Off = use the 1/M normalization.\n"
                         "Basic = use the MIS normalization but assume that every sample is visible.\n"
+                        "Pairwise = pairwise MIS improves perf and specular quality (assumes every sample is visible).\n"
                         "Ray Traced = use the MIS normalization and verify visibility.");
                 }
                 samplingSettingsChanged |= ImGui::SliderInt("Spatial Samples", (int*)&m_ui.lightingSettings.numSpatialSamples, 1, 32);
@@ -574,7 +576,7 @@ void UserInterface::SamplingSettings()
                     "When shading a secondary surface, try to find a matching surface in screen space and reuse its light reservoir. "
                     "This feature uses the Spatial Resampling function and has similar controls.");
 
-                samplingSettingsChanged |= ImGui::Combo("Secondary Bias Correction", (int*)&m_ui.lightingSettings.secondaryBiasCorrection, "Off\0Basic\0Ray Traced\0");
+                samplingSettingsChanged |= ImGui::Combo("Secondary Bias Correction", (int*)&m_ui.lightingSettings.secondaryBiasCorrection, "Off\0Basic\0Pairwise\0Ray Traced\0");
                 samplingSettingsChanged |= ImGui::SliderInt("Secondary Samples", (int*)&m_ui.lightingSettings.numSecondarySamples, 1, 4);
                 samplingSettingsChanged |= ImGui::SliderFloat("Secondary Sampling Radius", &m_ui.lightingSettings.secondarySamplingRadius, 0.f, 32.f);
                 if (m_showAdvancedSamplingSettings)

@@ -29,8 +29,11 @@
 #define RTXDI_BIAS_CORRECTION_OFF 0
 // Use MIS-like normalization but assume that every sample is visible.
 #define RTXDI_BIAS_CORRECTION_BASIC 1
+// Use pairwise MIS normalization (assuming every sample is visible).  Better perf & specular quality
+#define RTXDI_BIAS_CORRECTION_PAIRWISE 2
 // Use MIS-like normalization with visibility rays. Unbiased.
-#define RTXDI_BIAS_CORRECTION_RAY_TRACED 2
+#define RTXDI_BIAS_CORRECTION_RAY_TRACED 3
+
 
 #define RTXDI_ONION_MAX_LAYER_GROUPS 8
 #define RTXDI_ONION_MAX_RINGS 52

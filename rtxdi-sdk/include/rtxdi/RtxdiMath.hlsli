@@ -100,4 +100,21 @@ float3 RTXDI_SphericalToCartesian(float r, float azimuth, float elevation)
     return float3(x, y, z);
 }
 
+// Computes a multiplier to the effective sample count (M) for pairwise MIS
+float RTXDI_MFactor(float q0, float q1)
+{
+    return (q0 <= 0.0f)
+        ? 1.0f
+        : clamp(pow(min(q1 / q0, 1.0f), 8.0f), 0.0f, 1.0f);
+}
+
+// Compute the pairwise MIS weight
+float RTXDI_PairwiseMisWeight(float w0, float w1, float M0, float M1)
+{
+    // Using a balance heuristic
+    float balanceDenom = (M0 * w0 + M1 * w1);
+    return (balanceDenom <= 0.0f) ? 0.0f : max(0.0f, M0 * w0) / balanceDenom;
+}
+
+
 #endif // RTXDI_MATH_HLSLI

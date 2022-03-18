@@ -72,19 +72,23 @@ bool RTXDI_StreamSample(
 }
 
 // Adds `newReservoir` into `reservoir`, returns true if the new reservoir's sample was selected.
-// Algorithm (4) from the ReSTIR paper, Combining the streams of multiple reservoirs.
-// Normalization - Equation (6) - is postponed until all reservoirs are combined.
-bool RTXDI_CombineReservoirs(
+// This is a very general form, allowing input parameters to specfiy normalization and targetPdf
+// rather than computing them from `newReservoir`.  Named "internal" since these parameters take
+// different meanings (e.g., in RTXDI_CombineReservoirs() or RTXDI_StreamNeighborWithPairwiseMIS())
+bool RTXDI_InternalSimpleResample(
     inout RTXDI_Reservoir reservoir,
     const RTXDI_Reservoir newReservoir,
     float random,
-    float targetPdf)
+    float targetPdf RTXDI_DEFAULT(1.0f),            // Usually closely related to the sample normalization, 
+    float sampleNormalization RTXDI_DEFAULT(1.0f),  //     typically off by some multiplicative factor 
+    float sampleM RTXDI_DEFAULT(1.0f)               // In its most basic form, should be newReservoir.M
+)
 {
     // What's the current weight (times any prior-step RIS normalization factor)
-    float risWeight = targetPdf * newReservoir.weightSum * newReservoir.M;
+    float risWeight = targetPdf * sampleNormalization;
 
     // Our *effective* candidate pool is the sum of our candidates plus those of our neighbors
-    reservoir.M += newReservoir.M;
+    reservoir.M += sampleM;
 
     // Update the weight sum
     reservoir.weightSum += risWeight;
@@ -93,7 +97,7 @@ bool RTXDI_CombineReservoirs(
     bool selectSample = (random * reservoir.weightSum < risWeight);
 
     // If we did select this sample, update the relevant data
-    if (selectSample) 
+    if (selectSample)
     {
         reservoir.lightData = newReservoir.lightData;
         reservoir.uvData = newReservoir.uvData;
@@ -106,6 +110,25 @@ bool RTXDI_CombineReservoirs(
     return selectSample;
 }
 
+// Adds `newReservoir` into `reservoir`, returns true if the new reservoir's sample was selected.
+// Algorithm (4) from the ReSTIR paper, Combining the streams of multiple reservoirs.
+// Normalization - Equation (6) - is postponed until all reservoirs are combined.
+bool RTXDI_CombineReservoirs(
+    inout RTXDI_Reservoir reservoir,
+    const RTXDI_Reservoir newReservoir,
+    float random,
+    float targetPdf)
+{
+    return RTXDI_InternalSimpleResample(
+        reservoir,
+        newReservoir,
+        random,
+        targetPdf,
+        newReservoir.weightSum * newReservoir.M,
+        newReservoir.M
+    );
+}
+
 // Performs normalization of the reservoir after streaming. Equation (6) from the ReSTIR paper.
 void RTXDI_FinalizeResampling(
     inout RTXDI_Reservoir reservoir,
@@ -115,6 +138,76 @@ void RTXDI_FinalizeResampling(
     float denominator = reservoir.targetPdf * normalizationDenominator;
 
     reservoir.weightSum = (denominator == 0.0) ? 0.0 : (reservoir.weightSum * normalizationNumerator) / denominator;
+}
+
+// A helper used for pairwise MIS computations.  This might be able to simplify code elsewhere, too.
+float RTXDI_TargetPdfHelper(const RTXDI_Reservoir lightReservoir, const RAB_Surface surface, bool priorFrame RTXDI_DEFAULT(false))
+{
+    RAB_LightSample lightSample = RAB_SamplePolymorphicLight(
+        RAB_LoadLightInfo(RTXDI_GetReservoirLightIndex(lightReservoir), priorFrame),
+        surface, RTXDI_GetReservoirSampleUV(lightReservoir));
+
+    return RAB_GetLightSampleTargetPdfForSurface(lightSample, surface);
+}
+
+// "Pairwise MIS" is a MIS approach that is O(N) instead of O(N^2) for N estimators.  The idea is you know
+// a canonical sample which is a known (pretty-)good estimator, but you'd still like to improve the result
+// given multiple other candidate estimators.  You can do this in a pairwise fashion, MIS'ing between each
+// candidate and the canonical sample.  RTXDI_StreamNeighborWithPairwiseMIS() is executed once for each 
+// candidate, after which the MIS is completed by calling RTXDI_StreamCanonicalWithPairwiseStep() once for
+// the canonical sample.
+// See Chapter 9.1 of https://digitalcommons.dartmouth.edu/dissertations/77/, especially Eq 9.10 & Algo 8
+bool RTXDI_StreamNeighborWithPairwiseMIS(inout RTXDI_Reservoir reservoir,
+    float random,
+    const RTXDI_Reservoir neighborReservoir,
+    const RAB_Surface neighborSurface,
+    const RTXDI_Reservoir canonicalReservor,
+    const RAB_Surface canonicalSurface,
+    const uint numberOfNeighborsInStream)    // # neighbors streamed via pairwise MIS before streaming the canonical sample
+{
+    // Compute PDFs of the neighbor and cannonical light samples and surfaces in all permutations.
+    // Note: First two must be computed this way.  Last two *should* be replacable by neighborReservoir.targetPdf
+    // and canonicalReservor.targetPdf to reduce redundant computations, but there's a bug in that naive reuse.
+    float neighborWeightAtCanonical = max(0.0f, RTXDI_TargetPdfHelper(neighborReservoir, canonicalSurface, false));
+    float canonicalWeightAtNeighbor = max(0.0f, RTXDI_TargetPdfHelper(canonicalReservor, neighborSurface, false));
+    float neighborWeightAtNeighbor = max(0.0f, RTXDI_TargetPdfHelper(neighborReservoir, neighborSurface, false));
+    float canonicalWeightAtCanonical = max(0.0f, RTXDI_TargetPdfHelper(canonicalReservor, canonicalSurface, false));
+
+    // Compute two pairwise MIS weights
+    float w0 = RTXDI_PairwiseMisWeight(neighborWeightAtNeighbor, neighborWeightAtCanonical,
+        neighborReservoir.M * numberOfNeighborsInStream, canonicalReservor.M);
+    float w1 = RTXDI_PairwiseMisWeight(canonicalWeightAtNeighbor, canonicalWeightAtCanonical,
+        neighborReservoir.M * numberOfNeighborsInStream, canonicalReservor.M);
+
+    // Determine the effective M value when using pairwise MIS
+    float M = neighborReservoir.M * min(
+        RTXDI_MFactor(neighborWeightAtNeighbor, neighborWeightAtCanonical),
+        RTXDI_MFactor(canonicalWeightAtNeighbor, canonicalWeightAtCanonical));
+
+    // With pairwise MIS, we touch the canonical sample multiple times (but every other sample only once).  This 
+    // with overweight the canonical sample; we track how much it is overweighted so we can renormalize to account
+    // for this in the function RTXDI_StreamCanonicalWithPairwiseStep()
+    reservoir.canonicalWeight += (1.0f - w1);
+
+    // Go ahead and stream the neighbor sample through via RIS, appropriately weighted
+    return RTXDI_InternalSimpleResample(reservoir, neighborReservoir, random,
+        neighborWeightAtCanonical,
+        neighborReservoir.weightSum * w0,
+        M);
+}
+
+// Called to finish the process of doing pairwise MIS.  This function must be called after all required calls to
+// RTXDI_StreamNeighborWithPairwiseMIS(), since pairwise MIS overweighs the canonical sample.  This function 
+// compensates for this overweighting, but it can only happen after all neighbors have been processed.
+bool RTXDI_StreamCanonicalWithPairwiseStep(inout RTXDI_Reservoir reservoir,
+    float random,
+    const RTXDI_Reservoir canonicalReservoir,
+    const RAB_Surface canonicalSurface)
+{
+    return RTXDI_InternalSimpleResample(reservoir, canonicalReservoir, random,
+        canonicalReservoir.targetPdf,
+        canonicalReservoir.weightSum * reservoir.canonicalWeight,
+        canonicalReservoir.M);
 }
 
 void RTXDI_SamplePdfMipmap(
@@ -847,7 +940,13 @@ RTXDI_Reservoir RTXDI_TemporalResampling(
     out int2 temporalSamplePixelPos,
     inout RAB_LightSample selectedLightSample)
 {
-    uint historyLimit = min(RTXDI_PackedReservoir_MaxM, tparams.maxHistoryLength * curSample.M);
+    // For temporal reuse, there's only a pair of samples; pairwise and basic MIS are essentially identical
+    if (tparams.biasCorrectionMode == RTXDI_BIAS_CORRECTION_PAIRWISE)
+    {
+        tparams.biasCorrectionMode = RTXDI_BIAS_CORRECTION_BASIC;
+    }
+
+    uint historyLimit = min(RTXDI_PackedReservoir_MaxM, uint(tparams.maxHistoryLength * curSample.M));
 
     int selectedLightPrevID = -1;
 
@@ -920,7 +1019,7 @@ RTXDI_Reservoir RTXDI_TemporalResampling(
     }
 
     bool selectedPreviousSample = false;
-    uint previousM = 0;
+    float previousM = 0;
 
     if (foundNeighbor)
     {
@@ -1062,6 +1161,91 @@ struct RTXDI_SpatialResamplingParameters
     float normalThreshold;
 };
 
+// Spatial resampling pass, using pairwise MIS.  
+// Inputs and outputs equivalent to RTXDI_SpatialResampling(), but only uses pairwise MIS.
+// Can call this directly, or call RTXDI_SpatialResampling() with sparams.biasCorrectionMode 
+// set to RTXDI_BIAS_CORRECTION_PAIRWISE, which simply calls this function.
+RTXDI_Reservoir RTXDI_SpatialResamplingWithPairwiseMIS(
+    uint2 pixelPosition,
+    RAB_Surface centerSurface,
+    RTXDI_Reservoir centerSample,
+    RAB_RandomSamplerState rng,
+    RTXDI_SpatialResamplingParameters sparams,
+    RTXDI_ResamplingRuntimeParameters params,
+    inout RAB_LightSample selectedLightSample)
+{
+    // Initialize the output reservoir
+    RTXDI_Reservoir state = RTXDI_EmptyReservoir();
+    state.canonicalWeight = 0.0f;
+
+    // How many spatial samples to use?  
+    uint numSpatialSamples = (centerSample.M < sparams.targetHistoryLength)
+        ? max(sparams.numDisocclusionBoostSamples, sparams.numSamples)
+        : sparams.numSamples;
+
+    // Walk the specified number of neighbors, resampling using RIS
+    uint startIdx = uint(RAB_GetNextRandom(rng) * params.neighborOffsetMask);
+    uint validSpatialSamples = 0;
+    uint i;
+    for (i = 0; i < numSpatialSamples; ++i)
+    {
+        // Get screen-space location of neighbor
+        uint sampleIdx = (startIdx + i) & params.neighborOffsetMask;
+        int2 spatialOffset = int2(float2(RTXDI_NEIGHBOR_OFFSETS_BUFFER[sampleIdx].xy) * sparams.samplingRadius);
+        int2 idx = int2(pixelPosition)+spatialOffset;
+
+        if (!RTXDI_IsActiveCheckerboardPixel(idx, false, params))
+            idx.x += (idx.y & 1) != 0 ? 1 : -1;
+
+        RAB_Surface neighborSurface = RAB_GetGBufferSurface(idx, false);
+
+        // Check for surface / G-buffer matches between the canonical sample and this neighbor
+        if (!RAB_IsSurfaceValid(neighborSurface))
+            continue;
+
+        if (!RTXDI_IsValidNeighbor(RAB_GetSurfaceNormal(centerSurface), RAB_GetSurfaceNormal(neighborSurface),
+            RAB_GetSurfaceLinearDepth(centerSurface), RAB_GetSurfaceLinearDepth(neighborSurface),
+            sparams.normalThreshold, sparams.depthThreshold))
+            continue;
+
+        if (!RAB_AreMaterialsSimilar(centerSurface, neighborSurface))
+            continue;
+
+        // The surfaces are similar enough so we *can* reuse a neighbor from this pixel, so load it.
+        RTXDI_Reservoir neighborSample = RTXDI_LoadReservoir(params,
+            RTXDI_PixelPosToReservoir(idx, params), sparams.sourceBufferIndex);
+        neighborSample.spatialDistance += spatialOffset;
+
+        validSpatialSamples++;
+
+        // If sample has weight 0 due to visibility (or etc), skip the expensive-ish MIS computations
+        if (neighborSample.M <= 0) continue;
+
+        // Stream this light through the reservoir using pairwise MIS
+        RTXDI_StreamNeighborWithPairwiseMIS(state, RAB_GetNextRandom(rng),
+            neighborSample, neighborSurface,   // The spatial neighbor
+            centerSample, centerSurface,       // The canonical (center) sample
+            numSpatialSamples);
+    }
+
+    // If we've seen no usable neighbor samples, set the weight of the central one to 1
+    state.canonicalWeight = (validSpatialSamples <= 0) ? 1.0f : state.canonicalWeight;
+
+    // Stream the canonical sample (i.e., from prior computations at this pixel in this frame) using pairwise MIS.
+    RTXDI_StreamCanonicalWithPairwiseStep(state, RAB_GetNextRandom(rng), centerSample, centerSurface);
+
+    RTXDI_FinalizeResampling(state, 1.0, float(max(1, validSpatialSamples)));
+
+    // Return the selected light sample.  This is a redundant lookup and could be optimized away by storing
+        // the selected sample from the stream steps above.
+    selectedLightSample = RAB_SamplePolymorphicLight(
+        RAB_LoadLightInfo(RTXDI_GetReservoirLightIndex(state), false),
+        centerSurface, RTXDI_GetReservoirSampleUV(state));
+
+    return state;
+}
+
+
 // Spatial resampling pass.
 // Operates on the current frame G-buffer and its reservoirs.
 // For each pixel, considers a number of its neighbors and, if their surfaces are 
@@ -1078,6 +1262,12 @@ RTXDI_Reservoir RTXDI_SpatialResampling(
     RTXDI_ResamplingRuntimeParameters params,
     inout RAB_LightSample selectedLightSample)
 {
+    if (sparams.biasCorrectionMode == RTXDI_BIAS_CORRECTION_PAIRWISE)
+    {
+        return RTXDI_SpatialResamplingWithPairwiseMIS(pixelPosition, centerSurface, 
+            centerSample, rng, sparams, params, selectedLightSample);
+    }
+
     RTXDI_Reservoir state = RTXDI_EmptyReservoir();
 
     // This is the weight we'll use (instead of 1/M) to make our estimate unbaised (see paper).
@@ -1286,6 +1476,190 @@ struct RTXDI_SpatioTemporalResamplingParameters
     bool enablePermutationSampling;
 };
 
+// Fused spatialtemporal resampling pass, using pairwise MIS.  
+// Inputs and outputs equivalent to RTXDI_SpatioTemporalResampling(), but only uses pairwise MIS.
+// Can call this directly, or call RTXDI_SpatioTemporalResampling() with sparams.biasCorrectionMode 
+// set to RTXDI_BIAS_CORRECTION_PAIRWISE, which simply calls this function.
+RTXDI_Reservoir RTXDI_SpatioTemporalResamplingWithPairwiseMIS(
+    uint2 pixelPosition,
+    RAB_Surface surface,
+    RTXDI_Reservoir curSample,
+    RAB_RandomSamplerState rng,
+    RTXDI_SpatioTemporalResamplingParameters stparams,
+    RTXDI_ResamplingRuntimeParameters params,
+    out int2 temporalSamplePixelPos,
+    inout RAB_LightSample selectedLightSample)
+{
+    uint historyLimit = min(RTXDI_PackedReservoir_MaxM, uint(stparams.maxHistoryLength * curSample.M));
+
+    // Backproject this pixel to last frame
+    float3 motion = stparams.screenSpaceMotion;
+    if (!stparams.enablePermutationSampling)
+    {
+        motion.xy += float2(RAB_GetNextRandom(rng), RAB_GetNextRandom(rng)) - 0.5;
+    }
+    int2 prevPos = int2(round(float2(pixelPosition)+motion.xy));
+    float expectedPrevLinearDepth = RAB_GetSurfaceLinearDepth(surface) + motion.z;
+
+    // Some default initializations
+    temporalSamplePixelPos = int2(-1, -1);
+    RAB_Surface temporalSurface = RAB_EmptySurface();
+    bool foundTemporalSurface = false;                                                 // Found a valid backprojection?
+    const float temporalSearchRadius = (params.activeCheckerboardField == 0) ? 4 : 8;  // How far to search for a match when backprojecting
+    int2 temporalSpatialOffset = int2(0, 0);                                           // Offset for the (central) backprojected pixel
+
+    // Try to find a matching surface in the neighborhood of the centrol reprojected pixel
+    int i;
+    int2 centralIdx;
+    for (i = 0; i < 9; i++)
+    {
+        int2 offset = int2(0, 0);
+        offset.x = (i > 0) ? int((RAB_GetNextRandom(rng) - 0.5) * temporalSearchRadius) : 0;
+        offset.y = (i > 0) ? int((RAB_GetNextRandom(rng) - 0.5) * temporalSearchRadius) : 0;
+
+        centralIdx = prevPos + offset;
+        if (stparams.enablePermutationSampling && i == 0)
+        {
+            RTXDI_ApplyPermutationSampling(centralIdx, params.uniformRandomNumber);
+        }
+
+        if (!RTXDI_IsActiveCheckerboardPixel(centralIdx, true, params))
+        {
+            centralIdx.x += int(params.activeCheckerboardField) * 2 - 3;
+        }
+
+        // Grab shading / g-buffer data from last frame
+        temporalSurface = RAB_GetGBufferSurface(centralIdx, true);
+        if (!RAB_IsSurfaceValid(temporalSurface))
+            continue;
+
+        // Test surface similarity, discard the sample if the surface is too different.
+        if (!RTXDI_IsValidNeighbor(
+            RAB_GetSurfaceNormal(surface), RAB_GetSurfaceNormal(temporalSurface),
+            expectedPrevLinearDepth, RAB_GetSurfaceLinearDepth(temporalSurface),
+            stparams.normalThreshold, stparams.depthThreshold))
+            continue;
+
+        temporalSpatialOffset = centralIdx - prevPos;
+        foundTemporalSurface = true;
+        break;
+    }
+
+    // How many spatial samples to use?  
+    uint numSpatialSamples = (!foundTemporalSurface)
+        ? max(stparams.numDisocclusionBoostSamples, stparams.numSamples)
+        : uint(int(stparams.numSamples));
+
+    // Count how many of our spatiotemporal samples are valid and streamed via RIS
+    int validSamples = 0;
+
+    // Create an empty reservoir we'll use to accumulate into
+    RTXDI_Reservoir state = RTXDI_EmptyReservoir();
+    state.canonicalWeight = 0.0f;    // Important this is 0 for temporal
+
+    // Load the "temporal" reservoir at the temporally backprojected "central" pixel
+    RTXDI_Reservoir prevSample = RTXDI_LoadReservoir(params,
+        RTXDI_PixelPosToReservoir(centralIdx, params), stparams.sourceBufferIndex);
+    prevSample.M = min(prevSample.M, historyLimit);
+    prevSample.spatialDistance += temporalSpatialOffset;
+    prevSample.age += 1;
+
+    // Find the prior frame's light in the current frame
+    int mappedLightID = RAB_TranslateLightIndex(RTXDI_GetReservoirLightIndex(prevSample), false);
+
+    // Kill the reservoir if it doesn't exist in the current frame, otherwise update its ID for this frame
+    prevSample.weightSum = (mappedLightID < 0) ? 0 : prevSample.weightSum;
+    prevSample.lightData = (mappedLightID < 0) ? 0 : mappedLightID | RTXDI_Reservoir_LightValidBit;
+
+    // If we found a valid surface by backprojecting our current pixel, stream it through the reservoir.
+    if (foundTemporalSurface && prevSample.M > 0)
+    {
+        ++validSamples;
+
+        // Pass out the temporal sample location
+        temporalSamplePixelPos = (prevSample.age <= 1) ? centralIdx : temporalSamplePixelPos;
+
+        // Stream this light through the reservoir using pairwise MIS
+        RTXDI_StreamNeighborWithPairwiseMIS(state, RAB_GetNextRandom(rng),
+            prevSample, temporalSurface,    // The temporal neighbor
+            curSample, surface,             // The canonical neighbor
+            1 + numSpatialSamples);
+    }
+
+    // Look for valid (spatiotemporal) neighbors and stream them through the reservoir via pairwise MIS
+    uint startIdx = uint(RAB_GetNextRandom(rng) * params.neighborOffsetMask);
+    for (i = 1; i < numSpatialSamples; ++i)
+    {
+        uint sampleIdx = (startIdx + i) & params.neighborOffsetMask;
+        int2 spatialOffset = int2(float2(RTXDI_NEIGHBOR_OFFSETS_BUFFER[sampleIdx].xy) * stparams.samplingRadius);
+        int2 idx = prevPos + spatialOffset;
+
+        if (idx.x < 0 || idx.y < 0)
+            continue;
+
+        if (!RTXDI_IsActiveCheckerboardPixel(idx, false, params))
+        {
+            idx.x += (idx.y & 1) != 0 ? 1 : -1;
+        }
+
+        RAB_Surface neighborSurface = RAB_GetGBufferSurface(idx, true);
+
+        // Check for surface / G-buffer matches between the canonical sample and this neighbor
+        if (!RAB_IsSurfaceValid(neighborSurface))
+            continue;
+
+        if (!RTXDI_IsValidNeighbor(RAB_GetSurfaceNormal(surface), RAB_GetSurfaceNormal(neighborSurface),
+            RAB_GetSurfaceLinearDepth(surface), RAB_GetSurfaceLinearDepth(neighborSurface),
+            stparams.normalThreshold, stparams.depthThreshold))
+            continue;
+
+        if (!RAB_AreMaterialsSimilar(surface, neighborSurface))
+            continue;
+
+        // The surfaces are similar enough so we *can* reuse a neighbor from this pixel, so load it.
+        RTXDI_Reservoir neighborSample = RTXDI_LoadReservoir(params,
+            RTXDI_PixelPosToReservoir(idx, params), stparams.sourceBufferIndex);
+        neighborSample.M = min(neighborSample.M, historyLimit);
+        neighborSample.spatialDistance += spatialOffset;
+        neighborSample.age += 1;
+
+        // Find the this neighbors light in the current frame (it may have turned off or moved in the ID list)
+        int mappedLightID = RAB_TranslateLightIndex(RTXDI_GetReservoirLightIndex(neighborSample), false);
+
+        // Kill the sample if the light doesn't exist in the current frame, otherwise update its ID for this frame
+        neighborSample.weightSum = (mappedLightID < 0) ? 0 : neighborSample.weightSum;
+        neighborSample.lightData = (mappedLightID < 0) ? 0 : mappedLightID | RTXDI_Reservoir_LightValidBit;
+
+        if (mappedLightID < 0) continue;
+
+        ++validSamples;
+
+        // If sample has weight 0 due to visibility (or etc), skip the expensive-ish MIS computations
+        if (neighborSample.M <= 0) continue;
+
+        // Stream this light through the reservoir using pairwise MIS
+        RTXDI_StreamNeighborWithPairwiseMIS(state, RAB_GetNextRandom(rng),
+            neighborSample, neighborSurface,   // The spatial neighbor
+            curSample, surface,                // The canonical (center) sample
+            1 + numSpatialSamples);
+    }
+
+    // Stream the canonical sample (i.e., from prior computations at this pixel in this frame) using pairwise MIS.
+    RTXDI_StreamCanonicalWithPairwiseStep(state, RAB_GetNextRandom(rng),
+        curSample, surface);
+
+    // Renormalize the reservoir so it can be stored in a packed format 
+    RTXDI_FinalizeResampling(state, 1.0f, float(max(1, validSamples)));
+
+    // Return the selected light sample.  This is a redundant lookup and could be optimized away by storing
+    // the selected sample from the stream steps above.
+    selectedLightSample = RAB_SamplePolymorphicLight(
+        RAB_LoadLightInfo(RTXDI_GetReservoirLightIndex(state), false),
+        surface, RTXDI_GetReservoirSampleUV(state));
+
+    return state;
+}
+
 
 // Spatio-temporal resampling pass.
 // A combination of the temporal and spatial passes that operates only on the previous frame reservoirs.
@@ -1301,7 +1675,13 @@ RTXDI_Reservoir RTXDI_SpatioTemporalResampling(
     out int2 temporalSamplePixelPos,
     inout RAB_LightSample selectedLightSample)
 {
-    uint historyLimit = min(RTXDI_PackedReservoir_MaxM, stparams.maxHistoryLength * curSample.M);
+    if (stparams.biasCorrectionMode == RTXDI_BIAS_CORRECTION_PAIRWISE)
+    {
+        return RTXDI_SpatioTemporalResamplingWithPairwiseMIS(pixelPosition, surface,
+            curSample, rng, stparams, params, temporalSamplePixelPos, selectedLightSample);
+    }
+
+    uint historyLimit = min(RTXDI_PackedReservoir_MaxM, uint(stparams.maxHistoryLength * curSample.M));
 
     int selectedLightPrevID = -1;
 

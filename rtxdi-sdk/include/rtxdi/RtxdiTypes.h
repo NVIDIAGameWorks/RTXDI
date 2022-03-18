@@ -39,11 +39,13 @@
 
 #define RTXDI_TEX2D sampler2D
 #define RTXDI_TEX2D_LOAD(t,pos,lod) texelFetch(t,pos,lod)
+#define RTXDI_DEFAULT(value)
 
 #else // RTXDI_GLSL
 
 #define RTXDI_TEX2D Texture2D
 #define RTXDI_TEX2D_LOAD(t,pos,lod) t.Load(int3(pos,lod))
+#define RTXDI_DEFAULT(value) = value
 
 #endif // RTXDI_GLSL
 

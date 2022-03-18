@@ -41,8 +41,8 @@ struct RTXDI_Reservoir
     // Target PDF of the selected sample
     float targetPdf;
 
-    // Number of samples considered for this reservoir
-    uint M;
+    // Number of samples considered for this reservoir (pairwise MIS makes this a float)
+    float M;
 
     // Visibility information stored in the reservoir for reuse
     uint packedVisibility;
@@ -55,6 +55,8 @@ struct RTXDI_Reservoir
     // How many frames ago the visibility information was generated
     uint age;
 
+    // Cannonical weight when using pairwise MIS (ignored except during pairwise MIS computations)
+    float canonicalWeight;
 };
 
 // Encoding helper constants for RTXDI_PackedReservoir.mVisibility
@@ -87,7 +89,7 @@ RTXDI_PackedReservoir RTXDI_PackReservoir(const RTXDI_Reservoir reservoir)
     data.uvData = reservoir.uvData;
 
     data.mVisibility = reservoir.packedVisibility
-        | (min(reservoir.M, RTXDI_PackedReservoir_MaxM) << RTXDI_PackedReservoir_MShift);
+        | (min(uint(reservoir.M), RTXDI_PackedReservoir_MaxM) << RTXDI_PackedReservoir_MShift);
 
     data.distanceAge = 
           ((clampedSpatialDistance.x & RTXDI_PackedReservoir_DistanceMask) << RTXDI_PackedReservoir_DistanceXShift) 
@@ -123,6 +125,7 @@ RTXDI_Reservoir RTXDI_EmptyReservoir()
     s.packedVisibility = 0;
     s.spatialDistance = int2(0, 0);
     s.age = 0;
+    s.canonicalWeight = 0;
     return s;
 }
 
@@ -139,6 +142,7 @@ RTXDI_Reservoir RTXDI_UnpackReservoir(RTXDI_PackedReservoir data)
     res.spatialDistance.x = int(data.distanceAge << (32 - RTXDI_PackedReservoir_DistanceXShift - RTXDI_PackedReservoir_DistanceChannelBits)) >> (32 - RTXDI_PackedReservoir_DistanceChannelBits);
     res.spatialDistance.y = int(data.distanceAge << (32 - RTXDI_PackedReservoir_DistanceYShift - RTXDI_PackedReservoir_DistanceChannelBits)) >> (32 - RTXDI_PackedReservoir_DistanceChannelBits);
     res.age = (data.distanceAge >> RTXDI_PackedReservoir_AgeShift) & RTXDI_PackedReservoir_MaxAge;
+    res.canonicalWeight = 0.0f;
 
     // Discard reservoirs that have Inf/NaN
     if (isinf(res.weightSum) || isnan(res.weightSum)) {

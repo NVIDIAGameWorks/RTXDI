@@ -7,6 +7,5 @@ if (EXISTS "${CMAKE_CURRENT_LIST_DIR}/NRD/CMakeLists.txt")
 	add_subdirectory(NRD)
 	
 	set_target_properties(NRD PROPERTIES FOLDER NRD)
-	set_target_properties(NrdShaders PROPERTIES FOLDER NRD)
-	set_target_properties(CreateFolderForShaders PROPERTIES FOLDER NRD)
+	set_target_properties(NRDShaders PROPERTIES FOLDER NRD)
 endif()

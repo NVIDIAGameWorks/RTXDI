@@ -1127,13 +1127,13 @@ public:
 #if WITH_NRD
         if (m_RtxdiContext->GetParameters().CheckerboardSamplingMode != rtxdi::CheckerboardMode::Off)
         {
-            m_ui.reblurSettings.diffuseSettings.checkerboardMode = nrd::CheckerboardMode::BLACK;
-            m_ui.reblurSettings.specularSettings.checkerboardMode = nrd::CheckerboardMode::BLACK;
+            m_ui.reblurSettings.checkerboardMode = nrd::CheckerboardMode::BLACK;
+            m_ui.relaxSettings.checkerboardMode = nrd::CheckerboardMode::BLACK;
         }
         else
         {
-            m_ui.reblurSettings.diffuseSettings.checkerboardMode = nrd::CheckerboardMode::OFF;
-            m_ui.reblurSettings.specularSettings.checkerboardMode = nrd::CheckerboardMode::OFF;
+            m_ui.reblurSettings.checkerboardMode = nrd::CheckerboardMode::OFF;
+            m_ui.relaxSettings.checkerboardMode = nrd::CheckerboardMode::OFF;
         }
 #endif
         
@@ -1142,8 +1142,8 @@ public:
         lightingSettings.enableAlphaTestedGeometry = m_ui.gbufferSettings.enableAlphaTestedGeometry;
         lightingSettings.enableTransparentGeometry = m_ui.gbufferSettings.enableTransparentGeometry;
 #if WITH_NRD
-        lightingSettings.reblurDiffHitDistanceParams = &m_ui.reblurSettings.diffuseSettings.hitDistanceParameters;
-        lightingSettings.reblurSpecHitDistanceParams = &m_ui.reblurSettings.specularSettings.hitDistanceParameters;
+        lightingSettings.reblurDiffHitDistanceParams = &m_ui.reblurSettings.hitDistanceParameters;
+        lightingSettings.reblurSpecHitDistanceParams = &m_ui.reblurSettings.hitDistanceParameters;
         lightingSettings.denoiserMode = denoiserMode;
 #else
         lightingSettings.denoiserMode = DENOISER_MODE_OFF;
@@ -1239,7 +1239,7 @@ public:
                 ? (void*)&m_ui.relaxSettings
                 : (void*)&m_ui.reblurSettings;
 
-            m_NRD->RunDenoiserPasses(m_CommandList, *m_RenderTargets, m_View, m_ViewPrevious, GetFrameIndex(), lightingSettings.enableGradients, methodSettings);
+            m_NRD->RunDenoiserPasses(m_CommandList, *m_RenderTargets, m_View, m_ViewPrevious, GetFrameIndex(), lightingSettings.enableGradients, methodSettings, m_ui.debug);
             
             m_CommandList->endMarker();
         }

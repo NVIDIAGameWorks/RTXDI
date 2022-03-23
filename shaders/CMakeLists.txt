@@ -7,11 +7,11 @@ set(folder "RTXDI SDK")
 set(shaders_target rtxdi-sample-shaders)
 
 add_custom_target(${shaders_target}
-	DEPENDS shaderCompiler
-	SOURCES ${shaders} Shaders.cfg)
+    DEPENDS shaderCompiler
+    SOURCES ${shaders} Shaders.cfg)
 
 if(TARGET NRD)
-   set(NRD_OPTIONS -I "${CMAKE_CURRENT_SOURCE_DIR}/../NRD/Include" -D WITH_NRD)
+   set(NRD_OPTIONS -I "${CMAKE_CURRENT_SOURCE_DIR}/../NRD/Shaders/Include" -D WITH_NRD -D NRD_USE_OCT_NORMAL_ENCODING=0 -D NRD_USE_MATERIAL_ID=0)
 else()
    set(NRD_OPTIONS --ignore NRD.hlsli)
 endif()

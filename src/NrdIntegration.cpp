@@ -324,7 +324,8 @@ void NrdIntegration::RunDenoiserPasses(
     const donut::engine::PlanarView& viewPrev, 
     uint32_t frameIndex,
     bool enableConfidenceInputs,
-    const void* methodSettings)
+    const void* methodSettings,
+    float debug)
 {
     if (methodSettings)
     {
@@ -357,6 +358,7 @@ void NrdIntegration::RunDenoiserPasses(
     commonSettings.frameIndex = frameIndex;
     commonSettings.isMotionVectorInWorldSpace = false;
     commonSettings.isHistoryConfidenceInputsAvailable = enableConfidenceInputs;
+    commonSettings.debug = debug;
 
     const nrd::DispatchDesc* dispatchDescs = nullptr;
     uint32_t dispatchDescNum = 0;

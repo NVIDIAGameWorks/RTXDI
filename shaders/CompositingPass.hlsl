@@ -15,7 +15,7 @@
 #include "GBufferHelpers.hlsli"
 
 #ifdef WITH_NRD
-#define COMPILER_DXC
+#define NRD_HEADER_ONLY
 #include <NRD.hlsli>
 #endif
 

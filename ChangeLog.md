@@ -1,5 +1,23 @@
 # RTXDI SDK Change Log
 
+## 1.3.0
+
+**Release highlights:**
+
+- Added Pairwise Multiple Importance Sampling (MIS) normalization for ReSTIR that improves resampling quality on glossy surfaces.
+- Added MIS with BRDF rays. Light samples discovered from BRDF rays are mixed into ReSTIR, greatly improving image quality on low-roughness surfaces.
+- Updated [NRD](https://github.com/NVIDIAGameWorks/RayTracingDenoiser) to version 3.0.
+
+**Breaking changes:**
+
+- Some bridge functions have changed signatures.
+- Added required bridge functions for BRDF sampling.
+
+**Misc improvements:**
+
+- Removed the old "ReSTIR Direct + BRDF MIS" rendering mode, replaced by the new MIS mode.
+
+
 ## 1.2.1
 
 **Breaking changes:**

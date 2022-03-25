@@ -57,6 +57,8 @@ SamplerState s_MaterialSampler : register(s0);
 
 #include "TriangleLight.hlsli"
 
+static const float kMinRoughness = 0.05f;
+
 // A surface with enough information to evaluate BRDFs
 struct RAB_Surface
 {
@@ -283,7 +285,7 @@ bool RAB_GetSurfaceBrdfSample(RAB_Surface surface, inout RAB_RandomSamplerState 
     }
     else
     {
-        float3 h = ImportanceSampleGGX(rand.yz, surface.roughness);
+        float3 h = ImportanceSampleGGX(rand.yz, max(surface.roughness, kMinRoughness));
         dir = reflect(-surface.viewDir, tangentToWorld(surface, h));
     }
 
@@ -295,7 +297,7 @@ float RAB_GetSurfaceBrdfPdf(RAB_Surface surface, float3 dir)
 {
     float cosTheta = saturate(dot(surface.normal, dir));
     float diffusePdf = cosTheta / M_PI;
-    float specularPdf = ImportanceSampleGGX_VNDF_PDF(surface.roughness, surface.normal, surface.viewDir, dir);
+    float specularPdf = ImportanceSampleGGX_VNDF_PDF(max(surface.roughness, kMinRoughness), surface.normal, surface.viewDir, dir);
     float pdf = cosTheta > 0.f ? lerp(specularPdf, diffusePdf, surface.diffuseProbability) : 0.f;
     return pdf;
 }
@@ -318,7 +320,7 @@ float3 ShadeSurfaceWithLightSample(RAB_LightSample lightSample, RAB_Surface surf
     
     // Evaluate the BRDF
     float diffuse = Lambert(surface.normal, -L);
-    float3 specular = GGX_times_NdotL(V, L, surface.normal, surface.roughness, surface.specularF0);
+    float3 specular = GGX_times_NdotL(V, L, surface.normal, max(surface.roughness, kMinRoughness), surface.specularF0);
 
     float3 reflectedRadiance = lightSample.radiance * (diffuse * surface.diffuseAlbedo + specular);
 

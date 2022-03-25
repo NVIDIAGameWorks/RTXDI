@@ -95,6 +95,7 @@ SamplerState s_EnvironmentSampler : register(s1);
 #include "../PolymorphicLight.hlsli"
 
 static const bool kSpecularOnly = false;
+static const float kMinRoughness = 0.05f;
 
 struct RAB_Surface
 {
@@ -553,7 +554,7 @@ bool RAB_GetSurfaceBrdfSample(RAB_Surface surface, inout RAB_RandomSamplerState 
     }
     else
     {
-        float3 h = ImportanceSampleGGX(rand.yz, surface.roughness);
+        float3 h = ImportanceSampleGGX(rand.yz, max(surface.roughness, kMinRoughness));
         dir = reflect(-surface.viewDir, tangentToWorld(surface, h));
     }
 
@@ -564,7 +565,7 @@ float RAB_GetSurfaceBrdfPdf(RAB_Surface surface, float3 dir)
 {
     float cosTheta = saturate(dot(surface.normal, dir));
     float diffusePdf = kSpecularOnly ? 0.f : (cosTheta / M_PI);
-    float specularPdf = ImportanceSampleGGX_VNDF_PDF(surface.roughness, surface.normal, surface.viewDir, dir);
+    float specularPdf = ImportanceSampleGGX_VNDF_PDF(max(surface.roughness, kMinRoughness), surface.normal, surface.viewDir, dir);
     float pdf = cosTheta > 0.f ? lerp(specularPdf, diffusePdf, surface.diffuseProbability) : 0.f;
     return pdf;
 }
@@ -588,7 +589,7 @@ float RAB_GetLightSampleTargetPdfForSurface(RAB_LightSample lightSample, RAB_Sur
     float3 V = surface.viewDir;
 
     float d = Lambert(surface.normal, -L);
-    float3 s = GGX_times_NdotL(V, L, surface.normal, surface.roughness, surface.specularF0);
+    float3 s = GGX_times_NdotL(V, L, surface.normal, max(surface.roughness, kMinRoughness), surface.specularF0);
 
     float3 reflectedRadiance = lightSample.radiance * (d * surface.diffuseAlbedo + s);
     

@@ -67,7 +67,7 @@ bool ShadeSurfaceWithLightSample(
         float3 V = surface.viewDir;
         
         float d = Lambert(surface.normal, -L);
-        float3 s = GGX_times_NdotL(V, L, surface.normal, surface.roughness, surface.specularF0);
+        float3 s = GGX_times_NdotL(V, L, surface.normal, max(surface.roughness, kMinRoughness), surface.specularF0);
     
         diffuse = d * lightSample.radiance;
         specular = s * lightSample.radiance;

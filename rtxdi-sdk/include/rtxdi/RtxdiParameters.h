@@ -46,6 +46,12 @@
 #define RTXDI_REGIR_MODE RTXDI_REGIR_DISABLED
 #endif 
 
+#define RTXDI_INVALID_LIGHT_INDEX (0xffffffffu)
+
+#ifndef __cplusplus
+static const uint RTXDI_InvalidLightIndex = RTXDI_INVALID_LIGHT_INDEX;
+#endif
+
 struct RTXDI_OnionLayerGroup
 {
     float innerRadius;

@@ -80,6 +80,7 @@ LightingPasses::LightingPasses(
         nvrhi::BindingLayoutItem::TypedBuffer_SRV(22),
         nvrhi::BindingLayoutItem::Texture_SRV(23),
         nvrhi::BindingLayoutItem::Texture_SRV(24),
+        nvrhi::BindingLayoutItem::StructuredBuffer_SRV(25),
 
         nvrhi::BindingLayoutItem::StructuredBuffer_UAV(0),
         nvrhi::BindingLayoutItem::Texture_UAV(1),
@@ -155,6 +156,7 @@ void LightingPasses::CreateBindingSet(
             nvrhi::BindingSetItem::TypedBuffer_SRV(22, resources.LightIndexMappingBuffer),
             nvrhi::BindingSetItem::Texture_SRV(23, resources.EnvironmentPdfTexture),
             nvrhi::BindingSetItem::Texture_SRV(24, resources.LocalLightPdfTexture),
+            nvrhi::BindingSetItem::StructuredBuffer_SRV(25, resources.GeometryInstanceToLightBuffer),
 
             nvrhi::BindingSetItem::StructuredBuffer_UAV(0, resources.LightReservoirBuffer),
             nvrhi::BindingSetItem::Texture_UAV(1, renderTargets.DiffuseLighting),
@@ -327,7 +329,9 @@ void LightingPasses::FillResamplingConstants(
 
     constants.numPrimaryRegirSamples = lightingSettings.enableReGIR ? lightingSettings.numPrimaryRegirSamples : 0;
     constants.numPrimaryLocalLightSamples = lightingSettings.numPrimaryLocalLightSamples;
+    constants.numPrimaryBrdfSamples = lightingSettings.numPrimaryBrdfSamples;
     constants.numPrimaryInfiniteLightSamples = lightingSettings.numPrimaryInfiniteLightSamples;
+    constants.brdfCutoff = lightingSettings.brdfCutoff;
     constants.numIndirectRegirSamples = lightingSettings.enableReGIR ? lightingSettings.numIndirectRegirSamples : 0;
     constants.numIndirectLocalLightSamples = lightingSettings.numIndirectLocalLightSamples;
     constants.numIndirectInfiniteLightSamples = lightingSettings.numIndirectInfiniteLightSamples;

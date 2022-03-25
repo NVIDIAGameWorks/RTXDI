@@ -35,13 +35,18 @@ void RayGen()
 
     RAB_Surface surface = RAB_GetGBufferSurface(pixelPosition, false);
 
-    RAB_LightSample lightSample;
-    RTXDI_Reservoir reservoir = RTXDI_SampleLightsForSurface(rng, tileRng, surface, 
-        g_Const.numPrimaryRegirSamples, 
-        g_Const.numPrimaryLocalLightSamples, 
-        g_Const.numPrimaryInfiniteLightSamples, 
+    RTXDI_SampleParameters sampleParams = RTXDI_InitSampleParameters(
+        g_Const.numPrimaryRegirSamples,
+        g_Const.numPrimaryLocalLightSamples,
+        g_Const.numPrimaryInfiniteLightSamples,
         g_Const.numPrimaryEnvironmentSamples,
-        params, lightSample);
+        g_Const.numPrimaryBrdfSamples,
+        g_Const.brdfCutoff,
+        0.001f);
+
+    RAB_LightSample lightSample;
+    RTXDI_Reservoir reservoir = RTXDI_SampleLightsForSurface(rng, tileRng, surface,
+        sampleParams, params, lightSample);
 
     if (g_Const.enableInitialVisibility && RTXDI_IsValidReservoir(reservoir))
     {

@@ -63,6 +63,8 @@ public:
 
         uint32_t numInitialSamples = 8;
         uint32_t numSpatialSamples = 1;
+        uint32_t numInitialBRDFSamples = 1;
+        float brdfCutoff = 0.f;
     };
 
     RenderPass(

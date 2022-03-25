@@ -39,12 +39,35 @@ void main(uint2 pixelPosition : SV_DispatchThreadID)
         // Initialize the RNG
         RAB_RandomSamplerState rng = RAB_InitRandomSampler(pixelPosition, 1);
         
+        RTXDI_SampleParameters sampleParams = RTXDI_InitSampleParameters(
+            0, // reGIR samples
+            g_Const.numInitialSamples, // local light samples 
+            0, // infinite light samples
+            0, // environment map samples
+            g_Const.numInitialBRDFSamples,
+            g_Const.brdfCutoff,
+            0.001f);
+
         // Generate the initial sample
         RAB_LightSample lightSample = RAB_EmptyLightSample();
-        reservoir = RTXDI_SampleLocalLights(rng, rng, primary.surface, 
-            g_Const.numInitialSamples, params, lightSample);
+        RTXDI_Reservoir localReservoir = RTXDI_SampleLocalLights(rng, rng, primary.surface, 
+            sampleParams, params, lightSample);
+        RTXDI_CombineReservoirs(reservoir, localReservoir, 0.5, localReservoir.targetPdf);
 
-        if (RTXDI_IsValidReservoir(reservoir))
+        // Resample BRDF samples.
+        RAB_LightSample brdfSample = RAB_EmptyLightSample();
+        RTXDI_Reservoir brdfReservoir = RTXDI_SampleBrdf(rng, primary.surface, sampleParams, params, brdfSample);
+        bool selectBrdf = RTXDI_CombineReservoirs(reservoir, brdfReservoir, RAB_GetNextRandom(rng), brdfReservoir.targetPdf);
+        if (selectBrdf)
+        {
+            lightSample = brdfSample;
+        }
+
+        RTXDI_FinalizeResampling(reservoir, 1.0, 1.0);
+        reservoir.M = 1;
+         
+        // BRDF was generated with a trace so no need to trace visibility again
+        if (RTXDI_IsValidReservoir(reservoir) && !selectBrdf)
         {
             // See if the initial sample is visible from the surface
             if (!RAB_GetConservativeVisibility(primary.surface, lightSample))

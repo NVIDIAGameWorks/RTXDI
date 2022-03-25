@@ -58,6 +58,12 @@ RAB_LightSample RAB_EmptyLightSample()
     return RAB_LightSample(0);
 }
 
+void RAB_GetLightDirDistance(RAB_Surface surface, RAB_LightSample lightSample,
+    out float3 o_lightDir,
+    out float o_lightDistance)
+{
+}
+
 bool RAB_GetConservativeVisibility(RAB_Surface surface, RAB_LightSample lightSample)
 {
     return true;
@@ -98,6 +104,16 @@ float RAB_GetNextRandom(inout RAB_RandomSamplerState rng)
     return 0.0;
 }
 
+bool RAB_GetSurfaceBrdfSample(RAB_Surface surface, inout RAB_RandomSamplerState rng, out float3 dir)
+{
+    return true;
+}
+
+float RAB_GetSurfaceBrdfPdf(RAB_Surface surface, float3 dir)
+{
+    return 0.0;
+}
+
 float RAB_GetLightSampleTargetPdfForSurface(RAB_LightSample lightSample, RAB_Surface surface)
 {
     return 1.0;
@@ -131,6 +147,37 @@ bool RAB_StoreCompactLightInfo(uint linearIndex, RAB_LightInfo lightInfo)
 int RAB_TranslateLightIndex(uint lightIndex, bool currentToPrevious)
 {
     return -1;
+}
+
+float RAB_EvaluateLocalLightSourcePdf(RTXDI_ResamplingRuntimeParameters params, uint lightIndex)
+{
+    return 0.0;
+}
+
+bool RAB_IsAnalyticLightSample(RAB_LightSample lightSample)
+{
+    return false;
+}
+
+float RAB_LightSampleSolidAnglePdf(RAB_LightSample lightSample)
+{
+    return 0.0;
+}
+
+float RAB_EvaluateEnvironmentMapSamplingPdf(float3 L)
+{
+    return 0.0;
+}
+
+float2 RAB_GetEnvironmentMapRandXYFromDir(float3 worldDir)
+{
+    return float2(0.0);
+}
+
+bool RAB_TraceRayForLocalLight(float3 origin, float3 direction, float tMin, float tMax,
+    out uint o_lightIndex, out float2 o_randXY)
+{
+    return false;
 }
 
 bool RAB_AreMaterialsSimilar(RAB_Surface a, RAB_Surface b)

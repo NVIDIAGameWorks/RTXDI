@@ -80,6 +80,7 @@ void PrepareLightsPass::CreateBindingSet(RtxdiResources& resources)
 
     m_BindingSet = m_Device->createBindingSet(bindingSetDesc, m_BindingLayout);
     m_TaskBuffer = resources.TaskBuffer;
+    m_GeometryInstanceToLightBuffer = resources.GeometryInstanceToLightBuffer;
 }
 
 void PrepareLightsPass::CountLightsInScene(uint32_t& numEmissiveMeshes, uint32_t& numEmissiveTriangles)
@@ -109,17 +110,24 @@ void PrepareLightsPass::Process(
 
     std::vector<PrepareLightsTask> tasks;
     uint32_t lightBufferOffset = 0;
+    std::vector<uint32_t> geometryInstanceToLight(m_Scene->GetSceneGraph()->GetGeometryInstancesCount(), RTXDI_INVALID_LIGHT_INDEX);
 
     const auto& instances = m_Scene->GetSceneGraph()->GetMeshInstances();
     for (const auto& instance : instances)
     {
         const auto& mesh = instance->GetMesh();
+        
+        assert(instance->GetGeometryInstanceIndex() < geometryInstanceToLight.size());
+        uint32_t firstGeometryInstanceIndex = instance->GetGeometryInstanceIndex();
+        
         for (size_t geometryIndex = 0; geometryIndex < mesh->geometries.size(); ++geometryIndex)
         {
             const auto& geometry = mesh->geometries[geometryIndex];
 
             if (!any(geometry->material->emissiveColor != 0.f) || geometry->material->emissiveIntensity <= 0.f)
                 continue;
+
+            geometryInstanceToLight[firstGeometryInstanceIndex + geometryIndex] = lightBufferOffset;
 
             assert(geometryIndex < 0xfff);
 
@@ -134,16 +142,17 @@ void PrepareLightsPass::Process(
             tasks.push_back(task);
         }
     }
+    
+    commandList->writeBuffer(m_GeometryInstanceToLightBuffer, geometryInstanceToLight.data(), geometryInstanceToLight.size() * sizeof(uint32_t));
 
     outFrameParameters.firstLocalLight = 0;
     outFrameParameters.numLocalLights = lightBufferOffset;
     outFrameParameters.firstInfiniteLight = 0;
     outFrameParameters.numInfiniteLights = 0;
-    outFrameParameters.environmentLightIndex = 0;
+    outFrameParameters.environmentLightIndex = RTXDI_INVALID_LIGHT_INDEX;
     outFrameParameters.environmentLightPresent = false;
     
     commandList->writeBuffer(m_TaskBuffer, tasks.data(), tasks.size() * sizeof(PrepareLightsTask));
-    
     
     nvrhi::ComputeState state;
     state.pipeline = m_ComputePipeline;

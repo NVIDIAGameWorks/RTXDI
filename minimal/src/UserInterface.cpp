@@ -79,6 +79,8 @@ void UserInterface::buildUI()
 
         ImGui::SliderInt("Initial Samples", (int*)&m_ui.lightingSettings.numInitialSamples, 1, 32);
         ImGui::SliderInt("Spatial Samples", (int*)&m_ui.lightingSettings.numSpatialSamples, 0, 4);
+        ImGui::SliderInt("Initial BRDF Samples", (int*)&m_ui.lightingSettings.numInitialBRDFSamples, 0, 8);
+        ImGui::SliderFloat("BRDF Cutoff", (float*)&m_ui.lightingSettings.brdfCutoff, 0.0f, 1.0f);
 
         ImGui::Separator();
 

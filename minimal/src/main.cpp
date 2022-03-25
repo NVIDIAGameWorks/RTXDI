@@ -287,9 +287,10 @@ public:
         {
             uint32_t numEmissiveMeshes, numEmissiveTriangles;
             m_PrepareLightsPass->CountLightsInScene(numEmissiveMeshes, numEmissiveTriangles);
+            uint32_t numGeometryInstances = uint32_t(m_Scene->GetSceneGraph()->GetGeometryInstancesCount());
 
             m_RtxdiResources = std::make_unique<RtxdiResources>(GetDevice(), *m_RtxdiContext,
-                numEmissiveMeshes, numEmissiveTriangles);
+                numEmissiveMeshes, numEmissiveTriangles, numGeometryInstances);
 
             m_PrepareLightsPass->CreateBindingSet(*m_RtxdiResources);
             

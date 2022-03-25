@@ -189,17 +189,23 @@ void RayGen()
     secondarySurface.diffuseAlbedo = ms.diffuseAlbedo;
     secondarySurface.specularF0 = ms.specularF0;
     secondarySurface.roughness = ms.roughness;
-    secondarySurface.viewPoint = ray.Origin;
+    secondarySurface.diffuseProbability = getSurfaceDiffuseProbability(secondarySurface);
+    secondarySurface.viewDir = normalize(ray.Origin - secondarySurface.worldPos);
 
     const RTXDI_ResamplingRuntimeParameters params = g_Const.runtimeParams;
 
-    RAB_LightSample lightSample = (RAB_LightSample)0;
-    RTXDI_Reservoir reservoir = RTXDI_SampleLightsForSurface(rng, rng, secondarySurface,
-        g_Const.numIndirectRegirSamples, 
-        g_Const.numIndirectLocalLightSamples, 
-        g_Const.numIndirectInfiniteLightSamples, 
+    RTXDI_SampleParameters sampleParams = RTXDI_InitSampleParameters(
+        g_Const.numIndirectRegirSamples,
+        g_Const.numIndirectLocalLightSamples,
+        g_Const.numIndirectInfiniteLightSamples,
         g_Const.numIndirectEnvironmentSamples,
-        params, lightSample);
+        0,      // numBrdfSamples
+        0.f,    // brdfCutoff 
+        0.f);   // brdfMinRayT
+
+    RAB_LightSample lightSample = RAB_EmptyLightSample();
+    RTXDI_Reservoir reservoir = RTXDI_SampleLightsForSurface(rng, rng, secondarySurface,
+        sampleParams, params, lightSample);
 
     float lightSampleScale = (lightSample.solidAnglePdf > 0) ? RTXDI_GetReservoirInvPdf(reservoir) / lightSample.solidAnglePdf : 0;
 

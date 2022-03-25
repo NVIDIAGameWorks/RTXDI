@@ -73,6 +73,8 @@ PrimarySurfaceOutput TracePrimaryRay(int2 pixelPosition)
         result.surface.diffuseAlbedo = ms.diffuseAlbedo;
         result.surface.specularF0 = ms.specularF0;
         result.surface.roughness = ms.roughness;
+        result.surface.viewDir = -ray.Direction;
+        result.surface.diffuseProbability = getSurfaceDiffuseProbability(result.surface);
         result.emissiveColor = ms.emissiveColor;
     }
 

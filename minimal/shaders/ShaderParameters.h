@@ -47,8 +47,13 @@ struct ResamplingConstants
     uint frameIndex;
     uint numInitialSamples;
     uint numSpatialSamples;
-	uint enableResampling;
+    uint pad0;
 
+    uint numInitialBRDFSamples;
+    float brdfCutoff;
+    uint2 pad1;
+
+    uint enableResampling;
     uint unbiasedMode;
     uint inputBufferIndex;
     uint outputBufferIndex;

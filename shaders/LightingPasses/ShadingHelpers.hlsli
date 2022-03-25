@@ -64,7 +64,7 @@ bool ShadeSurfaceWithLightSample(
         lightDistance = length(L);
         L /= lightDistance;
 
-        float3 V = normalize(surface.viewPoint - surface.worldPos);
+        float3 V = surface.viewDir;
         
         float d = Lambert(surface.normal, -L);
         float3 s = GGX_times_NdotL(V, L, surface.normal, surface.roughness, surface.specularF0);
@@ -75,7 +75,7 @@ bool ShadeSurfaceWithLightSample(
         {
             float solidAnglePdf = lightSample.solidAnglePdf;
             if (lightSample.lightType == PolymorphicLightType::kEnvironment)
-                solidAnglePdf *= EvaluateEnvironmentMapSamplingPdf(L);
+                solidAnglePdf *= RAB_EvaluateEnvironmentMapSamplingPdf(L);
 
             s *= EvaluateSpecularSampledLightingWeight(surface, L, solidAnglePdf);
         }

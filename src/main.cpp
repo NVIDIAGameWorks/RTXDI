@@ -610,7 +610,8 @@ public:
         uint32_t numEmissiveMeshes, numEmissiveTriangles;
         m_PrepareLightsPass->CountLightsInScene(numEmissiveMeshes, numEmissiveTriangles);
         uint32_t numPrimitiveLights = uint32_t(m_Scene->GetSceneGraph()->GetLights().size());
-
+        uint32_t numGeometryInstances = uint32_t(m_Scene->GetSceneGraph()->GetGeometryInstancesCount());
+        
         uint2 environmentMapSize = uint2(environmentMap->getDesc().width, environmentMap->getDesc().height);
 
         if (m_RtxdiResources && (
@@ -618,7 +619,8 @@ public:
             environmentMapSize.y != m_RtxdiResources->EnvironmentPdfTexture->getDesc().height ||
             numEmissiveMeshes > m_RtxdiResources->GetMaxEmissiveMeshes() ||
             numEmissiveTriangles > m_RtxdiResources->GetMaxEmissiveTriangles() || 
-            numPrimitiveLights > m_RtxdiResources->GetMaxPrimitiveLights()))
+            numPrimitiveLights > m_RtxdiResources->GetMaxPrimitiveLights() ||
+            numGeometryInstances > m_RtxdiResources->GetMaxGeometryInstances()))
         {
             m_RtxdiResources = nullptr;
         }
@@ -690,6 +692,7 @@ public:
                 (numEmissiveMeshes + meshAllocationQuantum - 1) & ~(meshAllocationQuantum - 1),
                 (numEmissiveTriangles + triangleAllocationQuantum - 1) & ~(triangleAllocationQuantum - 1),
                 (numPrimitiveLights + primitiveAllocationQuantum - 1) & ~(primitiveAllocationQuantum - 1),
+                numGeometryInstances,
                 environmentMapSize.x,
                 environmentMapSize.y);
 

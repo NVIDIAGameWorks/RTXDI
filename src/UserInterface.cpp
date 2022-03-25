@@ -72,6 +72,7 @@ void UIData::ApplyPreset()
         enableCheckerboardSampling = true;
         lightingSettings.numPrimaryRegirSamples = 0;
         lightingSettings.numPrimaryLocalLightSamples = 4;
+        lightingSettings.numPrimaryBrdfSamples = 0;
         lightingSettings.numPrimaryInfiniteLightSamples = 1;
         lightingSettings.enableReGIR = false;
         lightingSettings.temporalBiasCorrection = RTXDI_BIAS_CORRECTION_OFF;
@@ -89,6 +90,7 @@ void UIData::ApplyPreset()
         enableCheckerboardSampling = false;
         lightingSettings.numPrimaryRegirSamples = 8;
         lightingSettings.numPrimaryLocalLightSamples = 8;
+        lightingSettings.numPrimaryBrdfSamples = 1;
         lightingSettings.numPrimaryInfiniteLightSamples = 2;
         lightingSettings.enableReGIR = true;
         lightingSettings.temporalBiasCorrection = RTXDI_BIAS_CORRECTION_RAY_TRACED;
@@ -109,6 +111,7 @@ void UIData::ApplyPreset()
         enableCheckerboardSampling = false;
         lightingSettings.numPrimaryRegirSamples = 16;
         lightingSettings.numPrimaryLocalLightSamples = 8;
+        lightingSettings.numPrimaryBrdfSamples = 1;
         lightingSettings.numPrimaryInfiniteLightSamples = 2;
         lightingSettings.enableReGIR = true;
         lightingSettings.temporalBiasCorrection = RTXDI_BIAS_CORRECTION_RAY_TRACED;
@@ -129,6 +132,7 @@ void UIData::ApplyPreset()
         enableCheckerboardSampling = false;
         lightingSettings.numPrimaryRegirSamples = 16;
         lightingSettings.numPrimaryLocalLightSamples = 16;
+        lightingSettings.numPrimaryBrdfSamples = 1;
         lightingSettings.numPrimaryInfiniteLightSamples = 16;
         lightingSettings.enableReGIR = true;
         lightingSettings.temporalBiasCorrection = RTXDI_BIAS_CORRECTION_RAY_TRACED;
@@ -149,6 +153,7 @@ void UIData::ApplyPreset()
         enableCheckerboardSampling = false;
         lightingSettings.numPrimaryRegirSamples = 0;
         lightingSettings.numPrimaryLocalLightSamples = 16;
+        lightingSettings.numPrimaryBrdfSamples = 1;
         lightingSettings.numPrimaryInfiniteLightSamples = 16;
         lightingSettings.enableReGIR = false;
         lightingSettings.enableTemporalResampling = false;
@@ -429,6 +434,10 @@ void UserInterface::SamplingSettings()
 
             if (ImGui::TreeNode("Initial Sampling"))
             {
+                samplingSettingsChanged |= ImGui::SliderInt("Initial BRDF Samples", (int*)&m_ui.lightingSettings.numPrimaryBrdfSamples, 0, 8);
+                ShowHelpMarker(
+                    "Number of rays traced from the surface using BRDF importance sampling to find mesh lights or environment map samples. Helps glossy reflections.");
+
                 samplingSettingsChanged |= ImGui::SliderInt("Initial ReGIR Samples", (int*)&m_ui.lightingSettings.numPrimaryRegirSamples, 0, 32);
                 ShowHelpMarker(
                     "Number of samples drawn from the local ReGIR cell, if it's available.");
@@ -447,6 +456,10 @@ void UserInterface::SamplingSettings()
                     "Number of samples drawn from the environment map when it is importance sampled.");
 
                 samplingSettingsChanged |= ImGui::Checkbox("Enable Initial Visibility", (bool*)&m_ui.lightingSettings.enableInitialVisibility);
+
+                samplingSettingsChanged |= ImGui::SliderFloat("BRDF Sample Cutoff", (float*)&m_ui.lightingSettings.brdfCutoff, 0.0f, 0.1f);
+                ShowHelpMarker(
+                    "Determine how much to shorten BRDF rays. 0 to disable shortening");
 
                 ImGui::TreePop();
             }

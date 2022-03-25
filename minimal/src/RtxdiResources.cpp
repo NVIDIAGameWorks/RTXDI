@@ -20,9 +20,11 @@ RtxdiResources::RtxdiResources(
     nvrhi::IDevice* device, 
     const rtxdi::Context& context,
     uint32_t maxEmissiveMeshes,
-    uint32_t maxEmissiveTriangles)
+    uint32_t maxEmissiveTriangles,
+    uint32_t maxGeometryInstances)
     : m_MaxEmissiveMeshes(maxEmissiveMeshes)
     , m_MaxEmissiveTriangles(maxEmissiveTriangles)
+    , m_MaxGeometryInstances(maxGeometryInstances)
 {
     nvrhi::BufferDesc taskBufferDesc;
     taskBufferDesc.byteSize = sizeof(PrepareLightsTask) * maxEmissiveMeshes;
@@ -43,7 +45,16 @@ RtxdiResources::RtxdiResources(
     lightBufferDesc.canHaveUAVs = true;
     LightDataBuffer = device->createBuffer(lightBufferDesc);
 
-    
+
+    nvrhi::BufferDesc geometryInstanceToLightBufferDesc;
+    geometryInstanceToLightBufferDesc.byteSize = sizeof(uint32_t) * maxGeometryInstances;
+    geometryInstanceToLightBufferDesc.structStride = sizeof(uint32_t);
+    geometryInstanceToLightBufferDesc.initialState = nvrhi::ResourceStates::ShaderResource;
+    geometryInstanceToLightBufferDesc.keepInitialState = true;
+    geometryInstanceToLightBufferDesc.debugName = "GeometryInstanceToLightBuffer";
+    GeometryInstanceToLightBuffer = device->createBuffer(geometryInstanceToLightBufferDesc);
+
+
     nvrhi::BufferDesc neighborOffsetBufferDesc;
     neighborOffsetBufferDesc.byteSize = context.GetParameters().NeighborOffsetCount * 2;
     neighborOffsetBufferDesc.format = nvrhi::Format::RG8_SNORM;

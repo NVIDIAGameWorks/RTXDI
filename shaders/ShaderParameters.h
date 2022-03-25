@@ -223,17 +223,22 @@ struct ResamplingConstants
     uint enableTransparentGeometry;
     uint enableDenoiserInputPacking;
     uint visualizeRegirCells;
-    uint numPrimaryRegirSamples;
+    float brdfCutoff;
 
+    uint numPrimaryRegirSamples;
     uint numPrimaryLocalLightSamples;
+    uint numPrimaryBrdfSamples;
     uint numPrimaryInfiniteLightSamples;
+    
     uint numIndirectRegirSamples;
     uint numIndirectLocalLightSamples;
-
     uint numIndirectInfiniteLightSamples;
+    uint pad2;
+
     uint enableInitialVisibility;
     uint enableFinalVisibility;
     uint initialOutputBufferIndex;
+    uint pad3;
 
     uint temporalInputBufferIndex;
     uint temporalOutputBufferIndex;

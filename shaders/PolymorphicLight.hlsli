@@ -610,7 +610,7 @@ struct DirectionalLight
         lightSample.normal = distantNormalSample;
         lightSample.radiance = radiance;
         lightSample.solidAnglePdf = 1.0 / solidAngle;
-
+        
         return lightSample;
     }
 

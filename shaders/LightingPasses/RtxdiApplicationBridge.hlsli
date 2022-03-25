@@ -68,6 +68,7 @@ Buffer<float2> t_NeighborOffsets : register(t21);
 Buffer<uint> t_LightIndexMappingBuffer : register(t22);
 Texture2D t_EnvironmentPdfTexture : register(t23);
 Texture2D t_LocalLightPdfTexture : register(t24);
+StructuredBuffer<uint> t_GeometryInstanceToLight : register(t25);
 
 // Screen-sized UAVs
 RWStructuredBuffer<RTXDI_PackedReservoir> u_LightReservoirs : register(u0);
@@ -97,16 +98,19 @@ SamplerState s_EnvironmentSampler : register(s1);
 
 #include "../PolymorphicLight.hlsli"
 
+static const bool kSpecularOnly = false;
+
 struct RAB_Surface
 {
     float3 worldPos;
+    float3 viewDir;
     float viewDepth;
     float3 normal;
     float3 geoNormal;
     float3 diffuseAlbedo;
     float3 specularF0;
-    float3 viewPoint; // position of the observer
     float roughness;
+    float diffuseProbability;
 };
 
 struct RAB_LightSample
@@ -120,6 +124,14 @@ struct RAB_LightSample
 
 typedef PolymorphicLightInfo RAB_LightInfo;
 typedef RandomSamplerState RAB_RandomSamplerState;
+
+float getSurfaceDiffuseProbability(RAB_Surface surface)
+{
+    float diffuseWeight = calcLuminance(surface.diffuseAlbedo);
+    float specularWeight = calcLuminance(Schlick_Fresnel(surface.specularF0, dot(surface.viewDir, surface.normal)));
+    float sumWeights = diffuseWeight + specularWeight;
+    return sumWeights < 1e-7f ? 1.f : (diffuseWeight / sumWeights);
+}
 
 RAB_Surface RAB_EmptySurface()
 {
@@ -372,7 +384,8 @@ RAB_Surface GetGBufferSurface(
     surface.specularF0 = specularRough.rgb;
     surface.roughness = specularRough.a;
     surface.worldPos = viewDepthToWorldPos(view, pixelPosition, surface.viewDepth);
-    surface.viewPoint = view.cameraDirectionOrPosition.xyz;
+    surface.viewDir = normalize(view.cameraDirectionOrPosition.xyz - surface.worldPos);
+    surface.diffuseProbability = getSurfaceDiffuseProbability(surface);
 
     return surface;
 }
@@ -450,16 +463,22 @@ float RAB_GetNextRandom(inout RAB_RandomSamplerState rng)
     return sampleUniformRng(rng);
 }
 
+float2 RAB_GetEnvironmentMapRandXYFromDir(float3 worldDir)
+{
+    float2 uv = directionToEquirectUV(worldDir); 
+    uv.x -= g_Const.environmentRotation;
+    uv = frac(uv);
+    return uv;
+}
+
 // Computes the probability of a particular direction being sampled from the environment map
 // relative to all the other possible directions, based on the environment map pdf texture.
-float EvaluateEnvironmentMapSamplingPdf(float3 L)
+float RAB_EvaluateEnvironmentMapSamplingPdf(float3 L)
 {
     if (!g_Const.environmentMapImportanceSampling)
         return 1.0;
 
-    float2 uv = directionToEquirectUV(L);
-    uv.x -= g_Const.environmentRotation;
-    uv = frac(uv);
+    float2 uv = RAB_GetEnvironmentMapRandXYFromDir(L);
 
     uint2 pdfTextureSize = g_Const.environmentPdfTextureSize.xy;
     uint2 texelPosition = uint2(pdfTextureSize * uv);
@@ -470,7 +489,31 @@ float EvaluateEnvironmentMapSamplingPdf(float3 L)
         t_EnvironmentPdfTexture.mips[lastMipLevel][uint2(0, 0)].x +
         t_EnvironmentPdfTexture.mips[lastMipLevel][uint2(1, 0)].x);
 
+    // the selection probability is multiplied by numTexels in RTXDI during presampling
+    // so actually numTexels cancels out in this case
+    //
+    // uint numTexels = pdfTextureSize.x * pdfTextureSize.y;
+    // float totalSum = averageValue * numTexels;
+    // return texelValue * numTexels / totalSum;
     return texelValue / averageValue;
+}
+
+// Evaluates pdf for a particular light
+float RAB_EvaluateLocalLightSourcePdf(RTXDI_ResamplingRuntimeParameters params, uint lightIndex)
+{
+    uint2 pdfTextureSize = g_Const.localLightPdfTextureSize.xy;
+    // verify
+    uint2 texelPosition = RTXDI_LinearIndexToZCurve(lightIndex);
+    float texelValue = t_LocalLightPdfTexture[texelPosition].r;
+
+    int lastMipLevel = max(0, int(floor(log2(max(pdfTextureSize.x, pdfTextureSize.y)))) - 1);
+    float averageValue = 0.5 * (
+        t_LocalLightPdfTexture.mips[lastMipLevel][uint2(0, 0)].x +
+        t_LocalLightPdfTexture.mips[lastMipLevel][uint2(1, 0)].x);
+
+    float sum = averageValue * params.numLocalLights;
+
+    return texelValue / sum;
 }
 
 float EvaluateSpecularSampledLightingWeight(RAB_Surface surface, float3 L, float solidAnglePdf)
@@ -481,11 +524,68 @@ float EvaluateSpecularSampledLightingWeight(RAB_Surface surface, float3 L, float
     // Empirical boost factor for the light sampling pdf, to account for ReSTIR.
     solidAnglePdf *= 50;
 
-    float3 V = normalize(surface.viewPoint - surface.worldPos);
+    float3 V = surface.viewDir;
     float ggxVndfPdf = ImportanceSampleGGX_VNDF_PDF(max(surface.roughness, 0.01), surface.normal, V, L);
 
     // Balance heuristic assuming one sample from each strategy: light sampling and BRDF sampling
     return saturate(solidAnglePdf / (solidAnglePdf + ggxVndfPdf));
+}
+
+float3 worldToTangent(RAB_Surface surface, float3 w)
+{
+    // reconstruct tangent frame based off worldspace normal
+    // this is ok for isotropic BRDFs
+    // for anisotropic BRDFs, we need a user defined tangent
+    float3 tangent;
+    float3 bitangent;
+    ConstructONB(surface.normal, tangent, bitangent);
+
+    return float3(dot(bitangent, w), dot(tangent, w), dot(surface.normal, w));
+}
+
+float3 tangentToWorld(RAB_Surface surface, float3 h)
+{
+    // reconstruct tangent frame based off worldspace normal
+    // this is ok for isotropic BRDFs
+    // for anisotropic BRDFs, we need a user defined tangent
+    float3 tangent;
+    float3 bitangent;
+    ConstructONB(surface.normal, tangent, bitangent);
+
+    return bitangent * h.x + tangent * h.y + surface.normal * h.z;
+}
+
+bool RAB_GetSurfaceBrdfSample(RAB_Surface surface, inout RAB_RandomSamplerState rng, out float3 dir)
+{
+    float3 rand;
+    rand.x = RAB_GetNextRandom(rng);
+    rand.y = RAB_GetNextRandom(rng);
+    rand.z = RAB_GetNextRandom(rng);
+    if (rand.x < surface.diffuseProbability)
+    {
+        if (kSpecularOnly)
+            return false;
+
+        float pdf;
+        float3 h = SampleCosHemisphere(rand.yz, pdf);
+        dir = tangentToWorld(surface, h);
+    }
+    else
+    {
+        float3 h = ImportanceSampleGGX(rand.yz, surface.roughness);
+        dir = reflect(-surface.viewDir, tangentToWorld(surface, h));
+    }
+
+    return dot(surface.normal, dir) > 0.f;
+}
+
+float RAB_GetSurfaceBrdfPdf(RAB_Surface surface, float3 dir)
+{
+    float cosTheta = saturate(dot(surface.normal, dir));
+    float diffusePdf = kSpecularOnly ? 0.f : (cosTheta / M_PI);
+    float specularPdf = ImportanceSampleGGX_VNDF_PDF(surface.roughness, surface.normal, surface.viewDir, dir);
+    float pdf = cosTheta > 0.f ? lerp(specularPdf, diffusePdf, surface.diffuseProbability) : 0.f;
+    return pdf;
 }
 
 // Computes the weight of the given light samples when the given surface is
@@ -504,7 +604,7 @@ float RAB_GetLightSampleTargetPdfForSurface(RAB_LightSample lightSample, RAB_Sur
     if (dot(L, surface.geoNormal) <= 0)
         return 0;
     
-    float3 V = normalize(surface.viewPoint - surface.worldPos);
+    float3 V = surface.viewDir;
 
     float d = Lambert(surface.normal, -L);
     float3 s = GGX_times_NdotL(V, L, surface.normal, surface.roughness, surface.specularF0);
@@ -515,7 +615,7 @@ float RAB_GetLightSampleTargetPdfForSurface(RAB_LightSample lightSample, RAB_Sur
     {
         float solidAnglePdf = lightSample.solidAnglePdf;
         if (lightSample.lightType == PolymorphicLightType::kEnvironment)
-            solidAnglePdf *= EvaluateEnvironmentMapSamplingPdf(L);
+            solidAnglePdf *= RAB_EvaluateEnvironmentMapSamplingPdf(L);
 
         // Only apply MIS to triangle and environment lights: other types have no geometric representation
         // and therefore cannot be hit by BRDF rays.
@@ -551,6 +651,34 @@ RAB_LightSample RAB_SamplePolymorphicLight(RAB_LightInfo lightInfo, RAB_Surface 
     lightSample.solidAnglePdf = pls.solidAnglePdf;
     lightSample.lightType = getLightType(lightInfo);
     return lightSample;
+}
+
+void RAB_GetLightDirDistance(RAB_Surface surface, RAB_LightSample lightSample,
+    out float3 o_lightDir,
+    out float o_lightDistance)
+{
+    if (lightSample.lightType == PolymorphicLightType::kEnvironment)
+    {
+        o_lightDir = -lightSample.normal;
+        o_lightDistance = DISTANT_LIGHT_DISTANCE;
+    }
+    else
+    {
+        float3 toLight = lightSample.position - surface.worldPos;
+        o_lightDistance = length(toLight);
+        o_lightDir = toLight / o_lightDistance;
+    }
+}
+
+bool RAB_IsAnalyticLightSample(RAB_LightSample lightSample)
+{
+    return lightSample.lightType != PolymorphicLightType::kTriangle && 
+        lightSample.lightType != PolymorphicLightType::kEnvironment;
+}
+
+float RAB_LightSampleSolidAnglePdf(RAB_LightSample lightSample)
+{
+    return lightSample.solidAnglePdf;
 }
 
 // Loads polymorphic light data from the global light buffer.
@@ -649,6 +777,67 @@ bool IsComplexSurface(int2 pixelPosition, RAB_Surface surface)
     // Other classification methods can be employed for better quality.
     float originalRoughness = t_DenoiserNormalRoughness[pixelPosition].a;
     return originalRoughness < (surface.roughness * g_Const.permutationSamplingThreshold);
+}
+
+uint getLightIndex(uint instanceID, uint geometryIndex, uint primitiveIndex)
+{
+    uint lightIndex = RTXDI_InvalidLightIndex;
+    InstanceData hitInstance = t_InstanceData[instanceID];
+    uint geometryInstanceIndex = hitInstance.firstGeometryInstanceIndex + geometryIndex;
+    lightIndex = t_GeometryInstanceToLight[geometryInstanceIndex];
+
+    return lightIndex + primitiveIndex;
+}
+
+
+// Return true if anything was hit. If false, RTXDI will do environment map sampling
+// o_lightIndex: If hit, must be a valid light index for RAB_LoadLightInfo, if no local light was hit, must be RTXDI_InvalidLightIndex
+// randXY: The randXY that corresponds to the hit location and is the same used for RAB_SamplePolymorphicLight
+bool RAB_TraceRayForLocalLight(float3 origin, float3 direction, float tMin, float tMax,
+    out uint o_lightIndex, out float2 o_randXY)
+{
+    o_lightIndex = RTXDI_InvalidLightIndex;
+    o_randXY = 0;
+
+    RayDesc ray;
+    ray.Origin = origin;
+    ray.Direction = direction;
+    ray.TMin = tMin;
+    ray.TMax = tMax;
+
+    float2 hitUV;
+    bool hitAnything;
+#if USE_RAY_QUERY
+    RayQuery<RAY_FLAG_CULL_NON_OPAQUE | RAY_FLAG_SKIP_PROCEDURAL_PRIMITIVES> rayQuery;
+    rayQuery.TraceRayInline(SceneBVH, RAY_FLAG_NONE, INSTANCE_MASK_OPAQUE, ray);
+    rayQuery.Proceed();
+
+    hitAnything = rayQuery.CommittedStatus() == COMMITTED_TRIANGLE_HIT;
+    if (hitAnything)
+    {
+        o_lightIndex = getLightIndex(rayQuery.CommittedInstanceID(), rayQuery.CommittedGeometryIndex(), rayQuery.CommittedPrimitiveIndex());
+        hitUV = rayQuery.CommittedTriangleBarycentrics();
+    }
+#else
+    RayPayload payload = (RayPayload)0;
+    payload.instanceID = ~0u;
+    payload.throughput = 1.0;
+
+    TraceRay(SceneBVH, RAY_FLAG_CULL_NON_OPAQUE | RAY_FLAG_SKIP_PROCEDURAL_PRIMITIVES, INSTANCE_MASK_OPAQUE, 0, 0, 0, ray, payload);
+    hitAnything = payload.instanceID != ~0u;
+    if (hitAnything)
+    {
+        o_lightIndex = getLightIndex(payload.instanceID, payload.geometryIndex, payload.primitiveIndex);
+        hitUV = payload.barycentrics;
+    }
+#endif
+
+    if (o_lightIndex != RTXDI_InvalidLightIndex)
+    {
+        o_randXY = randomFromBarycentric(hitUVToBarycentric(hitUV));
+    }
+
+    return hitAnything;
 }
 
 #endif // RTXDI_APPLICATION_BRIDGE_HLSLI

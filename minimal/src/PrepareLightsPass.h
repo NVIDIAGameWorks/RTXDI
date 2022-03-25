@@ -37,6 +37,7 @@ private:
     nvrhi::BindingLayoutHandle m_BindlessLayout;
 
     nvrhi::BufferHandle m_TaskBuffer;
+    nvrhi::BufferHandle m_GeometryInstanceToLightBuffer;
     
     std::shared_ptr<donut::engine::ShaderFactory> m_ShaderFactory;
     std::shared_ptr<donut::engine::CommonRenderPasses> m_CommonPasses;

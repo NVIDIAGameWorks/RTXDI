@@ -113,6 +113,8 @@ public:
 
         uint32_t numPrimaryRegirSamples = 8;
         uint32_t numPrimaryLocalLightSamples = 8;
+        uint32_t numPrimaryBrdfSamples = 1;
+        float brdfCutoff = 0;
         uint32_t numPrimaryInfiniteLightSamples = 1;
         uint32_t numPrimaryEnvironmentSamples = 1;
         uint32_t numIndirectRegirSamples = 2;

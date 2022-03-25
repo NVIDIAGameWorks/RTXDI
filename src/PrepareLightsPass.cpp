@@ -89,6 +89,7 @@ void PrepareLightsPass::CreateBindingSet(RtxdiResources& resources)
     m_TaskBuffer = resources.TaskBuffer;
     m_PrimitiveLightBuffer = resources.PrimitiveLightBuffer;
     m_LightIndexMappingBuffer = resources.LightIndexMappingBuffer;
+    m_GeometryInstanceToLightBuffer = resources.GeometryInstanceToLightBuffer;
     m_LocalLightPdfTexture = resources.LocalLightPdfTexture;
     m_MaxLightsInBuffer = uint32_t(resources.LightDataBuffer->getDesc().byteSize / (sizeof(PolymorphicLightInfo) * 2));
 }
@@ -351,11 +352,16 @@ void PrepareLightsPass::Process(
     std::vector<PrepareLightsTask> tasks;
     std::vector<PolymorphicLightInfo> primitiveLightInfos;
     uint32_t lightBufferOffset = 0;
+    std::vector<uint32_t> geometryInstanceToLight(m_Scene->GetSceneGraph()->GetGeometryInstancesCount(), RTXDI_INVALID_LIGHT_INDEX);
 
     const auto& instances = m_Scene->GetSceneGraph()->GetMeshInstances();
     for (const auto& instance : instances)
     {
         const auto& mesh = instance->GetMesh();
+
+        assert(instance->GetGeometryInstanceIndex() < geometryInstanceToLight.size());
+        uint32_t firstGeometryInstanceIndex = instance->GetGeometryInstanceIndex();
+
         for (size_t geometryIndex = 0; geometryIndex < mesh->geometries.size(); ++geometryIndex)
         {
             const auto& geometry = mesh->geometries[geometryIndex];
@@ -370,6 +376,8 @@ void PrepareLightsPass::Process(
                 m_InstanceLightBufferOffsets.erase(instanceHash);
                 continue;
             }
+
+            geometryInstanceToLight[firstGeometryInstanceIndex + geometryIndex] = lightBufferOffset;
 
             // find the previous offset of this instance in the light buffer
             auto pOffset = m_InstanceLightBufferOffsets.find(instanceHash);
@@ -390,6 +398,8 @@ void PrepareLightsPass::Process(
             tasks.push_back(task);
         }
     }
+
+    commandList->writeBuffer(m_GeometryInstanceToLightBuffer, geometryInstanceToLight.data(), geometryInstanceToLight.size() * sizeof(uint32_t));
 
     outFrameParameters.firstLocalLight = 0;
     outFrameParameters.numLocalLights = lightBufferOffset;

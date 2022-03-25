@@ -56,6 +56,7 @@ RenderPass::RenderPass(
 
         nvrhi::BindingLayoutItem::StructuredBuffer_SRV(20),
         nvrhi::BindingLayoutItem::TypedBuffer_SRV(21),
+        nvrhi::BindingLayoutItem::StructuredBuffer_SRV(22),
 
         nvrhi::BindingLayoutItem::StructuredBuffer_UAV(0),
         nvrhi::BindingLayoutItem::Texture_UAV(1),
@@ -102,6 +103,7 @@ void RenderPass::CreateBindingSet(
 
             nvrhi::BindingSetItem::StructuredBuffer_SRV(20, resources.LightDataBuffer),
             nvrhi::BindingSetItem::TypedBuffer_SRV(21, resources.NeighborOffsetsBuffer),
+            nvrhi::BindingSetItem::StructuredBuffer_SRV(22, resources.GeometryInstanceToLightBuffer),
 
             nvrhi::BindingSetItem::StructuredBuffer_UAV(0, resources.LightReservoirBuffer),
             nvrhi::BindingSetItem::Texture_UAV(1, renderTargets.HdrColor),
@@ -154,6 +156,7 @@ void RenderPass::Render(
     constants.enableResampling = localSettings.enableResampling;
     constants.unbiasedMode = localSettings.unbiasedMode;
     constants.numInitialSamples = localSettings.numInitialSamples;
+    constants.numInitialBRDFSamples = localSettings.numInitialBRDFSamples;
     constants.numSpatialSamples = localSettings.numSpatialSamples;
 
     constants.inputBufferIndex = !(frameParameters.frameIndex & 1);

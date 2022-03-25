@@ -118,7 +118,7 @@ namespace rtxdi
         bool environmentLightPresent = false;
 
         // Index of the importance environment light in the light buffer.
-        uint32_t environmentLightIndex = 0;
+        uint32_t environmentLightIndex = RTXDI_INVALID_LIGHT_INDEX;
 
         // Use image-based importance sampling for local lights
         bool enableLocalLightImportanceSampling = false;

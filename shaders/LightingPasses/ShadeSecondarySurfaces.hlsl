@@ -74,19 +74,24 @@ void RayGen()
         float4 specularRough = Unpack_R8G8B8A8_Gamma_UFLOAT(secondarySurface.specularAndRoughness);
         surface.specularF0 = specularRough.rgb;
         surface.roughness = specularRough.a;
-        surface.viewPoint = primarySurface.worldPos;
+        surface.diffuseProbability = getSurfaceDiffuseProbability(surface);
+        surface.viewDir = normalize(primarySurface.worldPos - surface.worldPos);
 
         float4 throughput = Unpack_R16G16B16A16_FLOAT(secondarySurface.throughput);
         bool isSpecularRay = throughput.a != 0;
 
+        RTXDI_SampleParameters sampleParams = RTXDI_InitSampleParameters(
+            g_Const.numIndirectRegirSamples,
+            g_Const.numIndirectLocalLightSamples,
+            g_Const.numIndirectInfiniteLightSamples,
+            g_Const.numIndirectEnvironmentSamples,
+            0,      // numBrdfSamples
+            0.f,    // brdfCutoff 
+            0.f);   // brdfMinRayT
 
         RAB_LightSample lightSample;
         RTXDI_Reservoir reservoir = RTXDI_SampleLightsForSurface(rng, tileRng, surface,
-            g_Const.numIndirectRegirSamples, 
-            g_Const.numIndirectLocalLightSamples, 
-            g_Const.numIndirectInfiniteLightSamples, 
-            g_Const.numIndirectEnvironmentSamples,
-            params, lightSample);
+            sampleParams, params, lightSample);
 
         if (g_Const.numSecondarySamples)
         {

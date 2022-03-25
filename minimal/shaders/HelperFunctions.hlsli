@@ -83,6 +83,18 @@ float3 sampleTriangle(float2 rndSample)
         sqrtx * rndSample.y);
 }
 
+float3 hitUVToBarycentric(float2 hitUV)
+{
+    return float3(1 - hitUV.x - hitUV.y, hitUV.x, hitUV.y);
+}
+
+// Inverse of sampleTriangle
+float2 randomFromBarycentric(float3 barycentric)
+{
+    float sqrtx = 1 - barycentric.x;
+    return float2(sqrtx * sqrtx, barycentric.z / sqrtx);
+}
+
 // For converting an area measure pdf to solid angle measure pdf
 float pdfAtoW(float pdfA, float distance_, float cosTheta)
 {

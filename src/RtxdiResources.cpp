@@ -22,11 +22,13 @@ RtxdiResources::RtxdiResources(
     uint32_t maxEmissiveMeshes,
     uint32_t maxEmissiveTriangles,
     uint32_t maxPrimitiveLights,
+    uint32_t maxGeometryInstances,
     uint32_t environmentMapWidth,
     uint32_t environmentMapHeight)
     : m_MaxEmissiveMeshes(maxEmissiveMeshes)
     , m_MaxEmissiveTriangles(maxEmissiveTriangles)
     , m_MaxPrimitiveLights(maxPrimitiveLights)
+    , m_MaxGeometryInstances(maxGeometryInstances)
 {
     nvrhi::BufferDesc taskBufferDesc;
     taskBufferDesc.byteSize = sizeof(PrepareLightsTask) * (maxEmissiveMeshes + maxPrimitiveLights);
@@ -75,6 +77,15 @@ RtxdiResources::RtxdiResources(
     lightBufferDesc.debugName = "LightDataBuffer";
     lightBufferDesc.canHaveUAVs = true;
     LightDataBuffer = device->createBuffer(lightBufferDesc);
+
+
+    nvrhi::BufferDesc geometryInstanceToLightBufferDesc;
+    geometryInstanceToLightBufferDesc.byteSize = sizeof(uint32_t) * maxGeometryInstances;
+    geometryInstanceToLightBufferDesc.structStride = sizeof(uint32_t);
+    geometryInstanceToLightBufferDesc.initialState = nvrhi::ResourceStates::ShaderResource;
+    geometryInstanceToLightBufferDesc.keepInitialState = true;
+    geometryInstanceToLightBufferDesc.debugName = "GeometryInstanceToLightBuffer";
+    GeometryInstanceToLightBuffer = device->createBuffer(geometryInstanceToLightBufferDesc);
 
 
     nvrhi::BufferDesc lightIndexMappingBufferDesc;

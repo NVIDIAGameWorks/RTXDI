@@ -85,6 +85,19 @@ float3 sampleTriangle(float2 rndSample)
         sqrtx * rndSample.y);
 }
 
+// Maps ray hit UV into triangle barycentric coordinates
+float3 hitUVToBarycentric(float2 hitUV)
+{
+    return float3(1 - hitUV.x - hitUV.y, hitUV.x, hitUV.y);
+}
+
+// Inverse of sampleTriangle
+float2 randomFromBarycentric(float3 barycentric)
+{
+    float sqrtx = 1 - barycentric.x;
+    return float2(sqrtx * sqrtx, barycentric.z / sqrtx);
+}
+
 float2 sampleDisk(float2 rand)
 {
     float angle = 2 * c_pi * rand.x;

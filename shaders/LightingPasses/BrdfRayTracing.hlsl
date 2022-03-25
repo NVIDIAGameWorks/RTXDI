@@ -220,6 +220,7 @@ void RayGen()
         secondarySurface.diffuseAlbedo = ms.diffuseAlbedo;
         secondarySurface.specularF0 = ms.specularF0;
         secondarySurface.roughness = ms.roughness;
+        secondarySurface.diffuseProbability = getSurfaceDiffuseProbability(secondarySurface);
 
         if (g_Const.enableBrdfIndirect)
         {
@@ -254,7 +255,7 @@ void RayGen()
                 solidAnglePdf = 1.0 / (2 * c_pi * c_pi * cosElevation);
             }
 
-            solidAnglePdf *= EvaluateEnvironmentMapSamplingPdf(ray.Direction);
+            solidAnglePdf *= RAB_EvaluateEnvironmentMapSamplingPdf(ray.Direction);
     
             float misWeight = 1.0 - EvaluateSpecularSampledLightingWeight(surface, ray.Direction, solidAnglePdf);
             environmentRadiance *= misWeight;

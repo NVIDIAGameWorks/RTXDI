@@ -162,6 +162,71 @@ Same visibility ray tracing as [`RAB_GetConservativeVisibility`](#rab_getconserv
 
 When the previous frame TLAS and BLAS data is available, the implementation should use that previous data and the `previousSurface` parameter. When the previous acceleration structures are not available, the implementation should use the `currentSurface` parameter, but that will make the results temporarily biased and, in some cases, more noisy. Specifically, the fused spatio-temporal resampling algorithm will produce very noisy results on animated objects.
 
+
+## BRDF Sampling Related Functions
+
+### `RAB_GetEnvironmentMapRandXYFromDir`
+
+`float2 RAB_GetEnvironmentMapRandXYFromDir(float3 worldDir)`
+
+Converts a world-space direction into a pair of numbers that, when passed into `RAB_SamplePolymorphicLight` for the environment light, will make a sample at the same direction.
+
+### `RAB_EvaluateEnvironmentMapSamplingPdf`
+
+`float RAB_EvaluateEnvironmentMapSamplingPdf(float3 L)`
+
+Computes the probability of a particular direction being sampled from the environment map relative to all the other possible directions, based on the environment map PDF texture.
+
+### `RAB_EvaluateLocalLightSourcePdf`
+
+`float RAB_EvaluateLocalLightSourcePdf(RTXDI_ResamplingRuntimeParameters params, uint lightIndex)`
+
+Computes the probability of a particular light being sampled from the local light pool with importance sampling, based on the local light PDF texture.
+
+### `RAB_GetSurfaceBrdfSample`
+
+`bool RAB_GetSurfaceBrdfSample(RAB_Surface surface, inout RAB_RandomSamplerState rng, out float3 dir)`
+
+Performs importance sampling of the surface's BRDF and returns the sampled direction.
+
+### `RAB_GetSurfaceBrdfPdf`
+
+`float RAB_GetSurfaceBrdfPdf(RAB_Surface surface, float3 dir)`
+
+Computes the PDF of a particular direction being sampled by `RAB_GetSurfaceBrdfSample`.
+
+### `RAB_GetLightDirDistance`
+
+```
+void RAB_GetLightDirDistance(RAB_Surface surface, RAB_LightSample lightSample,
+    out float3 o_lightDir,
+    out float o_lightDistance)
+```
+
+Returns the direction and distance from the surface to the light sample.
+
+### `RAB_IsAnalyticLightSample`
+
+`bool RAB_IsAnalyticLightSample(RAB_LightSample lightSample)`
+
+Returns `true` if the light sample comes from an analytic light (e.g. a sphere or rectangle primitive) that cannot be sampled by BRDF rays.
+
+### `RAB_LightSampleSolidAnglePdf`
+
+`float RAB_LightSampleSolidAnglePdf(RAB_LightSample lightSample)`
+
+Returns the solid angle PDF of the light sample.
+
+### `RAB_TraceRayForLocalLight`
+
+```
+bool RAB_TraceRayForLocalLight(float3 origin, float3 direction, float tMin, float tMax,
+    out uint o_lightIndex, out float2 o_randXY)
+```
+
+Traces a ray with the given parameters, looking for a light. If a local light is found, returns `true` and fills the output parameters with the light sample information.
+
+
 ## Misc Functions
 
 ### `RAB_GetNextRandom`

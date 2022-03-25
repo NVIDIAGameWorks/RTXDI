@@ -46,6 +46,10 @@ A compact representation of a single light reservoir that should be stored in a 
 
 This structure represents a single light reservoir that stores the weights, the sample ref, sample count (M), and visibility for reuse. It can be serialized into `RTXDI_PackedReservoir` for storage using the `RTXDI_PackReservoir` function, and deserialized from that representation using the `RTXDI_UnpackReservoir` function.
 
+### `RTXDI_SampleParameters`
+
+A collection of parameters describing the overall sampling algorithm, i.e. how many samples are taken from each pool or strategy like local light sampling or BRDF sampling. Initialize the structure using the `RTXDI_InitSampleParameters` function to correctly fill out the weights.
+
 
 ## Reservoir Functions
 
@@ -165,6 +169,20 @@ The `normalizationNumerator` and `normalizationDenominator` parameters specify t
 
 This function implements Equation (6) from the ReSTIR paper.
 
+### `RTXDI_InternalSimpleResample`
+```
+bool RTXDI_InternalSimpleResample(
+    inout RTXDI_Reservoir reservoir,
+    const RTXDI_Reservoir newReservoir,
+    float random,
+    float targetPdf = 1.0,
+    float sampleNormalization = 1.0,
+    float sampleM = 1.0)
+```
+
+Adds `newReservoir` into `reservoir`, returns true if the new reservoir's sample was selected.
+This is a very general form, allowing input parameters to specfiy normalization and targetPdf
+rather than computing them from `newReservoir`.
 
 ## Low-Level Sampling Functions
 
@@ -212,10 +230,10 @@ Selects one environment map texel using the provided PDF texture and stores its 
         inout RAB_RandomSamplerState rng, 
         inout RAB_RandomSamplerState coherentRng,
         uint lightSlot,
-        uint numSamples,
+        RTXDI_SampleParameters sampleParams,
         RTXDI_ResamplingRuntimeParameters params)
 
-Selects one local light using RIS with `numSamples` proposals weighted relative to a specific ReGIR world space cell. The cell position and size are derived from its index; the cell index is derived from the `lightSlot` parameter: each cell contains a number of light slots packed together and stored in the RIS buffer. Additionally, stores compact light information in the companion buffer that is managed by the application, through the `RAB_StoreCompactLightInfo` function.
+Selects one local light using RIS with `sampleParams.numRegirSamples` proposals weighted relative to a specific ReGIR world space cell. The cell position and size are derived from its index; the cell index is derived from the `lightSlot` parameter: each cell contains a number of light slots packed together and stored in the RIS buffer. Additionally, stores compact light information in the companion buffer that is managed by the application, through the `RAB_StoreCompactLightInfo` function.
 
 The weights of lights relative to ReGIR cells are computed using the [`RAB_GetLightTargetPdfForVolume`](RtxdiApplicationBridge.md#rab_getlighttargetpdfforvolume) application-defined function.
 
@@ -225,11 +243,11 @@ The weights of lights relative to ReGIR cells are computed using the [`RAB_GetLi
         inout RAB_RandomSamplerState rng, 
         inout RAB_RandomSamplerState coherentRng,
         RAB_Surface surface, 
-        uint numSamples,
+        RTXDI_SampleParameters sampleParams,
         RTXDI_ResamplingRuntimeParameters params,
         out RAB_LightSample o_selectedSample)
 
-Selects one local light sample using RIS with `numSamples` proposals weighted relative to the provided `surface`, and returns a reservoir with the selected light sample. The sample itself is returned in the `o_selectedSample` parameter.
+Selects one local light sample using RIS with `sampleParams.numLocalLightSamples` proposals weighted relative to the provided `surface`, and returns a reservoir with the selected light sample. The sample itself is returned in the `o_selectedSample` parameter.
 
 The proposals are picked from a RIS buffer tile that's picked using `coherentRng`, which should generate the same random numbers for a group of adjacent shader threads for performance. If the RIS buffer is not available, this function will fall back to uniform sampling from the local light pool, which is typically much more noisy. The RIS buffer must be pre-filled with samples using the [`RTXDI_PresampleLocalLights`](#rtxdi_presamplelocallights) function in a preceding pass.
 
@@ -265,13 +283,48 @@ Selects one infinite light sample using RIS with `numSamples` proposals weighted
         inout RAB_RandomSamplerState rng, 
         inout RAB_RandomSamplerState coherentRng,
         RAB_Surface surface, 
-        uint numSamples,
+        RTXDI_SampleParameters sampleParams,
         RTXDI_ResamplingRuntimeParameters params,
         out RAB_LightSample o_selectedSample)
 
-Selects one sample from the importance sampled environment light using RIS with `numSamples` proposals weighted relative to the provided `surface`, and returns a reservoir with the selected light sample. The sample itself is returned in the `o_selectedSample` parameter.
+Selects one sample from the importance sampled environment light using RIS with `sampleParams.numEnvironmentMapSamples` proposals weighted relative to the provided `surface`, and returns a reservoir with the selected light sample. The sample itself is returned in the `o_selectedSample` parameter.
 
 The proposals are picked from a RIS buffer tile, similar to [`RTXDI_SampleLocalLights`](#rtxdi_samplelocallights). The RIS buffer must be pre-filled with samples using the [`RTXDI_PresampleEnvironmentMap`](#rtxdi_presampleenvironmentmap) function in a preceding pass.
+
+### `RTXDI_StreamNeighborWithPairwiseMIS`
+
+```
+bool RTXDI_StreamNeighborWithPairwiseMIS(inout RTXDI_Reservoir reservoir,
+    float random,
+    const RTXDI_Reservoir neighborReservoir,
+    const RAB_Surface neighborSurface,
+    const RTXDI_Reservoir canonicalReservor,
+    const RAB_Surface canonicalSurface,
+    const uint numberOfNeighborsInStream) 
+```
+
+"Pairwise MIS" is a MIS approach that is O(N) instead of O(N^2) for N estimators.  The idea is you know
+a canonical sample which is a known (pretty-)good estimator, but you'd still like to improve the result
+given multiple other candidate estimators.  You can do this in a pairwise fashion, MIS'ing between each
+candidate and the canonical sample. `RTXDI_StreamNeighborWithPairwiseMIS()` is executed once for each 
+candidate, after which the MIS is completed by calling `RTXDI_StreamCanonicalWithPairwiseStep()` once for
+the canonical sample.
+
+See Chapter 9.1 of https://digitalcommons.dartmouth.edu/dissertations/77/, especially Eq. 9.10 & Alg. 8
+
+### `RTXDI_StreamCanonicalWithPairwiseStep`
+
+```
+bool RTXDI_StreamCanonicalWithPairwiseStep(inout RTXDI_Reservoir reservoir,
+    float random,
+    const RTXDI_Reservoir canonicalReservoir,
+    const RAB_Surface canonicalSurface)
+```
+
+Called to finish the process of doing pairwise MIS.  This function must be called after all required calls to
+`RTXDI_StreamNeighborWithPairwiseMIS()`, since pairwise MIS overweighs the canonical sample.  This function 
+compensates for this overweighting, but it can only happen after all neighbors have been processed.
+
 
 
 ## High-Level Sampling and Resampling Functions
@@ -386,3 +439,21 @@ Implements the core functionality of a combined spatio-temporal resampling pass.
         inout RTXDI_Reservoir state)
 
 Applies a boiling filter over all threads in the compute shader thread group. This filter attempts to reduce boiling by removing reservoirs whose weight is significantly higher than the weights of their neighbors. Essentially, when some lights are important for a surface but they are also unlikely to be located in the initial sampling pass, ReSTIR will try to hold on to these lights by spreading them around, and if such important lights are sufficiently rare, the result will look like light bubbles appearing and growing, then fading. This filter attempts to detect and remove such rare lights, trading boiling for bias.
+
+
+## Utility Functions
+
+### `RTXDI_InitSampleParameters`
+
+```
+RTXDI_SampleParameters RTXDI_InitSampleParameters(
+    uint numRegirSamples,
+    uint numLocalLightSamples,
+    uint numInfiniteLightSamples,
+    uint numEnvironmentMapSamples,
+    uint numBrdfSamples,
+    float brdfCutoff = 0.0,
+    float brdfRayMinT = 0.001
+```
+
+Initializes the [`RTXDI_SampleParameters`](#rtxdi_sampleparameters) structure from the sample counts and BRDF sampling parameters. The structure should be the same when passed to various resampling functions to ensure correct MIS application.

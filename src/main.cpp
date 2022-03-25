@@ -1186,7 +1186,7 @@ public:
 
         const bool checkerboard = m_RtxdiContext->GetParameters().CheckerboardSamplingMode != rtxdi::CheckerboardMode::Off;
 
-        if (m_ui.renderingMode == RenderingMode::ReStirDirectOnly || m_ui.renderingMode == RenderingMode::ReStirDirectBrdfMIS || m_ui.renderingMode == RenderingMode::ReStirDirectBrdfIndirect)
+        if (m_ui.renderingMode == RenderingMode::ReStirDirectOnly || m_ui.renderingMode == RenderingMode::ReStirDirectBrdfIndirect)
         {
             // In the combined modes (ReStirDirectBrdfIndirect and ReStirDirectBrdfMIS), we don't want ReSTIR to be the NRD front-end,
             // it should just write out the raw color data.
@@ -1199,7 +1199,6 @@ public:
                 m_View, m_ViewPrevious,
                 lightingSettings,
                 frameParameters,
-                /* enableSpecularMis = */ m_ui.renderingMode == RenderingMode::ReStirDirectBrdfMIS || m_ui.renderingMode == RenderingMode::ReStirDirectBrdfIndirect,
                 /* enableAccumulation = */ m_ui.aaMode == AntiAliasingMode::Accumulation,
                 m_ui.visualizationMode);
 
@@ -1211,7 +1210,7 @@ public:
             }
         }
 
-        if (m_ui.renderingMode == RenderingMode::BrdfDirectOnly || m_ui.renderingMode == RenderingMode::ReStirDirectBrdfMIS || m_ui.renderingMode == RenderingMode::ReStirDirectBrdfIndirect)
+        if (m_ui.renderingMode == RenderingMode::BrdfDirectOnly || m_ui.renderingMode == RenderingMode::ReStirDirectBrdfIndirect)
         {
             lightingSettings.enableDenoiserInputPacking = true;
 
@@ -1223,8 +1222,7 @@ public:
                 frameParameters,
                 *m_EnvironmentLight,
                 /* enableIndirect = */ m_ui.renderingMode == RenderingMode::ReStirDirectBrdfIndirect,
-                /* enableAdditiveBlend = */ m_ui.renderingMode == RenderingMode::ReStirDirectBrdfMIS || m_ui.renderingMode == RenderingMode::ReStirDirectBrdfIndirect,
-                /* enableSpecularMis = */ m_ui.renderingMode == RenderingMode::ReStirDirectBrdfMIS || m_ui.renderingMode == RenderingMode::ReStirDirectBrdfIndirect,
+                /* enableAdditiveBlend = */ m_ui.renderingMode == RenderingMode::ReStirDirectBrdfIndirect,
                 numRtxgiVolumes,
                 /* enableAccumulation = */ m_ui.aaMode == AntiAliasingMode::Accumulation);
         }

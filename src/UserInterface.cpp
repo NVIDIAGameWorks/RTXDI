@@ -310,7 +310,6 @@ void UserInterface::SamplingSettings()
         m_ui.resetAccumulation |= ImGui::Combo("Render Mode", (int*)&m_ui.renderingMode,
             "BRDF Direct Lighting\0"
             "ReSTIR Direct Lighting\0"
-            "ReSTIR Direct + BRDF MIS\0"
             "ReSTIR Direct + BRDF Indirect\0");
         ImGui::PopItemWidth();
         switch(m_ui.renderingMode)
@@ -323,13 +322,6 @@ void UserInterface::SamplingSettings()
         case RenderingMode::ReStirDirectOnly:
             ShowHelpMarker(
                 "Sample the direct lighting using ReSTIR. Optionally, apply indirect diffuse lighting from RTXGI.");
-            break;
-        case RenderingMode::ReStirDirectBrdfMIS:
-            ShowHelpMarker(
-                "Sample the direct lighting using ReSTIR. Optionally, apply indirect diffuse lighting from RTXGI. "
-                "Additionally, trace specular BRDF rays and combine the lighting coming from emissive surfaces "
-                "found with these rays with the sampled lighting. This mode significantly reduces noise on shiny "
-                "metallic surfaces.");
             break;
         case RenderingMode::ReStirDirectBrdfIndirect:
             ShowHelpMarker(
@@ -350,7 +342,7 @@ void UserInterface::SamplingSettings()
 
         ImGui::Checkbox("Show Advanced Settings", &m_showAdvancedSamplingSettings);
 
-        if (m_ui.renderingMode == RenderingMode::ReStirDirectOnly || m_ui.renderingMode == RenderingMode::ReStirDirectBrdfMIS || m_ui.renderingMode == RenderingMode::ReStirDirectBrdfIndirect)
+        if (m_ui.renderingMode == RenderingMode::ReStirDirectOnly || m_ui.renderingMode == RenderingMode::ReStirDirectBrdfIndirect)
         {
             if (m_showAdvancedSamplingSettings)
             {

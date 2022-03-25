@@ -40,7 +40,6 @@ enum class RenderingMode : uint32_t
 {
     BrdfDirectOnly,
     ReStirDirectOnly,
-    ReStirDirectBrdfMIS,
     ReStirDirectBrdfIndirect
 };
 

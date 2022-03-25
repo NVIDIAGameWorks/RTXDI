@@ -68,18 +68,6 @@ bool ShadeSurfaceWithLightSample(
         
         float d = Lambert(surface.normal, -L);
         float3 s = GGX_times_NdotL(V, L, surface.normal, surface.roughness, surface.specularF0);
-
-#if RAB_ENABLE_SPECULAR_MIS
-        if (lightSample.lightType == PolymorphicLightType::kTriangle || 
-            lightSample.lightType == PolymorphicLightType::kEnvironment)
-        {
-            float solidAnglePdf = lightSample.solidAnglePdf;
-            if (lightSample.lightType == PolymorphicLightType::kEnvironment)
-                solidAnglePdf *= RAB_EvaluateEnvironmentMapSamplingPdf(L);
-
-            s *= EvaluateSpecularSampledLightingWeight(surface, L, solidAnglePdf);
-        }
-#endif
     
         diffuse = d * lightSample.radiance;
         specular = s * lightSample.radiance;

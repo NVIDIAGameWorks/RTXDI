@@ -85,9 +85,6 @@ void RayGen()
     float specular_PDF = saturate(calcLuminance(specular_BRDF_over_PDF) /
         calcLuminance(specular_BRDF_over_PDF + diffuse_BRDF_over_PDF * surface.diffuseAlbedo));
 
-    if (g_Const.enableBrdfMIS && !g_Const.enableBrdfIndirect)
-        specular_PDF = 1.0;
-
     bool isSpecularRay = RAB_GetNextRandom(rng) < specular_PDF;
 
     float3 BRDF_over_PDF;
@@ -184,33 +181,7 @@ void RayGen()
         MaterialSample ms = sampleGeometryMaterial(gs, 0, 0, 0,
             MatAttr_BaseColor | MatAttr_Emissive | MatAttr_MetalRough, s_MaterialSampler);
 
-        if (g_Const.enableBrdfMIS)
-        {
-            if (isSpecularRay && any(ms.emissiveColor > 0))
-            {
-                float3 worldSpacePositions[3];
-                worldSpacePositions[0] = mul(gs.instance.transform, float4(gs.vertexPositions[0], 1.0)).xyz;
-                worldSpacePositions[1] = mul(gs.instance.transform, float4(gs.vertexPositions[1], 1.0)).xyz;
-                worldSpacePositions[2] = mul(gs.instance.transform, float4(gs.vertexPositions[2], 1.0)).xyz;
-
-                float3 triangleNormal = cross(
-                    worldSpacePositions[1] - worldSpacePositions[0],
-                    worldSpacePositions[2] - worldSpacePositions[0]);
-
-                float area = 0.5 * length(triangleNormal);
-                triangleNormal = normalize(triangleNormal);
-
-                float solidAnglePdf = pdfAtoW(1.0 / area, payload.committedRayT, abs(dot(ray.Direction, triangleNormal)));
-
-                float misWeight = 1.0 - EvaluateSpecularSampledLightingWeight(surface, ray.Direction, solidAnglePdf);
-
-                radiance += ms.emissiveColor * misWeight;
-            }
-        }
-        else
-        {
-            radiance += ms.emissiveColor;
-        }
+        radiance += ms.emissiveColor;
 
         RAB_Surface secondarySurface;
         secondarySurface.worldPos = ray.Origin + ray.Direction * payload.committedRayT;
@@ -235,31 +206,9 @@ void RayGen()
             secondarySurfaceStored = true;
         }
     }
-    else if (g_Const.enableEnvironmentMap && (isSpecularRay || !g_Const.enableBrdfMIS) && calcLuminance(BRDF_over_PDF) > 0.0)
+    else if (g_Const.enableEnvironmentMap && isSpecularRay && calcLuminance(BRDF_over_PDF) > 0.0)
     {
         float3 environmentRadiance = GetEnvironmentRadiance(ray.Direction);
-
-        if (g_Const.enableBrdfMIS)
-        {
-            float solidAnglePdf;
-            if (g_Const.environmentMapImportanceSampling)
-            { 
-                // Uniform sampling of the environment sphere
-                solidAnglePdf = 0.25 / c_pi;
-            }
-            else
-            {
-                // Matches the expression in EnvironmentLight::calcSample
-                float sinElevation = ray.Direction.y;
-                float cosElevation = sqrt(saturate(1.0 - square(sinElevation)));
-                solidAnglePdf = 1.0 / (2 * c_pi * c_pi * cosElevation);
-            }
-
-            solidAnglePdf *= RAB_EvaluateEnvironmentMapSamplingPdf(ray.Direction);
-    
-            float misWeight = 1.0 - EvaluateSpecularSampledLightingWeight(surface, ray.Direction, solidAnglePdf);
-            environmentRadiance *= misWeight;
-        }
 
         radiance += environmentRadiance;
     }

@@ -63,8 +63,6 @@ std::istream& operator>> (std::istream& is, RenderingMode& mode)
         mode = RenderingMode::BrdfDirectOnly;
     else if (s == "RESTIR")
         mode = RenderingMode::ReStirDirectOnly;
-    else if (s == "MIS")
-        mode = RenderingMode::ReStirDirectBrdfMIS;
     else if (s == "INDIRECT")
         mode = RenderingMode::ReStirDirectBrdfIndirect;
     else
@@ -127,7 +125,7 @@ void ProcessCommandLine(int argc, char** argv, donut::app::DeviceCreationParamet
         ("preset", "Rendering settings preset: FAST, MEDIUM, UNBIASED, ULTRA, REFERENCE", value(ui))
         ("rasterize-gbuffer", "G-buffer rasterization toggle", value(ui.rasterizeGBuffer))
         ("ray-query", "Ray Query toggle", value(ui.useRayQuery))
-        ("render-mode", "Rendering mode: BRDF, RESTIR, MIS, INDIRECT", value(ui.renderingMode))
+        ("render-mode", "Rendering mode: BRDF, RESTIR, INDIRECT", value(ui.renderingMode))
         ("render-width", "Internal render target width, overrides window size", value(args.renderWidth))
         ("render-height", "Internal render target height, overrides window size", value(args.renderHeight))
         ("save-file", "Save frame to file and exit", value(args.saveFrameFileName))

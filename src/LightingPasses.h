@@ -199,7 +199,6 @@ public:
         const donut::engine::IView& previousView,
         const RenderSettings& localSettings,
         const rtxdi::FrameParameters& frameParameters,
-        bool enableSpecularMis,
         bool enableAccumulation,
         uint32_t visualizationMode);
 
@@ -212,7 +211,6 @@ public:
         const EnvironmentLight& environmentLight,
         bool enableIndirect,
         bool enableAdditiveBlend,
-        bool enableSpecularMis,
         uint32_t numRtxgiVolumes,
         bool enableAccumulation);
 

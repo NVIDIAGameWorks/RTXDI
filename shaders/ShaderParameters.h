@@ -214,11 +214,11 @@ struct ResamplingConstants
     uint enablePreviousTLAS;
     uint denoiserMode;
     uint numRtxgiVolumes;
-
-    uint enableBrdfMIS;
+    
     uint enableBrdfIndirect;
     uint enableBrdfAdditiveBlend;
     uint enableAlphaTestedGeometry;
+    uint pad1;
     
     uint enableTransparentGeometry;
     uint enableDenoiserInputPacking;

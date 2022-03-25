@@ -423,7 +423,6 @@ void LightingPasses::Render(
     const donut::engine::IView& previousView,
     const RenderSettings& localSettings,
     const rtxdi::FrameParameters& frameParameters,
-    bool enableSpecularMis,
     bool enableAccumulation,
     uint32_t visualizationMode)
 {
@@ -433,7 +432,6 @@ void LightingPasses::Render(
     previousView.FillPlanarViewConstants(constants.prevView);
     context.FillRuntimeParameters(constants.runtimeParams, frameParameters);
     FillResamplingConstants(constants, localSettings, frameParameters);
-    constants.enableBrdfMIS = enableSpecularMis;
     constants.enableAccumulation = enableAccumulation;
 
     commandList->writeBuffer(m_ConstantBuffer, &constants, sizeof(constants));
@@ -529,7 +527,6 @@ void LightingPasses::RenderBrdfRays(
     const EnvironmentLight& environmentLight,
     bool enableIndirect,
     bool enableAdditiveBlend,
-    bool enableSpecularMis,
     uint32_t numRtxgiVolumes,
     bool enableAccumulation)
 {
@@ -537,7 +534,6 @@ void LightingPasses::RenderBrdfRays(
     view.FillPlanarViewConstants(constants.view);
     constants.frameIndex = frameParameters.frameIndex;
     constants.denoiserMode = localSettings.denoiserMode;
-    constants.enableBrdfMIS = enableSpecularMis;
     constants.enableBrdfIndirect = enableIndirect;
     constants.enableBrdfAdditiveBlend = enableAdditiveBlend;
     constants.numRtxgiVolumes = numRtxgiVolumes;

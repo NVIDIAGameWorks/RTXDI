@@ -36,10 +36,6 @@ between the bridge functions.
 #include "../SceneGeometry.hlsli"
 #include "../GBufferHelpers.hlsli"
 
-#ifndef RAB_ENABLE_SPECULAR_MIS
-#define RAB_ENABLE_SPECULAR_MIS 1
-#endif
-
 // G-buffer resources
 Texture2D<float> t_GBufferDepth : register(t0);
 Texture2D<uint> t_GBufferNormals : register(t1);
@@ -516,21 +512,6 @@ float RAB_EvaluateLocalLightSourcePdf(RTXDI_ResamplingRuntimeParameters params, 
     return texelValue / sum;
 }
 
-float EvaluateSpecularSampledLightingWeight(RAB_Surface surface, float3 L, float solidAnglePdf)
-{
-    if (!g_Const.enableBrdfMIS)
-        return 1.0;
-
-    // Empirical boost factor for the light sampling pdf, to account for ReSTIR.
-    solidAnglePdf *= 50;
-
-    float3 V = surface.viewDir;
-    float ggxVndfPdf = ImportanceSampleGGX_VNDF_PDF(max(surface.roughness, 0.01), surface.normal, V, L);
-
-    // Balance heuristic assuming one sample from each strategy: light sampling and BRDF sampling
-    return saturate(solidAnglePdf / (solidAnglePdf + ggxVndfPdf));
-}
-
 float3 worldToTangent(RAB_Surface surface, float3 w)
 {
     // reconstruct tangent frame based off worldspace normal
@@ -609,20 +590,6 @@ float RAB_GetLightSampleTargetPdfForSurface(RAB_LightSample lightSample, RAB_Sur
     float d = Lambert(surface.normal, -L);
     float3 s = GGX_times_NdotL(V, L, surface.normal, surface.roughness, surface.specularF0);
 
-#if RAB_ENABLE_SPECULAR_MIS
-    if (lightSample.lightType == PolymorphicLightType::kTriangle || 
-        lightSample.lightType == PolymorphicLightType::kEnvironment)
-    {
-        float solidAnglePdf = lightSample.solidAnglePdf;
-        if (lightSample.lightType == PolymorphicLightType::kEnvironment)
-            solidAnglePdf *= RAB_EvaluateEnvironmentMapSamplingPdf(L);
-
-        // Only apply MIS to triangle and environment lights: other types have no geometric representation
-        // and therefore cannot be hit by BRDF rays.
-        s *= EvaluateSpecularSampledLightingWeight(surface, L, solidAnglePdf);
-    }
-#endif
-    
     float3 reflectedRadiance = lightSample.radiance * (d * surface.diffuseAlbedo + s);
     
     return calcLuminance(reflectedRadiance) / lightSample.solidAnglePdf;

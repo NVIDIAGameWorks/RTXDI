@@ -181,7 +181,7 @@ bool RTXDI_InternalSimpleResample(
 ```
 
 Adds `newReservoir` into `reservoir`, returns true if the new reservoir's sample was selected.
-This is a very general form, allowing input parameters to specfiy normalization and targetPdf
+This is a very general form, allowing input parameters to specify normalization and `targetPdf`
 rather than computing them from `newReservoir`.
 
 ## Low-Level Sampling Functions
@@ -197,7 +197,7 @@ rather than computing them from `newReservoir`.
 
 Performs importance sampling of a set of items with their PDF values stored in a 2D texture mipmap. The texture must have power-of-2 dimensions and a mip chain up to 2x2 pixels (or 2x1 or 1x2 if the texture is rectangular). The mip chain must be generated using a regular 2x2 box filter, which means any standard way of generating a mipmap should work.
 
-The function returns the position of the final selected texel in the `position` parameter, and its normalized selection PDF in the `pdf` parameter. If the PDF texture is empty or malformed (i.e. has four adjacent zeros in one mip level and a nonzero corresponding texel in the next mip level), the reutrned PDF will be zero.
+The function returns the position of the final selected texel in the `position` parameter, and its normalized selection PDF in the `pdf` parameter. If the PDF texture is empty or malformed (i.e. has four adjacent zeros in one mip level and a nonzero corresponding texel in the next mip level), the returned PDF will be zero.
 
 
 ### `RTXDI_PresampleLocalLights`
@@ -291,16 +291,32 @@ Selects one sample from the importance sampled environment light using RIS with 
 
 The proposals are picked from a RIS buffer tile, similar to [`RTXDI_SampleLocalLights`](#rtxdi_samplelocallights). The RIS buffer must be pre-filled with samples using the [`RTXDI_PresampleEnvironmentMap`](#rtxdi_presampleenvironmentmap) function in a preceding pass.
 
+### `RTXDI_SampleBrdf`
+
+```
+    RTXDI_Reservoir RTXDI_SampleBrdf(
+        inout RAB_RandomSamplerState rng,
+        RAB_Surface surface,
+        RTXDI_SampleParameters sampleParams,
+        RTXDI_ResamplingRuntimeParameters params,
+        out RAB_LightSample o_selectedSample)
+```
+
+Selects one local light or environment map sample using RIS with `sampleParams.numBrdfSamples` BRDF ray traces into the scene, weights the proposals relative to provided `surface`, and returns a reservoir with the selected light sample. The sample itself is returned in the `o_selectedSample` parameter.
+
+Depending on the application provided ray trace function, if a local light is hit, a local light proposal is generated, if the ray trace result returns `false`, an environment map proposal is generated. Each proposal is multi-importance weighted between its RIS selection probability relative to solid angle, and the BRDF's direction probability relative to solid angle. 
+
+
 ### `RTXDI_StreamNeighborWithPairwiseMIS`
 
 ```
-bool RTXDI_StreamNeighborWithPairwiseMIS(inout RTXDI_Reservoir reservoir,
-    float random,
-    const RTXDI_Reservoir neighborReservoir,
-    const RAB_Surface neighborSurface,
-    const RTXDI_Reservoir canonicalReservor,
-    const RAB_Surface canonicalSurface,
-    const uint numberOfNeighborsInStream) 
+    bool RTXDI_StreamNeighborWithPairwiseMIS(inout RTXDI_Reservoir reservoir,
+        float random,
+        const RTXDI_Reservoir neighborReservoir,
+        const RAB_Surface neighborSurface,
+        const RTXDI_Reservoir canonicalReservor,
+        const RAB_Surface canonicalSurface,
+        const uint numberOfNeighborsInStream) 
 ```
 
 "Pairwise MIS" is a MIS approach that is O(N) instead of O(N^2) for N estimators.  The idea is you know
@@ -315,10 +331,10 @@ See Chapter 9.1 of https://digitalcommons.dartmouth.edu/dissertations/77/, espec
 ### `RTXDI_StreamCanonicalWithPairwiseStep`
 
 ```
-bool RTXDI_StreamCanonicalWithPairwiseStep(inout RTXDI_Reservoir reservoir,
-    float random,
-    const RTXDI_Reservoir canonicalReservoir,
-    const RAB_Surface canonicalSurface)
+    bool RTXDI_StreamCanonicalWithPairwiseStep(inout RTXDI_Reservoir reservoir,
+        float random,
+        const RTXDI_Reservoir canonicalReservoir,
+        const RAB_Surface canonicalSurface)
 ```
 
 Called to finish the process of doing pairwise MIS.  This function must be called after all required calls to
@@ -331,18 +347,17 @@ compensates for this overweighting, but it can only happen after all neighbors h
 
 ### `RTXDI_SampleLightsForSurface`
 
+```
     RTXDI_Reservoir RTXDI_SampleLightsForSurface(
         inout RAB_RandomSamplerState rng,
         inout RAB_RandomSamplerState coherentRng,
         RAB_Surface surface,
-        uint numRegirSamples,
-        uint numLocalLightSamples,
-        uint numInfiniteLightSamples,
-        uint numEnvironmentMapSamples,
+        RTXDI_SampleParameters sampleParams,
         RTXDI_ResamplingRuntimeParameters params, 
         out RAB_LightSample o_lightSample)
+```
 
-This function is a combination of `RTXDI_SampleLocalLightsFromReGIR` (or `RTXDI_SampleLocalLights` if compiled without ReGIR support), `RTXDI_SampleInfiniteLights`, and `RTXDI_SampleEnvironmentMap`. Reservoirs returned from each function are combined into one final reservoir, which is returned. 
+This function is a combination of `RTXDI_SampleLocalLightsFromReGIR` (or `RTXDI_SampleLocalLights` if compiled without ReGIR support), `RTXDI_SampleInfiniteLights`, `RTXDI_SampleEnvironmentMap`, and `RTXDI_SampleBrdf`. Reservoirs returned from each function are combined into one final reservoir, which is returned. 
 
 ### `RTXDI_TemporalResampling`
 

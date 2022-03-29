@@ -193,7 +193,7 @@ Performs importance sampling of the surface's BRDF and returns the sampled direc
 
 `float RAB_GetSurfaceBrdfPdf(RAB_Surface surface, float3 dir)`
 
-Computes the PDF of a particular direction being sampled by `RAB_GetSurfaceBrdfSample`.
+Computes the solid angle PDF of a particular direction being sampled by `RAB_GetSurfaceBrdfSample`.
 
 ### `RAB_GetLightDirDistance`
 
@@ -224,7 +224,7 @@ bool RAB_TraceRayForLocalLight(float3 origin, float3 direction, float tMin, floa
     out uint o_lightIndex, out float2 o_randXY)
 ```
 
-Traces a ray with the given parameters, looking for a light. If a local light is found, returns `true` and fills the output parameters with the light sample information.
+Traces a ray with the given parameters, looking for a light. If a local light is found, returns `true` and fills the output parameters with the light sample information. If a non-light scene object is hit, returns `true` and `o_lightIndex` is set to `RTXDI_InvalidLightIndex`. If nothing is hit, returns `false` and RTXDI will attempt to do environment map sampling.
 
 
 ## Misc Functions

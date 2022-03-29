@@ -57,9 +57,9 @@ void main(uint2 globalIdx : SV_DispatchThreadID)
         float3 emissive = t_GBufferEmissive[globalIdx].rgb;
 
         int2 illuminationPos = globalIdx;
-        if (g_Const.denoiserMode == DENOISER_MODE_REBLUR && g_Const.checkerboard)
+        if (g_Const.denoiserMode != DENOISER_MODE_OFF && g_Const.checkerboard)
         {
-            // ReBLUR takes the noisy input in checkerboard mode in one half of the screen.
+            // NRD takes the noisy input in checkerboard mode in one half of the screen.
             // Stretch that to full screen for correct noise mix-in behavior.
             illuminationPos.x /= 2;
         }

@@ -93,7 +93,7 @@ void StoreShadingOutput(
     bool isFirstPass,
     bool isLastPass)
 {
-    uint2 lightingTexturePos = (g_Const.denoiserMode == DENOISER_MODE_REBLUR)
+    uint2 lightingTexturePos = (g_Const.denoiserMode != DENOISER_MODE_OFF)
         ? reservoirPosition
         : pixelPosition;
 
@@ -115,7 +115,7 @@ void StoreShadingOutput(
         specular += priorSpecular.rgb;
     }
 
-    if (g_Const.denoiserMode != DENOISER_MODE_REBLUR && g_Const.runtimeParams.activeCheckerboardField != 0 && isLastPass)
+    if (g_Const.denoiserMode == DENOISER_MODE_OFF && g_Const.runtimeParams.activeCheckerboardField != 0 && isLastPass)
     {
         int2 otherFieldPixelPosition = pixelPosition;
         otherFieldPixelPosition.x += (g_Const.runtimeParams.activeCheckerboardField == 1) == ((pixelPosition.y & 1) != 0)

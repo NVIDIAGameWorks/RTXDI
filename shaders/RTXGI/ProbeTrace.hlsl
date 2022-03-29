@@ -83,7 +83,7 @@ void RayGen()
     if (DDGIVolume.probeClassificationEnabled)
     {
         // Get the probe's texel coordinates in the Probe Data texture
-        int2 probeDataCoords = DDGIGetProbeDataTexelCoords(probeIndex, DDGIVolume);
+        int2 probeDataCoords = DDGIGetProbeTexelCoords(probeIndex, DDGIVolume);
 
         // Get the probe's classification state
         probeState = resources.probeData.Load(int3(probeDataCoords, 0)).w;

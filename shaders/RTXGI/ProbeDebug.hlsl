@@ -125,7 +125,7 @@ void main(uint2 pixelPosition : SV_DispatchThreadID)
         // Adjust probe index for scroll offsets
         int storageProbeIndex = DDGIGetScrollingProbeIndex(probeCoords, DDGIVolume);
 
-        uint2 probeStateTexcoord = DDGIGetProbeDataTexelCoords(storageProbeIndex, DDGIVolume);
+        uint2 probeStateTexcoord = DDGIGetProbeTexelCoords(storageProbeIndex, DDGIVolume);
 
         // Probe state border visualization
         float probeState = probeDataTexture[probeStateTexcoord].w;

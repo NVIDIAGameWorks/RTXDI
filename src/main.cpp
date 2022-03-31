@@ -66,6 +66,11 @@
 
 #ifndef _WIN32
 #include <unistd.h>
+#else
+extern "C" {
+  // Prefer using the discrete GPU on Optimus laptops
+  _declspec(dllexport) DWORD NvOptimusEnablement = 0x00000001;
+}
 #endif
 
 using namespace donut;

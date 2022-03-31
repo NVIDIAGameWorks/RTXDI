@@ -1,5 +1,5 @@
 
-# RTXDI SDK and Sample App
+# RTXDI SDK and Sample Applications
 
 Version 1.3.0.
 
@@ -24,7 +24,7 @@ For more information, see the [NVIDIA Developer Page](https://developer.nvidia.c
 
 [`shaders`](shaders) contains the sample application shaders.
 
-[`donut`](donut) is a submodule structure with the ["Donut" rendering framework](https://github.com/NVIDIAGameWorks/donut) used to build the sample app.
+[`donut`](donut) is a submodule structure with the ["Donut" rendering framework](https://github.com/NVIDIAGameWorks/donut) used to build the sample apps.
 
 [`NRD`](NRD) is a submodule with the ["NRD" denoiser library](https://github.com/NVIDIAGameWorks/RayTracingDenoiser).
 
@@ -36,18 +36,18 @@ Additional contents delivered through packman:
 
 `dxc` is a recent version of DirectX Shader Compiler;
 
-`media` contains the media files necessary for the sample app to run.
+`media` contains the media files necessary for the sample apps to run.
 
-**NOTE:** the NRD, DLSS and RTXGI dependencies are optional. If you cannot access any of these repositories, just skip cloning the submodule(s). Git doesn't make that easy, but initializing submodules individually should work, like so:
-
-`git submodule update --init --recursive donut DLSS`
-
-## Building and Running the Sample App
+## Building and Running the Sample Apps
 
 ### Windows
 
-1. Clone the repository with all submodules (see the note about optional submodules above):
+1. Clone the repository with all submodules:
 	- `git clone --recursive https://github.com/NVIDIAGameWorks/RTXDI.git`
+
+	If the clone was made non-recursively and the submodules are missing, clone them separately:
+
+	- `git submodule update --init --recursive`
 
 2. Pull the media files and DXC binaries from packman:
 	- `update_dependencies.bat`
@@ -64,16 +64,19 @@ Additional contents delivered through packman:
 
 7. Build the solution with Visual Studio 
 
-8. Run the `rtxdi-sample` project.
+8. Run the `rtxdi-sample` or `minimal-sample` projects.
 
 ### Linux
 
 1. Make sure the necessary build packages are installed on the target system. For Ubuntu 20.04 (amd64), the following command is sufficient:
 	- `sudo apt install build-essential cmake xorg-dev libtinfo5`
 
-2. Clone the repository with all submodules (see the note about optional submodules above):
+2. Clone the repository with all submodules:
 	- `git clone --recursive https://github.com/NVIDIAGameWorks/RTXDI.git`
 
+	If the clone was made non-recursively and the submodules are missing, clone them separately:
+
+	- `git submodule update --init --recursive`
 
 3. Pull the media files and DXC binaries from packman:
 	- `cd RTXDI && ./update_dependencies.sh`
@@ -88,13 +91,13 @@ Additional contents delivered through packman:
 	- `make -j8` (example for an 8-core CPU, or use [Ninja](https://ninja-build.org) instead)
 
 7. Run:
-	- `bin/rtxdi-sample`
+	- `bin/rtxdi-sample` or `bin/minimal-sample`
 
 ### Vulkan support
 
-The RTXDI sample application can run using D3D12 or Vulkan, which is achieved through the [NVRHI](https://github.com/NVIDIAGameWorks/nvrhi) rendering API abstraction layer and HLSL shader compilation to SPIR-V through DXC (DirectX Shader Compiler). We deliver a compatible version of DXC through packman. If you wish to use a different (e.g. newer) version of DXC, it can be obtained from [Microsoft/DirectXShaderCompiler](https://github.com/Microsoft/DirectXShaderCompiler) on GitHub. The path to a custom version of DXC can be configured using the `DXC_DXIL_EXECUTABLE` and `DXC_SPIRV_EXECUTABLE` CMake variables.
+The RTXDI sample applications can run using D3D12 or Vulkan, which is achieved through the [NVRHI](https://github.com/NVIDIAGameWorks/nvrhi) rendering API abstraction layer and HLSL shader compilation to SPIR-V through DXC (DirectX Shader Compiler). We deliver a compatible version of DXC through packman. If you wish to use a different (e.g. newer) version of DXC, it can be obtained from [Microsoft/DirectXShaderCompiler](https://github.com/Microsoft/DirectXShaderCompiler) on GitHub. The path to a custom version of DXC can be configured using the `DXC_DXIL_EXECUTABLE` and `DXC_SPIRV_EXECUTABLE` CMake variables.
 
-By default, the sample app will run using D3D12 on Windows. To start it in Vulkan mode, add `-vk` to the command line. To compile the sample app without Vulkan support, set the CMake variable `DONUT_WITH_VULKAN` to `OFF` and re-generate the project.
+By default, the sample apps will run using D3D12 on Windows. To start them in Vulkan mode, add `--vk` to the command line. To compile the sample apps without Vulkan support, set the CMake variable `DONUT_WITH_VULKAN` to `OFF` and re-generate the project.
 
 ## Integration
 

@@ -69,7 +69,7 @@ endif()
 include(NRD.cmake)
 include(DLSS.cmake)
 
-if (EXISTS "${CMAKE_CURRENT_LIST_DIR}/RTXGI/rtxgi-sdk/CMakeLists.txt")
+if (EXISTS "${CMAKE_CURRENT_LIST_DIR}/RTXGI/CMakeLists.txt")
 	option(RTXDI_WITH_RTXGI "Enable the RTXGI integration" ON)
 
 	if (RTXDI_WITH_RTXGI)
@@ -81,7 +81,7 @@ if (EXISTS "${CMAKE_CURRENT_LIST_DIR}/RTXGI/rtxgi-sdk/CMakeLists.txt")
 			set(Vulkan_INCLUDE_DIR "${CMAKE_CURRENT_LIST_DIR}/donut/nvrhi/thirdparty/Vulkan-Headers/include")
 		endif()
 
-		add_subdirectory(RTXGI/rtxgi-sdk)
+		add_subdirectory(RTXGI)
 	endif()
 endif()
 

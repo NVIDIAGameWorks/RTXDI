@@ -52,11 +52,15 @@ public:
         defines.push_back({ "RTXGI_DDGI_USE_SHADER_CONFIG_FILE", "1" });
         defines.push_back({ "HLSL", "1" });
         defines.push_back({ "RTXGI_DDGI_BLEND_RADIANCE", "1" });
+        defines.push_back({ "RTXGI_DDGI_BLEND_SCROLL_SHARED_MEMORY", "1" });
         LoadShader(volumeResources.managed.probeBlendingIrradianceCS, fs, "/shaders/app/RTXGI/DDGIProbeBlendingCS.bin", defines, blobs);
+        defines.pop_back();
         LoadShader(volumeResources.managed.probeBorderRowUpdateIrradianceCS, fs, "/shaders/app/RTXGI/DDGIProbeBorderRowUpdateCS.bin", defines, blobs);
         LoadShader(volumeResources.managed.probeBorderColumnUpdateIrradianceCS, fs, "/shaders/app/RTXGI/DDGIProbeBorderColumnUpdateCS.bin", defines, blobs);
         defines[2].value = "0"; // RTXGI_DDGI_BLEND_RADIANCE
+        defines.push_back({ "RTXGI_DDGI_BLEND_SCROLL_SHARED_MEMORY", "1" });
         LoadShader(volumeResources.managed.probeBlendingDistanceCS, fs, "/shaders/app/RTXGI/DDGIProbeBlendingCS.bin", defines, blobs);
+        defines.pop_back();
         LoadShader(volumeResources.managed.probeBorderRowUpdateDistanceCS, fs, "/shaders/app/RTXGI/DDGIProbeBorderRowUpdateCS.bin", defines, blobs);
         LoadShader(volumeResources.managed.probeBorderColumnUpdateDistanceCS, fs, "/shaders/app/RTXGI/DDGIProbeBorderColumnUpdateCS.bin", defines, blobs);
         defines.pop_back(); // RTXGI_DDGI_BLEND_RADIANCE

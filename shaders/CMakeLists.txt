@@ -30,7 +30,7 @@ if (DONUT_WITH_DX12)
       --platform dxil
       -I ${DONUT_SHADER_INCLUDE_DIR}
       -I ${CMAKE_CURRENT_SOURCE_DIR}/../rtxdi-sdk/include
-      -I ${CMAKE_CURRENT_SOURCE_DIR}/../RTXGI/rtxgi-sdk/shaders
+      -I ${CMAKE_CURRENT_SOURCE_DIR}/../RTXGI/shaders
       -I ${CMAKE_CURRENT_SOURCE_DIR}/RTXGI
       --ignore "../Types.h"
       --ignore "rtxgi\\Types.h"
@@ -60,7 +60,7 @@ if (DONUT_WITH_VULKAN)
       --platform spirv
       -I ${DONUT_SHADER_INCLUDE_DIR}
       -I ${CMAKE_CURRENT_SOURCE_DIR}/../rtxdi-sdk/include
-      -I ${CMAKE_CURRENT_SOURCE_DIR}/../RTXGI/rtxgi-sdk/shaders
+      -I ${CMAKE_CURRENT_SOURCE_DIR}/../RTXGI/shaders
       -I ${CMAKE_CURRENT_SOURCE_DIR}/RTXGI
       --ignore "../Types.h"
       --ignore "rtxgi\\Types.h"

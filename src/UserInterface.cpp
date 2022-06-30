@@ -183,7 +183,7 @@ void UIData::SetDefaultDenoiserSettings()
     reblurSettings.antilagIntensitySettings.thresholdMax = 0.14f;
     reblurSettings.antilagIntensitySettings.sensitivityToDarkness = 0.25f;
     reblurSettings.antilagIntensitySettings.enable = true;
-    reblurSettings.prePassMode = nrd::PrePassMode::OFF;
+    reblurSettings.enableAdvancedPrepass = false;
     reblurSettings.enableAntiFirefly = true;
     
     relaxSettings = nrd::RelaxDiffuseSpecularSettings();
@@ -786,8 +786,7 @@ void UserInterface::DenoiserSettings()
                     ImGui::SetNextItemWidth( ImGui::CalcItemWidth() * 0.9f );
                     ImGui::SliderFloat3("Luma-Normal-Rough relaxation", &m_ui.relaxSettings.luminanceEdgeStoppingRelaxation, 0.0f, 1.0f, "%.2f");
                     ImGui::SliderFloat("Spec lobe angle slack", &m_ui.relaxSettings.specularLobeAngleSlack, 0.0f, 89.0f, "%.3f", ImGuiSliderFlags_Logarithmic);
-                    ImGui::SliderFloat("Diff rejection cosa", &m_ui.relaxSettings.diffuseHistoryRejectionNormalThreshold, 0.0f, 1.0f, "%.3f", ImGuiSliderFlags_Logarithmic);
-                    ImGui::SliderFloat("Min luma weight", &m_ui.relaxSettings.minLuminanceWeight, 0.0f, 1.0f, "%.2f");
+                    ImGui::SliderFloat2("Diff-Spec min luma weight", &m_ui.relaxSettings.diffuseMinLuminanceWeight, 0.0f, 1.0f, "%.2f");
                     ImGui::SliderFloat("Depth threshold", &m_ui.relaxSettings.depthThreshold, 0.0f, 1.0f, "%.3f", ImGuiSliderFlags_Logarithmic);
 
                     ImGui::Text("History fix:");
@@ -820,7 +819,6 @@ void UserInterface::DenoiserSettings()
                     ImGui::SliderFloat("Roughness fraction", &m_ui.reblurSettings.roughnessFraction, 0.0f, 1.0f, "%.2f");
                     ImGui::SliderFloat("Stabilization strength", &m_ui.reblurSettings.stabilizationStrength, 0.0f, 1.0f, "%.2f");
                     ImGui::SliderFloat("History fix strength", &m_ui.reblurSettings.historyFixStrength, 0.0f, 1.0f, "%.2f");
-                    ImGui::SliderFloat("Residual noise level", &m_ui.reblurSettings.residualNoiseLevel, 0.01f, 0.1f, "%.2f");
                     ImGui::SetNextItemWidth( ImGui::CalcItemWidth() * 0.6f );
                     ImGui::SliderFloat("Responsive accum roughness threshold", &m_ui.reblurSettings.responsiveAccumulationRoughnessThreshold, 0.0f, 1.0f, "%.2f");
 
@@ -833,8 +831,6 @@ void UserInterface::DenoiserSettings()
                     ImGui::Checkbox("Hit dist", &m_ui.reblurSettings.antilagHitDistanceSettings.enable);
                     ImGui::SameLine();
                     ImGui::Text("[%.1f%%; %.1f%%]", m_ui.reblurSettings.antilagHitDistanceSettings.thresholdMin * 100.0, m_ui.reblurSettings.antilagHitDistanceSettings.thresholdMax * 100.0);
-
-                    m_ui.reblurSettings.prePassMode = m_ui.usePrePass ? nrd::PrePassMode::SIMPLE : nrd::PrePassMode::OFF;
                 }
                 ImGui::SliderFloat("Debug", &m_ui.debug, 0.0f, 1.0f, "%.5f");
                 ImGui::PopItemWidth();

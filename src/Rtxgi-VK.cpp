@@ -130,7 +130,7 @@ public:
 
         vkProbeTexture = m_DdgiVolume->GetProbeIrradiance();
         probeTextureDesc.debugName = "ProbeIrradiance";
-        probeTextureDesc.format = volumeDesc.probeIrradianceFormat == 0 ? nvrhi::Format::R10G10B10A2_UNORM : nvrhi::Format::RGBA32_FLOAT;
+        probeTextureDesc.format = volumeDesc.probeIrradianceFormat == 0 ? nvrhi::Format::R10G10B10A2_UNORM : volumeDesc.probeIrradianceFormat == 1 ? nvrhi::Format::RGBA16_FLOAT : nvrhi::Format::RGBA32_FLOAT;
         probeTextureDesc.initialState = nvrhi::ResourceStates::UnorderedAccess;
         probeTextureDesc.keepInitialState = true;
         probeTextureDesc.isUAV = true;

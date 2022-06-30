@@ -120,7 +120,7 @@ public:
         d3dProbeTextureDesc = d3dProbeTexture->GetDesc();
         assert(d3dProbeTextureDesc.Dimension == D3D12_RESOURCE_DIMENSION_TEXTURE2D);
         probeTextureDesc.debugName = "ProbeIrradiance";
-        probeTextureDesc.format = volumeDesc.probeIrradianceFormat == 0 ? nvrhi::Format::R10G10B10A2_UNORM : nvrhi::Format::RGBA32_FLOAT;
+        probeTextureDesc.format = volumeDesc.probeIrradianceFormat == 0 ? nvrhi::Format::R10G10B10A2_UNORM : volumeDesc.probeIrradianceFormat == 1 ? nvrhi::Format::RGBA16_FLOAT : nvrhi::Format::RGBA32_FLOAT;
         probeTextureDesc.width = (uint32_t)d3dProbeTextureDesc.Width;
         probeTextureDesc.height = d3dProbeTextureDesc.Height;
         probeTextureDesc.initialState = nvrhi::ResourceStates::ShaderResource;

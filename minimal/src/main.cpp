@@ -240,7 +240,7 @@ public:
         m_RtxdiResources = nullptr;
     }
     
-    void SetupView(const nvrhi::FramebufferInfo& fbinfo, uint effectiveFrameIndex)
+    void SetupView(const nvrhi::FramebufferInfoEx& fbinfo, uint effectiveFrameIndex)
     {
         nvrhi::Viewport windowViewport(float(fbinfo.width), float(fbinfo.height));
 
@@ -256,7 +256,7 @@ public:
             m_ViewPrevious = m_View;
     }
 
-    void SetupRenderPasses(const nvrhi::FramebufferInfo& fbinfo)
+    void SetupRenderPasses(const nvrhi::FramebufferInfoEx& fbinfo)
     {
         if (m_ui.reloadShaders)
         {

@@ -67,7 +67,7 @@ void SampleScene::BuildMeshBLASes(nvrhi::IDevice* device)
             blasDesc.bottomLevelGeometries.push_back(geometryDesc);
         }
 
-        blasDesc.buildFlags = nvrhi::rt::AccelStructBuildFlags::PerferFastTrace;
+        blasDesc.buildFlags = nvrhi::rt::AccelStructBuildFlags::PreferFastTrace;
         if (!mesh->skinPrototype)
         {
             // Only allow compaction on non-skinned, static meshes.

@@ -369,8 +369,9 @@ uint getLightIndex(uint instanceID, uint geometryIndex, uint primitiveIndex)
     InstanceData hitInstance = t_InstanceData[instanceID];
     uint geometryInstanceIndex = hitInstance.firstGeometryInstanceIndex + geometryIndex;
     lightIndex = t_GeometryInstanceToLight[geometryInstanceIndex];
-
-    return lightIndex + primitiveIndex;
+    if (lightIndex != RTXDI_InvalidLightIndex)
+      lightIndex += primitiveIndex;
+    return lightIndex;
 }
 
 

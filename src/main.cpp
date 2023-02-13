@@ -258,9 +258,11 @@ public:
 #ifdef USE_DX12
             if (GetDevice()->getGraphicsAPI() == nvrhi::GraphicsAPI::D3D12)
                 m_DLSS = DLSS::CreateDX12(GetDevice(), *m_ShaderFactory);
-            else
 #endif
+#ifdef USE_VK
+            if (GetDevice()->getGraphicsAPI() == nvrhi::GraphicsAPI::VULKAN)
                 m_DLSS = DLSS::CreateVK(GetDevice(), *m_ShaderFactory);
+#endif
         }
 #endif
 

@@ -58,6 +58,8 @@ public:
     nvrhi::TextureHandle PrevDiffuseConfidence;
     nvrhi::TextureHandle PrevSpecularConfidence;
 
+    nvrhi::TextureHandle DebugColor;
+
     std::shared_ptr<donut::engine::FramebufferFactory> LdrFramebuffer;
     std::shared_ptr<donut::engine::FramebufferFactory> ResolvedFramebuffer;
     std::shared_ptr<donut::engine::FramebufferFactory> GBufferFramebuffer;

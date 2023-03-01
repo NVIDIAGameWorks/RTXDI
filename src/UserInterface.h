@@ -89,6 +89,26 @@ struct UIResources
     std::shared_ptr<donut::engine::Material> selectedMaterial;
 };
 
+enum DebugRenderOutput
+{
+    LDRColor,
+    Depth,
+    GBufferDiffuseAlbedo,
+    GBufferSpecularRough,
+    GBufferNormals,
+    GBufferGeoNormals,
+    GBufferEmissive,
+    DiffuseLighting,
+    SpecularLighting,
+    DenoisedDiffuseLighting,
+    DenoisedSpecularLighting,
+    RestirLuminance,
+    PrevRestirLuminance,
+    DiffuseConfidence,
+    SpecularConfidence,
+    MotionVectors
+};
+
 struct UIData
 {
     bool reloadShaders = false;
@@ -164,6 +184,8 @@ struct UIData
     std::string benchmarkResults;
 
     uint32_t visualizationMode = 0; // See the VIS_MODE_XXX constants in ShaderParameters.h
+    uint32_t debugRenderOutputBuffer = 0; // See DebugRenderOutput enum above
+
 
     GBufferSettings gbufferSettings;
     LightingPasses::RenderSettings lightingSettings;

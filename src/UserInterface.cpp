@@ -709,6 +709,24 @@ void UserInterface::PostProcessSettings()
             "The yellow \"fire\" at the bottom is shown where the displayed value is 0.\n"
             "For confidence, shows a heat map with blue at full confidence and red at zero."
         );
+        ImGui::Combo("Debug Render Target", (int*)&m_ui.debugRenderOutputBuffer,
+            "LDR Color\0"
+            "Depth\0"
+            "GBufferDiffuseAlbedo\0"
+            "GBufferSpecularRough\0"
+            "GBufferNormals\0"
+            "GBufferGeoNormals\0"
+            "GBufferEmissive\0"
+            "DiffuseLighting\0"
+            "SpecularLighting\0"
+            "DenoisedDiffuseLighting\0"
+            "DenoisedSpecularLighting\0"
+            "RestirLuminance\0"
+            "PrevRestirLuminance\0"
+            "DiffuseConfidence\0"
+            "SpecularConfidence\0"
+            "MotionVectors\0"
+        );
         ImGui::PopItemWidth();
 
         ImGui::TreePop();

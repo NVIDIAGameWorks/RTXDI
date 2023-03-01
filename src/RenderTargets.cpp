@@ -192,6 +192,17 @@ RenderTargets::RenderTargets(nvrhi::IDevice* device, int2 size)
     desc.format = nvrhi::Format::RGBA16_FLOAT;
     desc.debugName = "Gradients";
     Gradients = device->createTexture(desc);
+
+    nvrhi::TextureDesc debugDesc;
+    debugDesc.width = size.x;
+    debugDesc.height = size.y;
+    debugDesc.keepInitialState = false;
+    debugDesc.isUAV = true;
+    debugDesc.isRenderTarget = false;
+    debugDesc.initialState = nvrhi::ResourceStates::UnorderedAccess;
+    debugDesc.format = nvrhi::Format::RGBA16_FLOAT;
+    debugDesc.debugName = "DebugColor";
+    DebugColor = device->createTexture(debugDesc);
 }
 
 bool RenderTargets::IsUpdateRequired(int2 size)

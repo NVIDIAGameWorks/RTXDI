@@ -51,6 +51,7 @@
 #include "UserInterface.h"
 #include "VisualizationPass.h"
 #include "Testing.h"
+#include "DebugViz/DebugVizPasses.h"
 
 #if WITH_NRD
 #include "NrdIntegration.h"
@@ -123,6 +124,7 @@ private:
     std::unique_ptr<RtxdiResources> m_RtxdiResources;
     std::unique_ptr<engine::IesProfileLoader> m_IesProfileLoader;
     std::shared_ptr<Profiler> m_Profiler;
+    std::unique_ptr<DebugVizPasses> m_DebugVizPasses;
 
     uint32_t m_RenderFrameIndex = 0;
     
@@ -594,6 +596,7 @@ public:
             m_EnvironmentMapPdfMipmapPass = nullptr;
             m_LocalLightPdfMipmapPass = nullptr;
             m_VisualizationPass = nullptr;
+            m_DebugVizPasses = nullptr;
 #if WITH_RTXGI
             m_RTXGI = nullptr;
 #endif
@@ -683,6 +686,7 @@ public:
 #endif
 
             m_VisualizationPass = nullptr;
+            m_DebugVizPasses = nullptr;
 
             renderTargetsCreated = true;
         }
@@ -782,7 +786,14 @@ public:
         {
             m_VisualizationPass = std::make_unique<VisualizationPass>(GetDevice(), *m_CommonPasses, *m_ShaderFactory, *m_RenderTargets, *m_RtxdiResources);
         }
-        
+
+        if (!m_DebugVizPasses || renderTargetsCreated)
+        {
+            m_DebugVizPasses = std::make_unique<DebugVizPasses>(GetDevice(), m_ShaderFactory, m_Scene, m_BindlessLayout);
+            m_DebugVizPasses->CreateBindingSets(*m_RenderTargets, m_RenderTargets->DebugColor);
+            m_DebugVizPasses->CreatePipelines();
+        }
+
 #if WITH_NRD
         if (!m_NRD)
         {
@@ -986,6 +997,7 @@ public:
 #if WITH_RTXGI
         m_RTXGI->NextFrame();
 #endif
+        m_DebugVizPasses->NextFrame();
         
         // Advance the TAA jitter offset at half frame rate if accumulation is used with
         // checkerboard rendering. Otherwise, the jitter pattern resonates with the checkerboard,
@@ -1347,7 +1359,60 @@ public:
             }
         }
 
-        m_CommonPasses->BlitTexture(m_CommandList, framebuffer, m_RenderTargets->LdrColor, &m_BindingCache);
+        switch (m_ui.debugRenderOutputBuffer)
+        {
+            case DebugRenderOutput::LDRColor:
+                m_CommonPasses->BlitTexture(m_CommandList, framebuffer, m_RenderTargets->LdrColor, &m_BindingCache);
+                break;
+            case DebugRenderOutput::Depth:
+                m_CommonPasses->BlitTexture(m_CommandList, framebuffer, m_RenderTargets->Depth, &m_BindingCache);
+                break;
+            case GBufferDiffuseAlbedo:
+                m_DebugVizPasses->RenderUnpackedDiffuseAlbeo(m_CommandList, m_UpscaledView);
+                m_CommonPasses->BlitTexture(m_CommandList, framebuffer, m_RenderTargets->DebugColor, &m_BindingCache);
+                break;
+            case GBufferSpecularRough:
+                m_DebugVizPasses->RenderUnpackedSpecularRoughness(m_CommandList, m_UpscaledView);
+                m_CommonPasses->BlitTexture(m_CommandList, framebuffer, m_RenderTargets->DebugColor, &m_BindingCache);
+                break;
+            case GBufferNormals:
+                m_DebugVizPasses->RenderUnpackedNormals(m_CommandList, m_UpscaledView);
+                m_CommonPasses->BlitTexture(m_CommandList, framebuffer, m_RenderTargets->DebugColor, &m_BindingCache);
+                break;
+            case GBufferGeoNormals:
+                m_DebugVizPasses->RenderUnpackedGeoNormals(m_CommandList, m_UpscaledView);
+                m_CommonPasses->BlitTexture(m_CommandList, framebuffer, m_RenderTargets->DebugColor, &m_BindingCache);
+                break;
+            case GBufferEmissive:
+                m_CommonPasses->BlitTexture(m_CommandList, framebuffer, m_RenderTargets->GBufferEmissive, &m_BindingCache);
+                break;
+            case DiffuseLighting:
+                m_CommonPasses->BlitTexture(m_CommandList, framebuffer, m_RenderTargets->DiffuseLighting, &m_BindingCache);
+                break;
+            case SpecularLighting:
+                m_CommonPasses->BlitTexture(m_CommandList, framebuffer, m_RenderTargets->SpecularLighting, &m_BindingCache);
+                break;
+            case DenoisedDiffuseLighting:
+                m_CommonPasses->BlitTexture(m_CommandList, framebuffer, m_RenderTargets->DenoisedDiffuseLighting, &m_BindingCache);
+                break;
+            case DenoisedSpecularLighting:
+                m_CommonPasses->BlitTexture(m_CommandList, framebuffer, m_RenderTargets->DenoisedSpecularLighting, &m_BindingCache);
+                break;
+            case RestirLuminance:
+                m_CommonPasses->BlitTexture(m_CommandList, framebuffer, m_RenderTargets->RestirLuminance, &m_BindingCache);
+                break;
+            case PrevRestirLuminance:
+                m_CommonPasses->BlitTexture(m_CommandList, framebuffer, m_RenderTargets->PrevRestirLuminance, &m_BindingCache);
+                break;
+            case DiffuseConfidence:
+                m_CommonPasses->BlitTexture(m_CommandList, framebuffer, m_RenderTargets->DiffuseConfidence, &m_BindingCache);
+                break;
+            case SpecularConfidence:
+                m_CommonPasses->BlitTexture(m_CommandList, framebuffer, m_RenderTargets->SpecularConfidence, &m_BindingCache);
+                break;
+            case MotionVectors:
+                m_CommonPasses->BlitTexture(m_CommandList, framebuffer, m_RenderTargets->MotionVectors, &m_BindingCache);
+        }
         
         m_Profiler->EndFrame(m_CommandList);
 

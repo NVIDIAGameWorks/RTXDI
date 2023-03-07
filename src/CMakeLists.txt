@@ -1,5 +1,5 @@
 
-file(GLOB sources "*.cpp" "*.h")
+file(GLOB sources "*.cpp" "*.h" "*/*.cpp" "*/*.h")
 
 set(project rtxdi-sample)
 set(folder "RTXDI SDK")

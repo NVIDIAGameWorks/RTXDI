@@ -508,7 +508,7 @@ float RAB_EvaluateLocalLightSourcePdf(RTXDI_ResamplingRuntimeParameters params, 
         t_LocalLightPdfTexture.mips[lastMipLevel][uint2(0, 0)].x +
         t_LocalLightPdfTexture.mips[lastMipLevel][uint2(1, 0)].x);
 
-    float sum = averageValue * params.numLocalLights;
+    float sum = averageValue * params.localLightParams.numLocalLights;
 
     return texelValue / sum;
 }

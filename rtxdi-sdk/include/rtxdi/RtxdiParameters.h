@@ -110,29 +110,56 @@ struct RTXDI_ReGIROnionParameters
     float pad;
 };
 
-struct RTXDI_ResamplingRuntimeParameters
+struct RTXDI_LocalLightRuntimeParameters
 {
     uint32_t firstLocalLight;
     uint32_t numLocalLights;
+    uint32_t enableLocalLightImportanceSampling;
+    uint32_t pad1;
+};
+
+struct RTXDI_InfiniteLightRuntimeParameters
+{
     uint32_t firstInfiniteLight;
     uint32_t numInfiniteLights;
+    uint32_t pad1;
+    uint32_t pad2;
+};
 
+struct RTXDI_EnvironmentLightRuntimeParameters
+{
     uint32_t environmentLightPresent;
     uint32_t environmentLightIndex;
-    uint32_t tileSize;
-    uint32_t tileCount;
-
-    uint32_t activeCheckerboardField; // 0 - no checkerboard, 1 - odd pixels, 2 - even pixels
-    uint32_t enableLocalLightImportanceSampling;
-    uint32_t reservoirBlockRowPitch;
-    uint32_t reservoirArrayPitch;
-
     uint32_t environmentRisBufferOffset;
     uint32_t environmentTileSize;
-    uint32_t environmentTileCount;
-    uint32_t neighborOffsetMask;
 
+    uint32_t environmentTileCount;
+    uint32_t pad1;
+    uint32_t pad2;
+    uint32_t pad3;
+};
+
+struct RTXDI_RISBufferRuntimeParameters
+{
+    uint32_t tileSize;
+    uint32_t tileCount;
+    uint32_t pad1;
+    uint32_t pad2;
+};
+
+struct RTXDI_ResamplingRuntimeParameters
+{
+    RTXDI_LocalLightRuntimeParameters localLightParams;
+    RTXDI_InfiniteLightRuntimeParameters infiniteLightParams;
+    RTXDI_EnvironmentLightRuntimeParameters environmentLightParams;
+    RTXDI_RISBufferRuntimeParameters risBufferParams;
+
+    uint32_t neighborOffsetMask;
     uint32_t uniformRandomNumber;
+    uint32_t activeCheckerboardField; // 0 - no checkerboard, 1 - odd pixels, 2 - even pixels
+    uint32_t reservoirBlockRowPitch;
+    
+    uint32_t reservoirArrayPitch;
     uint32_t pad1;
     uint32_t pad2;
     uint32_t pad3;

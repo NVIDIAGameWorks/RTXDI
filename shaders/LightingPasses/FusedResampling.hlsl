@@ -42,31 +42,11 @@ void RayGen()
 
     uint2 pixelPosition = RTXDI_ReservoirToPixelPos(GlobalIndex, params);
 
-    RAB_RandomSamplerState rng = RAB_InitRandomSampler(pixelPosition, 1);
-    RAB_RandomSamplerState tileRng = RAB_InitRandomSampler(pixelPosition / RTXDI_TILE_SIZE_IN_PIXELS, 1);
+    RAB_RandomSamplerState rng = RAB_InitRandomSampler(pixelPosition, 2);
 
     RAB_Surface surface = RAB_GetGBufferSurface(pixelPosition, false);
 
-    RTXDI_SampleParameters sampleParams = RTXDI_InitSampleParameters(
-        g_Const.numPrimaryRegirSamples,
-        g_Const.numPrimaryLocalLightSamples,
-        g_Const.numPrimaryInfiniteLightSamples,
-        g_Const.numPrimaryEnvironmentSamples,
-        g_Const.numPrimaryBrdfSamples,
-        g_Const.brdfCutoff,
-        0.001f);
-
-    RAB_LightSample lightSample;
-    RTXDI_Reservoir reservoir = RTXDI_SampleLightsForSurface(rng, tileRng, surface, 
-        sampleParams, params, lightSample);
-
-    if (g_Const.enableInitialVisibility && RTXDI_IsValidReservoir(reservoir))
-    {
-        if (!RAB_GetConservativeVisibility(surface, lightSample))
-        {
-            RTXDI_StoreVisibilityInReservoir(reservoir, 0, true);
-        }
-    }
+    RTXDI_Reservoir reservoir = RTXDI_LoadReservoir(params, GlobalIndex, g_Const.initialOutputBufferIndex);
 
     int2 temporalSamplePixelPos = -1;
 
@@ -93,6 +73,7 @@ void RayGen()
     stparams.enableVisibilityShortcut = g_Const.discardInvisibleSamples;
     stparams.enablePermutationSampling = usePermutationSampling;
 
+    RAB_LightSample lightSample;
     reservoir = RTXDI_SpatioTemporalResampling(pixelPosition, surface, reservoir,
             rng, stparams, params, temporalSamplePixelPos, lightSample);
 

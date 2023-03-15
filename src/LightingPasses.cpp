@@ -367,8 +367,9 @@ void LightingPasses::FillResamplingConstants(
 
     if (lightingSettings.useFusedKernel)
     {
+        constants.initialOutputBufferIndex = (m_LastFrameOutputReservoir + 1) % RtxdiResources::c_NumReservoirBuffers;
         constants.temporalInputBufferIndex = m_LastFrameOutputReservoir;
-        constants.shadeInputBufferIndex = (m_LastFrameOutputReservoir + 1) % RtxdiResources::c_NumReservoirBuffers;
+        constants.shadeInputBufferIndex = constants.initialOutputBufferIndex;
     }
     else
     {
@@ -483,14 +484,16 @@ void LightingPasses::Render(
     // because NVRHI misses them, as the binding sets are exactly the same between these passes.
     // That equality makes NVRHI take a shortcut for performance and it doesn't look at bindings at all.
 
+    ExecuteRayTracingPass(commandList, m_GenerateInitialSamplesPass, localSettings.enableRayCounts, "GenerateInitialSamples", dispatchSize, ProfilerSection::InitialSamples);
+
     if (localSettings.useFusedKernel)
     {
+        nvrhi::utils::BufferUavBarrier(commandList, m_LightReservoirBuffer);
+
         ExecuteRayTracingPass(commandList, m_FusedResamplingPass, localSettings.enableRayCounts, "FusedResampling", dispatchSize, ProfilerSection::Shading);
     }
     else
     {
-        ExecuteRayTracingPass(commandList, m_GenerateInitialSamplesPass, localSettings.enableRayCounts, "GenerateInitialSamples", dispatchSize, ProfilerSection::InitialSamples);
-
         if (localSettings.enableTemporalResampling)
         {
             nvrhi::utils::BufferUavBarrier(commandList, m_LightReservoirBuffer);

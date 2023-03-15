@@ -350,7 +350,7 @@ void rtxdi::ComputePdfTextureSize(uint32_t maxItems, uint32_t& outWidth, uint32_
     textureWidth = exp2(ceil(log2(textureWidth)));
     double textureHeight = std::max(1.0, ceil(maxItems / textureWidth));
     textureHeight = exp2(ceil(log2(textureHeight)));
-    double textureMips = std::max(1.0, log2(std::max(textureWidth, textureHeight)));
+    double textureMips = std::max(1.0, log2(std::max(textureWidth, textureHeight)) + 1.0);
 
     outWidth = uint32_t(textureWidth);
     outHeight = uint32_t(textureHeight);

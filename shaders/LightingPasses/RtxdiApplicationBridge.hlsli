@@ -503,12 +503,10 @@ float RAB_EvaluateLocalLightSourcePdf(RTXDI_ResamplingRuntimeParameters params, 
     uint2 texelPosition = RTXDI_LinearIndexToZCurve(lightIndex);
     float texelValue = t_LocalLightPdfTexture[texelPosition].r;
 
-    int lastMipLevel = max(0, int(floor(log2(max(pdfTextureSize.x, pdfTextureSize.y)))) - 1);
-    float averageValue = 0.5 * (
-        t_LocalLightPdfTexture.mips[lastMipLevel][uint2(0, 0)].x +
-        t_LocalLightPdfTexture.mips[lastMipLevel][uint2(1, 0)].x);
+    int lastMipLevel = max(0, int(floor(log2(max(pdfTextureSize.x, pdfTextureSize.y)))));
+    float averageValue = t_LocalLightPdfTexture.mips[lastMipLevel][uint2(0, 0)].x;
 
-    float sum = averageValue * params.localLightParams.numLocalLights;
+    float sum = averageValue * pdfTextureSize.x * pdfTextureSize.y;
 
     return texelValue / sum;
 }
@@ -554,7 +552,9 @@ bool RAB_GetSurfaceBrdfSample(RAB_Surface surface, inout RAB_RandomSamplerState 
     }
     else
     {
-        float3 h = ImportanceSampleGGX(rand.yz, max(surface.roughness, kMinRoughness));
+        float3 Ve = normalize(worldToTangent(surface, surface.viewDir));
+        float3 h = ImportanceSampleGGX_VNDF(rand.yz, max(surface.roughness, kMinRoughness), Ve, 1.0);
+        h = normalize(h);
         dir = reflect(-surface.viewDir, tangentToWorld(surface, h));
     }
 

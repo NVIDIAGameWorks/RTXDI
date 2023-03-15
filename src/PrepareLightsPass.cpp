@@ -410,6 +410,7 @@ void PrepareLightsPass::Process(
 
     uint32_t numFinitePrimLights = 0;
     uint32_t numInfinitePrimLights = 0;
+    uint32_t numImportanceSampledEnvironmentLights = 0;
 
     for (const std::shared_ptr<Light>& pLight : sortedLights)
     {
@@ -435,17 +436,21 @@ void PrepareLightsPass::Process(
         tasks.push_back(task);
         primitiveLightInfos.push_back(polymorphicLight);
 
-        if (isInfiniteLight(*pLight))
+        if (pLight->GetLightType() == LightType_Environment && enableImportanceSampledEnvironmentLight)
+            numImportanceSampledEnvironmentLights++;
+        else if (isInfiniteLight(*pLight))
             numInfinitePrimLights++;
         else
             numFinitePrimLights++;
     }
+
+    assert(numImportanceSampledEnvironmentLights <= 1);
     
     outFrameParameters.numLocalLights += numFinitePrimLights;
     outFrameParameters.firstInfiniteLight = outFrameParameters.numLocalLights;
-    outFrameParameters.numInfiniteLights = numInfinitePrimLights - enableImportanceSampledEnvironmentLight;
+    outFrameParameters.numInfiniteLights = numInfinitePrimLights;
     outFrameParameters.environmentLightIndex = outFrameParameters.firstInfiniteLight + outFrameParameters.numInfiniteLights;
-    outFrameParameters.environmentLightPresent = enableImportanceSampledEnvironmentLight;
+    outFrameParameters.environmentLightPresent = numImportanceSampledEnvironmentLights;
     
     commandList->writeBuffer(m_TaskBuffer, tasks.data(), tasks.size() * sizeof(PrepareLightsTask));
 

@@ -70,7 +70,7 @@ The local light PDF texture might look like this image:
 
 ![Local Light PDF](images/LocalLightPdf.png)
 
-The PDF texture also needs to have an almost full mip chain, up to 2x2 (or 2x1) pixels. Any mipmap generation code can be used, as long as it does exactly 4:1 pixel downsampling in each step using a box filter: *output = sum(inputs) / 4*.
+The PDF texture also needs to have a full mip chain, up to 1x1 pixels. Any mipmap generation code can be used, as long as it does exactly 4:1 pixel downsampling in each step using a box filter: *output = sum(inputs) / 4*.
 
 In the sample application, the first pass of PDF texture build for local lights is happening in the `PrepareLights` pass, which computes the lights' power values and stores them into the texture. The first pass of PDF texture build for the environment map is fused into the `GenerateMips` pass.
 

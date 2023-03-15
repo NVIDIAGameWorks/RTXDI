@@ -38,7 +38,7 @@ struct TriangleLight
         RAB_LightSample result;
 
         float3 bary = sampleTriangle(random);
-        result.position = base + edge1 * bary.x + edge2 * bary.z;
+        result.position = base + edge1 * bary.y + edge2 * bary.z;
         result.normal = normal;
 
         result.solidAnglePdf = calcSolidAnglePdf(viewerPosition, result.position, result.normal);

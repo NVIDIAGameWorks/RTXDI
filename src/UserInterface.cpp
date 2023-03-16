@@ -1,5 +1,5 @@
 /***************************************************************************
- # Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
+ # Copyright (c) 2021-2023, NVIDIA CORPORATION.  All rights reserved.
  #
  # NVIDIA CORPORATION and its licensors retain all intellectual property
  # and proprietary rights in and to this software, related documentation
@@ -39,6 +39,7 @@
 #include <donut/engine/IesProfile.h>
 #include <donut/app/Camera.h>
 #include <donut/app/UserInterfaceUtils.h>
+#include <donut/core/json.h>
 
 #include <json/writer.h>
 
@@ -156,8 +157,7 @@ void UIData::ApplyPreset()
         lightingSettings.numPrimaryBrdfSamples = 1;
         lightingSettings.numPrimaryInfiniteLightSamples = 16;
         lightingSettings.enableReGIR = false;
-        lightingSettings.enableTemporalResampling = false;
-        lightingSettings.enableSpatialResampling = false;
+        lightingSettings.resamplingMode = ResamplingMode::None;
         lightingSettings.enableBoilingFilter = false;
         lightingSettings.enableSecondaryResampling = false;
         lightingSettings.enableGradients = false;
@@ -304,32 +304,80 @@ void UserInterface::GeneralRenderingSettings()
 
 void UserInterface::SamplingSettings()
 {
-    if (ImGui_ColoredTreeNode("Light Sampling (ReSTIR, BRDF)", c_ColorAttentionHeader))
+    if (ImGui_ColoredTreeNode("Shared ReSTIR Settings", c_ColorRegularHeader))
     {
-        ImGui::PushItemWidth(200.f);
-        m_ui.resetAccumulation |= ImGui::Combo("Render Mode", (int*)&m_ui.renderingMode,
-            "BRDF Direct Lighting\0"
-            "ReSTIR Direct Lighting\0"
-            "ReSTIR Direct + BRDF Indirect\0");
-        ImGui::PopItemWidth();
-        switch(m_ui.renderingMode)
+        m_ui.resetAccumulation |= ImGui::Checkbox("Importance Sample Local Lights", &m_ui.enableLocalLightImportanceSampling);
+        m_ui.resetAccumulation |= ImGui::Checkbox("Importance Sample Env. Map", &m_ui.environmentMapImportanceSampling);
+
+        if (ImGui::TreeNode("RTXDI Context"))
         {
-        case RenderingMode::BrdfDirectOnly:
+            if (ImGui::Button("Apply Settings"))
+                m_ui.resetRtxdiContext = true;
+
+            bool enableCheckerboardSampling = (m_ui.rtxdiContextParams.CheckerboardSamplingMode != rtxdi::CheckerboardMode::Off);
+            ImGui::Checkbox("Checkerboard Rendering", &enableCheckerboardSampling);
+            m_ui.rtxdiContextParams.CheckerboardSamplingMode = enableCheckerboardSampling ? rtxdi::CheckerboardMode::Black : rtxdi::CheckerboardMode::Off;
+
+            ImGui::Combo("ReGIR Mode", (int*)&m_ui.rtxdiContextParams.ReGIR.Mode, "Disabled\0Grid\0Onion\0");
+            ImGui::DragInt("Lights per Cell", (int*)&m_ui.rtxdiContextParams.ReGIR.LightsPerCell, 1, 32, 8192);
+            if (m_ui.rtxdiContextParams.ReGIR.Mode == rtxdi::ReGIRMode::Grid)
+            {
+                ImGui::DragInt3("Grid Resolution", (int*)&m_ui.rtxdiContextParams.ReGIR.GridSize.x, 1, 1, 64);
+            }
+            else if (m_ui.rtxdiContextParams.ReGIR.Mode == rtxdi::ReGIRMode::Onion)
+            {
+                ImGui::SliderInt("Onion Layers - Detail", (int*)&m_ui.rtxdiContextParams.ReGIR.OnionDetailLayers, 0, 8);
+                ImGui::SliderInt("Onion Layers - Coverage", (int*)&m_ui.rtxdiContextParams.ReGIR.OnionCoverageLayers, 0, 20);
+            }
+
+            ImGui::Text("Total ReGIR Cells: %d", m_ui.regirLightSlotCount / m_ui.rtxdiContextParams.ReGIR.LightsPerCell);
+
+            ImGui::TreePop();
+        }
+
+        if (ImGui::TreeNode("ReGIR"))
+        {
+            m_ui.resetAccumulation |= ImGui::Checkbox("Use ReGIR", (bool*)&m_ui.lightingSettings.enableReGIR);
+            m_ui.resetAccumulation |= ImGui::SliderFloat("Cell Size", &m_ui.regirCellSize, 0.1f, 4.f);
+            m_ui.resetAccumulation |= ImGui::SliderInt("Grid Build Samples", (int*)&m_ui.lightingSettings.numRegirBuildSamples, 0, 32);
+            m_ui.resetAccumulation |= ImGui::SliderFloat("Sampling Jitter", &m_ui.regirSamplingJitter, 0.0f, 2.f);
+
+            ImGui::Checkbox("Freeze Position", &m_ui.freezeRegirPosition);
+            ImGui::SameLine(0.f, 10.f);
+            ImGui::Checkbox("Visualize Cells", (bool*)&m_ui.lightingSettings.visualizeRegirCells);
+
+            ImGui::TreePop();
+        }
+
+        ImGui::TreePop();
+    }
+    ImGui::Separator();
+    
+    if (ImGui_ColoredTreeNode("Direct Lighting", c_ColorAttentionHeader))
+    {
+        bool samplingSettingsChanged = false;
+
+        m_ui.resetAccumulation |= ImGui::Combo("Direct Lighting Mode", (int*)&m_ui.directLightingMode,
+            "None\0"
+            "BRDF\0"
+            "ReSTIR\0"
+        );
+        switch(m_ui.directLightingMode)
+        {
+        case DirectLightingMode::None:
+            ShowHelpMarker(
+                "No direct lighting is applied to primary surfaces.");
+            break;
+        case DirectLightingMode::Brdf:
             ShowHelpMarker(
                 "Trace BRDF rays from primary surfaces and collect emissive objects found by such rays. "
-                "No light sampling is performed. Produces very noisy results in most cases, only use for comparison.");
+                "No light sampling is performed for primary surfaces. Produces very noisy results unless "
+                "Indirect Lighting Mode is set to ReSTIR GI, in which case resampling is applied to BRDF rays.");
             break;
-        case RenderingMode::ReStirDirectOnly:
+        case DirectLightingMode::ReStir:
             ShowHelpMarker(
                 "Sample the direct lighting using ReSTIR. Optionally, apply indirect diffuse lighting from RTXGI.");
             break;
-        case RenderingMode::ReStirDirectBrdfIndirect:
-            ShowHelpMarker(
-                "Sample the direct lighting using ReSTIR. Trace diffuse and specular BRDF rays. Combine the "
-                "lighting coming from emissive surfaces found with the specular rays with sampled lighting. "
-                "Shade the surfaces found with BRDF rays using direct light sampling and optionally RTXGI.");
-            break;
-        default: ;
         }
 
         if (ImGui::Combo("Preset", (int*)&m_ui.preset, "(Custom)\0Fast\0Medium\0Unbiased\0Ultra\0Reference\0"))
@@ -338,63 +386,21 @@ void UserInterface::SamplingSettings()
             m_ui.resetAccumulation = true;
         }
 
-        bool samplingSettingsChanged = false;
-
         ImGui::Checkbox("Show Advanced Settings", &m_showAdvancedSamplingSettings);
-
-        if (m_ui.renderingMode == RenderingMode::ReStirDirectOnly || m_ui.renderingMode == RenderingMode::ReStirDirectBrdfIndirect)
+        
+        bool isUsingReStir = m_ui.directLightingMode == DirectLightingMode::ReStir;
+        
+        if (isUsingReStir)
         {
-            if (m_showAdvancedSamplingSettings)
-            {
-                samplingSettingsChanged |= ImGui::Checkbox("Importance Sample Local Lights", &m_ui.enableLocalLightImportanceSampling);
-                samplingSettingsChanged |= ImGui::Checkbox("Importance Sample Env. Map", &m_ui.environmentMapImportanceSampling);
-            }
-
-            samplingSettingsChanged |= ImGui::Checkbox("Use Fused Kernel", (bool*)&m_ui.lightingSettings.useFusedKernel);
-            ShowHelpMarker(
-                "Use a single spatio-temporal resampling pass that covers everything from initial sampling to final shading.");
-
+            ImGui::PushItemWidth(180.f);
+            m_ui.resetAccumulation |= ImGui::Combo("Resampling Mode", (int*)&m_ui.lightingSettings.resamplingMode,
+                "None\0"
+                "Temporal\0"
+                "Spatial\0"
+                "Temporal + Spatial\0"
+                "Fused Spatiotemporal\0");
+            ImGui::PopItemWidth();
             ImGui::Separator();
-            
-            if (ImGui::TreeNode("Context Settings"))
-            {
-                if (ImGui::Button("Apply Settings"))
-                    m_ui.resetRtxdiContext = true;
-
-                bool enableCheckerboardSampling = (m_ui.rtxdiContextParams.CheckerboardSamplingMode != rtxdi::CheckerboardMode::Off);
-                ImGui::Checkbox("Checkerboard Rendering", &enableCheckerboardSampling);
-                m_ui.rtxdiContextParams.CheckerboardSamplingMode = enableCheckerboardSampling ? rtxdi::CheckerboardMode::Black : rtxdi::CheckerboardMode::Off;
-
-                ImGui::Combo("ReGIR Mode", (int*)&m_ui.rtxdiContextParams.ReGIR.Mode, "Disabled\0Grid\0Onion\0");
-                ImGui::DragInt("Lights per Cell", (int*)&m_ui.rtxdiContextParams.ReGIR.LightsPerCell, 1, 32, 8192);
-                if (m_ui.rtxdiContextParams.ReGIR.Mode == rtxdi::ReGIRMode::Grid)
-                {
-                    ImGui::DragInt3("Grid Resolution", (int*)&m_ui.rtxdiContextParams.ReGIR.GridSize.x, 1, 1, 64);
-                }
-                else if (m_ui.rtxdiContextParams.ReGIR.Mode == rtxdi::ReGIRMode::Onion)
-                {
-                    ImGui::SliderInt("Onion Layers - Detail", (int*)&m_ui.rtxdiContextParams.ReGIR.OnionDetailLayers, 0, 8);
-                    ImGui::SliderInt("Onion Layers - Coverage", (int*)&m_ui.rtxdiContextParams.ReGIR.OnionCoverageLayers, 0, 20);
-                }
-
-                ImGui::Text("Total ReGIR Cells: %d", m_ui.regirLightSlotCount / m_ui.rtxdiContextParams.ReGIR.LightsPerCell);
-
-                ImGui::TreePop();
-            }
-
-            if (ImGui::TreeNode("ReGIR Settings"))
-            {
-                samplingSettingsChanged |= ImGui::Checkbox("Use ReGIR", (bool*)&m_ui.lightingSettings.enableReGIR);
-                samplingSettingsChanged |= ImGui::SliderFloat("Cell Size", &m_ui.regirCellSize, 0.1f, 4.f);
-                samplingSettingsChanged |= ImGui::SliderInt("Grid Build Samples", (int*)&m_ui.lightingSettings.numRegirBuildSamples, 0, 32);
-                samplingSettingsChanged |= ImGui::SliderFloat("Sampling Jitter", &m_ui.regirSamplingJitter, 0.0f, 2.f);
-
-                ImGui::Checkbox("Freeze Position", &m_ui.freezeRegirPosition);
-                ImGui::SameLine(0.f, 10.f);
-                ImGui::Checkbox("Visualize Cells", (bool*)&m_ui.lightingSettings.visualizeRegirCells);
-
-                ImGui::TreePop();
-            }
 
             if (ImGui::TreeNode("Initial Sampling"))
             {
@@ -430,10 +436,6 @@ void UserInterface::SamplingSettings()
 
             if (ImGui::TreeNode("Temporal Resampling"))
             {
-                if (!m_ui.lightingSettings.useFusedKernel)
-                {
-                    samplingSettingsChanged |= ImGui::Checkbox("Enable Temporal Resampling", (bool*)&m_ui.lightingSettings.enableTemporalResampling);
-                }
                 samplingSettingsChanged |= ImGui::Checkbox("Enable Previous Frame TLAS/BLAS", (bool*)&m_ui.lightingSettings.enablePreviousTLAS);
                 ShowHelpMarker(
                     "Use the previous frame TLAS for bias correction rays during temporal resampling and gradient computation. "
@@ -479,8 +481,7 @@ void UserInterface::SamplingSettings()
 
             if (ImGui::TreeNode("Spatial Resampling"))
             {
-                samplingSettingsChanged |= ImGui::Checkbox("Enable Spatial Resampling", (bool*)&m_ui.lightingSettings.enableSpatialResampling);
-                if (!m_ui.lightingSettings.useFusedKernel)
+                if (m_ui.lightingSettings.resamplingMode != ResamplingMode::FusedSpatiotemporal)
                 {
                     samplingSettingsChanged |= ImGui::Combo("Spatial Bias Correction", (int*)&m_ui.lightingSettings.spatialBiasCorrection, "Off\0Basic\0Pairwise\0Ray Traced\0");
                     ShowHelpMarker(
@@ -491,7 +492,7 @@ void UserInterface::SamplingSettings()
                 }
                 samplingSettingsChanged |= ImGui::SliderInt("Spatial Samples", (int*)&m_ui.lightingSettings.numSpatialSamples, 1, 32);
 
-                if (m_ui.lightingSettings.enableTemporalResampling || m_ui.lightingSettings.useFusedKernel)
+                if (m_ui.lightingSettings.resamplingMode == ResamplingMode::TemporalAndSpatial || m_ui.lightingSettings.resamplingMode == ResamplingMode::FusedSpatiotemporal)
                 {
                     samplingSettingsChanged |= ImGui::SliderInt("Disocclusion Boost Samples", (int*)&m_ui.lightingSettings.numDisocclusionBoostSamples, 1, 32);
                     ShowHelpMarker(
@@ -500,7 +501,7 @@ void UserInterface::SamplingSettings()
                 }
 
                 samplingSettingsChanged |= ImGui::SliderFloat("Spatial Sampling Radius", &m_ui.lightingSettings.spatialSamplingRadius, 1.f, 32.f);
-                if (m_showAdvancedSamplingSettings && !m_ui.lightingSettings.useFusedKernel)
+                if (m_showAdvancedSamplingSettings && m_ui.lightingSettings.resamplingMode != ResamplingMode::FusedSpatiotemporal)
                 {
                     samplingSettingsChanged |= ImGui::SliderFloat("Spatial Depth Threshold", &m_ui.lightingSettings.spatialDepthThreshold, 0.f, 1.f);
                     ShowHelpMarker("Higher values result in accepting samples with depths more different from the center pixel.");
@@ -535,37 +536,8 @@ void UserInterface::SamplingSettings()
 
                 ImGui::TreePop();
             }
-
-            if (m_ui.renderingMode == RenderingMode::ReStirDirectBrdfIndirect && ImGui::TreeNode("Secondary Surface Light Sampling"))
-            {
-                samplingSettingsChanged |= ImGui::SliderInt("Indirect ReGIR Samples", (int*)&m_ui.lightingSettings.numIndirectRegirSamples, 0, 32);
-                samplingSettingsChanged |= ImGui::SliderInt("Indirect Local Light Samples", (int*)&m_ui.lightingSettings.numIndirectLocalLightSamples, 0, 32);
-                samplingSettingsChanged |= ImGui::SliderInt("Indirect Inifinite Light Samples", (int*)&m_ui.lightingSettings.numIndirectInfiniteLightSamples, 0, 32);
-                samplingSettingsChanged |= ImGui::SliderInt("Indirect Environment Samples", (int*)&m_ui.lightingSettings.numIndirectEnvironmentSamples, 0, 32);
-
-                ImGui::TreePop();
-            }
-
-            if (m_ui.renderingMode == RenderingMode::ReStirDirectBrdfIndirect && ImGui::TreeNode("Secondary Resampling"))
-            {
-                samplingSettingsChanged |= ImGui::Checkbox("Enable Secondary Resampling", (bool*)&m_ui.lightingSettings.enableSecondaryResampling);
-                ShowHelpMarker(
-                    "When shading a secondary surface, try to find a matching surface in screen space and reuse its light reservoir. "
-                    "This feature uses the Spatial Resampling function and has similar controls.");
-
-                samplingSettingsChanged |= ImGui::Combo("Secondary Bias Correction", (int*)&m_ui.lightingSettings.secondaryBiasCorrection, "Off\0Basic\0Pairwise\0Ray Traced\0");
-                samplingSettingsChanged |= ImGui::SliderInt("Secondary Samples", (int*)&m_ui.lightingSettings.numSecondarySamples, 1, 4);
-                samplingSettingsChanged |= ImGui::SliderFloat("Secondary Sampling Radius", &m_ui.lightingSettings.secondarySamplingRadius, 0.f, 32.f);
-                if (m_showAdvancedSamplingSettings)
-                {
-                    samplingSettingsChanged |= ImGui::SliderFloat("Secondary Depth Threshold", &m_ui.lightingSettings.secondaryDepthThreshold, 0.f, 1.f);
-                    samplingSettingsChanged |= ImGui::SliderFloat("Secondary Normal Threshold", &m_ui.lightingSettings.secondaryNormalThreshold, 0.f, 1.f);
-                }
-
-                ImGui::TreePop();
-            }
         }
-        
+
         if (samplingSettingsChanged)
         {
             m_ui.preset = QualityPreset::Custom;
@@ -574,11 +546,130 @@ void UserInterface::SamplingSettings()
 
         ImGui::TreePop();
     }
+    ImGui::Separator();
+
+    if (ImGui_ColoredTreeNode("Indirect Lighting", c_ColorAttentionHeader))
+    {
+        m_ui.resetAccumulation |= ImGui::Combo("Indirect Lighting Mode", (int*)&m_ui.indirectLightingMode,
+            "None\0"
+            "BRDF\0"
+            "ReSTIR GI\0"
+        );
+        switch (m_ui.indirectLightingMode)
+        {
+        case IndirectLightingMode::Brdf:
+            ShowHelpMarker(
+                "Trace BRDF rays from primary surfaces. "
+                "Shade the surfaces found with BRDF rays using direct light sampling and optionally RTXGI.");
+            break;
+        case IndirectLightingMode::ReStirGI:
+            ShowHelpMarker(
+                "Trace diffuse and specular BRDF rays and resample results with ReSTIR GI. "
+                "Shade the surfaces found with BRDF rays using direct light sampling and optionally RTXGI.");
+            break;
+        default:;
+        }
+
+        bool isUsingIndirect = m_ui.indirectLightingMode != IndirectLightingMode::None;
+
+        m_ui.resetAccumulation |= ImGui::SliderFloat("Min Secondary Roughness", &m_ui.lightingSettings.minSecondaryRoughness, 0.f, 1.f);
+
+        if (isUsingIndirect && ImGui::TreeNode("Secondary Surface Light Sampling"))
+        {
+            m_ui.resetAccumulation |= ImGui::SliderInt("Indirect ReGIR Samples", (int*)&m_ui.lightingSettings.numIndirectRegirSamples, 0, 32);
+            m_ui.resetAccumulation |= ImGui::SliderInt("Indirect Local Light Samples", (int*)&m_ui.lightingSettings.numIndirectLocalLightSamples, 0, 32);
+            m_ui.resetAccumulation |= ImGui::SliderInt("Indirect Inifinite Light Samples", (int*)&m_ui.lightingSettings.numIndirectInfiniteLightSamples, 0, 32);
+            m_ui.resetAccumulation |= ImGui::SliderInt("Indirect Environment Samples", (int*)&m_ui.lightingSettings.numIndirectEnvironmentSamples, 0, 32);
+
+            ImGui::TreePop();
+        }
+
+        if (isUsingIndirect && m_ui.directLightingMode == DirectLightingMode::ReStir && ImGui::TreeNode("Reuse Primary Samples"))
+        {
+            m_ui.resetAccumulation |= ImGui::Checkbox("Reuse RTXDI samples for secondary surf.", (bool*)&m_ui.lightingSettings.enableSecondaryResampling);
+            ShowHelpMarker(
+                "When shading a secondary surface, try to find a matching surface in screen space and reuse its light reservoir. "
+                "This feature uses the Spatial Resampling function and has similar controls.");
+
+            m_ui.resetAccumulation |= ImGui::Combo("Secondary Bias Correction", (int*)&m_ui.lightingSettings.secondaryBiasCorrection, "Off\0Basic\0Pairwise\0Ray Traced\0");
+            m_ui.resetAccumulation |= ImGui::SliderInt("Secondary Samples", (int*)&m_ui.lightingSettings.numSecondarySamples, 1, 4);
+            m_ui.resetAccumulation |= ImGui::SliderFloat("Secondary Sampling Radius", &m_ui.lightingSettings.secondarySamplingRadius, 0.f, 32.f);
+            m_ui.resetAccumulation |= ImGui::SliderFloat("Secondary Depth Threshold", &m_ui.lightingSettings.secondaryDepthThreshold, 0.f, 1.f);
+            m_ui.resetAccumulation |= ImGui::SliderFloat("Secondary Normal Threshold", &m_ui.lightingSettings.secondaryNormalThreshold, 0.f, 1.f);
+
+            ImGui::TreePop();
+        }
+        
+        if (m_ui.indirectLightingMode == IndirectLightingMode::ReStirGI)
+        {
+            ImGui::PushItemWidth(180.f);
+            m_ui.resetAccumulation |= ImGui::Combo("Resampling Mode", (int*)&m_ui.lightingSettings.reStirGI.resamplingMode,
+                "None\0"
+                "Temporal\0"
+                "Spatial\0"
+                "Temporal + Spatial\0"
+                "Fused Spatiotemporal\0");
+            ImGui::PopItemWidth();
+            ImGui::Separator();
+            
+            if (m_ui.lightingSettings.reStirGI.resamplingMode == ResamplingMode::Temporal ||
+                m_ui.lightingSettings.reStirGI.resamplingMode == ResamplingMode::TemporalAndSpatial ||
+                m_ui.lightingSettings.reStirGI.resamplingMode == ResamplingMode::FusedSpatiotemporal)
+            {
+                m_ui.resetAccumulation |= ImGui::SliderFloat("Depth Threshold", &m_ui.lightingSettings.reStirGI.depthThreshold, 0.001f, 1.f);
+                m_ui.resetAccumulation |= ImGui::SliderFloat("Normal Threshold", &m_ui.lightingSettings.reStirGI.normalThreshold, 0.001f, 1.f);
+
+                m_ui.resetAccumulation |= ImGui::SliderInt("Max reservoir age", (int*)&m_ui.lightingSettings.reStirGI.maxReservoirAge, 1, 100);
+                m_ui.resetAccumulation |= ImGui::SliderInt("Max history length", (int*)&m_ui.lightingSettings.reStirGI.maxHistoryLength, 1, 100);
+                m_ui.resetAccumulation |= ImGui::Checkbox("Enable permutation sampling", (bool*)&m_ui.lightingSettings.reStirGI.enablePermutationSampling);
+                m_ui.resetAccumulation |= ImGui::Checkbox("Enable fallback sampling", (bool*)&m_ui.lightingSettings.reStirGI.enableFallbackSampling);
+
+                const char* biasCorrectionText = (m_ui.lightingSettings.reStirGI.resamplingMode == ResamplingMode::FusedSpatiotemporal)
+                    ? "Fused bias correction"
+                    : "Temporal bias correction";
+                m_ui.resetAccumulation |= ImGui::Combo(biasCorrectionText, (int*)&m_ui.lightingSettings.reStirGI.temporalBiasCorrection,
+                    "Off\0"
+                    "Basic MIS\0"
+                    "RayTraced\0");
+
+                m_ui.resetAccumulation |= ImGui::Checkbox("##enableGIBoilingFilter", (bool*)&m_ui.lightingSettings.reStirGI.enableBoilingFilter);
+                ImGui::SameLine();
+                ImGui::PushItemWidth(69.f);
+                m_ui.resetAccumulation |= ImGui::SliderFloat("Boiling Filter##GIBoilingFilter", &m_ui.lightingSettings.reStirGI.boilingFilterStrength, 0.f, 1.f);
+                ImGui::PopItemWidth();
+
+                ImGui::Separator();
+            }
+
+            if (m_ui.lightingSettings.reStirGI.resamplingMode == ResamplingMode::Spatial || 
+                m_ui.lightingSettings.reStirGI.resamplingMode == ResamplingMode::TemporalAndSpatial || 
+                m_ui.lightingSettings.reStirGI.resamplingMode == ResamplingMode::FusedSpatiotemporal)
+            {
+                m_ui.resetAccumulation |= ImGui::SliderInt("Num spatial samples", (int*)&m_ui.lightingSettings.reStirGI.numSpatialSamples, 1, 7);
+                m_ui.resetAccumulation |= ImGui::SliderFloat("Sampling Radius", (float*)&m_ui.lightingSettings.reStirGI.samplingRadius, 0.01f, 60.0f);
+
+                if (m_ui.lightingSettings.reStirGI.resamplingMode != ResamplingMode::FusedSpatiotemporal)
+                {
+                    m_ui.resetAccumulation |= ImGui::Combo("Spatial bias correction", (int*)&m_ui.lightingSettings.reStirGI.spatialBiasCorrection,
+                        "Off\0"
+                        "Basic MIS\0"
+                        "RayTraced\0");
+                }
+
+                ImGui::Separator();
+            }
+
+            m_ui.resetAccumulation |= ImGui::Checkbox("Final visibility", (bool*)&m_ui.lightingSettings.reStirGI.enableFinalVisibility);
+            m_ui.resetAccumulation |= ImGui::Checkbox("Final MIS", (bool*)&m_ui.lightingSettings.reStirGI.enableFinalMIS);
+        }
+
+        ImGui::TreePop();
+    }
 
     ImGui::Separator();
 
 #if WITH_RTXGI
-    if (ImGui_ColoredTreeNode("Indirect lighting (RTXGI)", c_ColorRegularHeader))
+    if (ImGui_ColoredTreeNode("RTXGI", c_ColorRegularHeader))
     {
         ImGui::Checkbox("Enable", (bool*)&m_ui.rtxgi.enabled);
 
@@ -700,7 +791,10 @@ void UserInterface::PostProcessSettings()
             "Diffuse Gradients\0"
             "Specular Gradients\0"
             "Diffuse Confidence\0"
-            "Specular Confidence\0");
+            "Specular Confidence\0"
+            "GI Reservoir Weight\0"
+            "GI Reservoir M\0"
+        );
         ShowHelpMarker(
             "For HDR signals, displays a horizontal cross-section of the specified channel.\n"
             "The cross-section is taken in the middle of the screen, at the yellow line.\n"
@@ -868,6 +962,16 @@ void UserInterface::CopySelectedLight() const
 
     m_SelectedLight->Store(root);
 
+    {
+        auto n = m_SelectedLight->GetNode();
+        auto trn = n->GetLocalToWorldTransform();
+        donut::math::dquat rotation;
+        donut::math::double3 scaling;
+        donut::math::decomposeAffine<double>(trn, nullptr, &rotation, &scaling);
+        root["translation"] << donut::math::float3(trn.m_translation);
+        root["rotation"] << donut::math::double4(rotation.x, rotation.y, rotation.z, rotation.w);
+    }
+
     Json::StreamWriterBuilder builder;
     builder.settings_["precision"] = 4;
     auto* writer = builder.newStreamWriter();
@@ -943,6 +1047,23 @@ void UserInterface::SceneSettings()
         ImGui::PopItemWidth();
         m_ui.resetAccumulation |= ImGui::SliderFloat("Environment Bias (EV)", &m_ui.environmentIntensityBias, -8.f, 4.f);
         m_ui.resetAccumulation |= ImGui::SliderFloat("Environment Rotation (deg)", &m_ui.environmentRotation, -180.f, 180.f);
+
+        {
+            static float globalEmissiveFactor = 1.0f;
+            bool changed;
+            changed = ImGui::SliderFloat("Global Emissive Factor", &globalEmissiveFactor, 0.0f, 1.5f);
+            m_ui.resetAccumulation |= changed;
+
+            if (changed) {
+                auto sceneGraph = m_ui.resources->scene->GetSceneGraph();
+
+                for (auto& material : sceneGraph->GetMaterials())
+                {
+                    material->emissiveIntensity = globalEmissiveFactor;
+                    material->dirty = true;
+                }
+            }
+        }
 
         ImGui::TreePop();
     }

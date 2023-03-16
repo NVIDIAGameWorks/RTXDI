@@ -11,6 +11,10 @@ The RTXDI header files can be compiled as either HLSL or GLSL, with HLSL being t
 
 ## User-Defined Macros
 
+### `RTXDI_ALLOWED_BIAS_CORRECTION`
+
+Define this macro to one of the `RTXDI_BIAS_CORRECTION_...` constants to limit the most complex bias correction algorithm that is included in the shaders, to reduce code bloat.
+
 ### `RTXDI_ENABLE_PRESAMPLING`
 
 Define this macro to `0` in order to disable the pre-sampling features and required resources (i.e. the RIS buffer).
@@ -27,10 +31,13 @@ Define this macro to a resource name for the reservoir buffer, which should have
 
 Define this macro to a resource name for the neighbor offset buffer, which should have HLSL type `Buffer<float2>`.
 
+### `RTXDI_REGIR_MODE`
+
+Define this macro to one of the `RTXDI_REGIR_DISABLED`, `RTXDI_REGIR_GRID`, `RTXDI_REGIR_ONION` to select the version of the ReGIR spatial structure to implement, if any.
+
 ### `RTXDI_RIS_BUFER`
 
 Define this macro to a resource name for the RIS buffer, which should have HLSL type `RWBuffer<uint2>`. Not necessary when `RTXDI_ENABLE_PRESAMPLING` is `0`.
-
 
 ## Structures
 

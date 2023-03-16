@@ -77,7 +77,6 @@ Tests if the provided surface contains valid geometry. This function should retu
 
 Returns the world position of the provided surface.
 
-
 ### `RAB_GetSurfaceNormal`
 
 `float3 RAB_GetSurfaceNormal(RAB_Surface surface)`
@@ -90,6 +89,11 @@ Returns the world space shading normal of the provided surface. Normals are used
 
 Returns the linear depth of the provided surface. It doesn't have to be linear depth in a strict sense (i.e. `viewPosition.z`), and can be distance to the camera or primary path length instead. The motion vectors provided to `RTXDI_TemporalResampling` or `RTXDI_SpatioTemporalResampling` must have their .z component computed as the difference between the linear depth of the same surface computed on the previous frame and the current frame.
 
+### `RAB_ClampSamplePositionIntoView`
+
+`int2 RAB_ClampSamplePositionIntoView(int2 pixelPosition, bool previousFrame)`
+
+This function is called in the spatial resampling passes to make sure that the samples actually land on the screen and not outside of its boundaries. It can clamp the position or reflect it about the nearest screen edge. The simplest implementation will just return the input pixelPosition.
 
 ## Lights and Samples
 

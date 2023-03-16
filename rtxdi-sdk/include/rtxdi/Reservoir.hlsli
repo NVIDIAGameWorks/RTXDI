@@ -1,5 +1,5 @@
 /***************************************************************************
- # Copyright (c) 2020-2022, NVIDIA CORPORATION.  All rights reserved.
+ # Copyright (c) 2020-2023, NVIDIA CORPORATION.  All rights reserved.
  #
  # NVIDIA CORPORATION and its licensors retain all intellectual property
  # and proprietary rights in and to this software, related documentation
@@ -234,35 +234,6 @@ float2 RTXDI_GetReservoirSampleUV(const RTXDI_Reservoir reservoir)
 float RTXDI_GetReservoirInvPdf(const RTXDI_Reservoir reservoir)
 {
     return reservoir.weightSum;
-}
-
-bool RTXDI_IsActiveCheckerboardPixel(
-    uint2 pixelPosition,
-    bool previousFrame,
-    RTXDI_ResamplingRuntimeParameters params)
-{
-    if (params.activeCheckerboardField == 0)
-        return true;
-
-    return ((pixelPosition.x + pixelPosition.y + int(previousFrame)) & 1) == (params.activeCheckerboardField & 1);
-}
-
-uint2 RTXDI_PixelPosToReservoir(uint2 pixelPosition, RTXDI_ResamplingRuntimeParameters params)
-{
-    if (params.activeCheckerboardField == 0)
-        return pixelPosition;
-
-    return uint2(pixelPosition.x >> 1, pixelPosition.y);
-}
-
-uint2 RTXDI_ReservoirToPixelPos(uint2 reservoirIndex, RTXDI_ResamplingRuntimeParameters params)
-{
-    if (params.activeCheckerboardField == 0)
-        return reservoirIndex;
-
-    uint2 pixelPosition = uint2(reservoirIndex.x << 1, reservoirIndex.y);
-    pixelPosition.x += ((pixelPosition.y + params.activeCheckerboardField) & 1);
-    return pixelPosition;
 }
 
 #endif // RESERVOIR_HLSLI

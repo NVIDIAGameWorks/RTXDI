@@ -1,5 +1,5 @@
 /***************************************************************************
- # Copyright (c) 2020-2021, NVIDIA CORPORATION.  All rights reserved.
+ # Copyright (c) 2020-2023, NVIDIA CORPORATION.  All rights reserved.
  #
  # NVIDIA CORPORATION and its licensors retain all intellectual property
  # and proprietary rights in and to this software, related documentation
@@ -13,6 +13,7 @@
 #include "RtxdiResources.h"
 #include "Profiler.h"
 #include "SampleScene.h"
+#include "GBufferPass.h"
 
 #include <donut/engine/Scene.h>
 #include <donut/engine/CommonRenderPasses.h>
@@ -88,6 +89,7 @@ LightingPasses::LightingPasses(
         nvrhi::BindingLayoutItem::Texture_UAV(3),
         nvrhi::BindingLayoutItem::Texture_UAV(4),
         nvrhi::BindingLayoutItem::Texture_UAV(5),
+        nvrhi::BindingLayoutItem::StructuredBuffer_UAV(6),
 
         nvrhi::BindingLayoutItem::TypedBuffer_UAV(10),
         nvrhi::BindingLayoutItem::TypedBuffer_UAV(11),
@@ -164,11 +166,12 @@ void LightingPasses::CreateBindingSet(
             nvrhi::BindingSetItem::Texture_UAV(3, renderTargets.TemporalSamplePositions),
             nvrhi::BindingSetItem::Texture_UAV(4, renderTargets.Gradients),
             nvrhi::BindingSetItem::Texture_UAV(5, currentFrame ? renderTargets.RestirLuminance : renderTargets.PrevRestirLuminance),
+            nvrhi::BindingSetItem::StructuredBuffer_UAV(6, resources.GIReservoirBuffer),
 
             nvrhi::BindingSetItem::TypedBuffer_UAV(10, resources.RisBuffer),
             nvrhi::BindingSetItem::TypedBuffer_UAV(11, resources.RisLightDataBuffer),
             nvrhi::BindingSetItem::TypedBuffer_UAV(12, m_Profiler->GetRayCountBuffer()),
-            nvrhi::BindingSetItem::StructuredBuffer_UAV(13, resources.SecondarySurfaceBuffer),
+            nvrhi::BindingSetItem::StructuredBuffer_UAV(13, resources.SecondaryGBuffer),
 
             nvrhi::BindingSetItem::ConstantBuffer(0, m_ConstantBuffer),
             nvrhi::BindingSetItem::PushConstants(1, sizeof(PerPassConstants)),
@@ -204,7 +207,8 @@ void LightingPasses::CreateBindingSet(
     m_LocalLightPdfTextureSize.y = localLightPdfDesc.height;
 
     m_LightReservoirBuffer = resources.LightReservoirBuffer;
-    m_SecondarySurfaceBuffer = resources.SecondarySurfaceBuffer;
+    m_SecondarySurfaceBuffer = resources.SecondaryGBuffer;
+    m_GIReservoirBuffer = resources.GIReservoirBuffer;
 }
 
 void LightingPasses::CreateComputePass(ComputePass& pass, const char* shaderName, const std::vector<donut::engine::ShaderMacro>& macros)
@@ -295,6 +299,10 @@ void LightingPasses::CreatePipelines(const rtxdi::ContextParameters& contextPara
     m_ShadeSecondarySurfacesPass.Init(m_Device, *m_ShaderFactory, "app/LightingPasses/ShadeSecondarySurfaces.hlsl", regirMacros, useRayQuery, RTXDI_SCREEN_SPACE_GROUP_SIZE, m_BindingLayout, m_RtxgiBindingLayout, m_BindlessLayout);
     m_FusedResamplingPass.Init(m_Device, *m_ShaderFactory, "app/LightingPasses/FusedResampling.hlsl", regirMacros, useRayQuery, RTXDI_SCREEN_SPACE_GROUP_SIZE, m_BindingLayout, nullptr, m_BindlessLayout);
     m_GradientsPass.Init(m_Device, *m_ShaderFactory, "app/LightingPasses/ComputeGradients.hlsl", {}, useRayQuery, RTXDI_SCREEN_SPACE_GROUP_SIZE, m_BindingLayout, nullptr, m_BindlessLayout);
+    m_GITemporalResamplingPass.Init(m_Device, *m_ShaderFactory, "app/LightingPasses/GITemporalResampling.hlsl", {}, useRayQuery, RTXDI_SCREEN_SPACE_GROUP_SIZE, m_BindingLayout, nullptr, m_BindlessLayout);
+    m_GISpatialResamplingPass.Init(m_Device, *m_ShaderFactory, "app/LightingPasses/GISpatialResampling.hlsl", {}, useRayQuery, RTXDI_SCREEN_SPACE_GROUP_SIZE, m_BindingLayout, nullptr, m_BindlessLayout);
+    m_GIFusedResamplingPass.Init(m_Device, *m_ShaderFactory, "app/LightingPasses/GIFusedResampling.hlsl", {}, useRayQuery, RTXDI_SCREEN_SPACE_GROUP_SIZE, m_BindingLayout, nullptr, m_BindlessLayout);
+    m_GIFinalShadingPass.Init(m_Device, *m_ShaderFactory, "app/LightingPasses/GIFinalShading.hlsl", {}, useRayQuery, RTXDI_SCREEN_SPACE_GROUP_SIZE, m_BindingLayout, nullptr, m_BindlessLayout);
 }
 
 #if WITH_NRD
@@ -313,6 +321,16 @@ void LightingPasses::FillResamplingConstants(
     const RenderSettings& lightingSettings,
     const rtxdi::FrameParameters& frameParameters)
 {
+    const bool useTemporalResampling =
+        lightingSettings.resamplingMode == ResamplingMode::Temporal ||
+        lightingSettings.resamplingMode == ResamplingMode::TemporalAndSpatial ||
+        lightingSettings.resamplingMode == ResamplingMode::FusedSpatiotemporal;
+
+    const bool useSpatialResampling =
+        lightingSettings.resamplingMode == ResamplingMode::Spatial ||
+        lightingSettings.resamplingMode == ResamplingMode::TemporalAndSpatial ||
+        lightingSettings.resamplingMode == ResamplingMode::FusedSpatiotemporal;
+
     constants.enablePreviousTLAS = lightingSettings.enablePreviousTLAS;
     constants.denoiserMode = lightingSettings.denoiserMode;
     constants.enableAlphaTestedGeometry = lightingSettings.enableAlphaTestedGeometry;
@@ -343,10 +361,8 @@ void LightingPasses::FillResamplingConstants(
     constants.maxHistoryLength = lightingSettings.maxHistoryLength;
     constants.temporalBiasCorrection = lightingSettings.temporalBiasCorrection;
     constants.boilingFilterStrength = lightingSettings.enableBoilingFilter ? lightingSettings.boilingFilterStrength : 0.f;
-    constants.numSpatialSamples = lightingSettings.enableSpatialResampling ? lightingSettings.numSpatialSamples : 0;
-    constants.numDisocclusionBoostSamples = (lightingSettings.enableTemporalResampling || lightingSettings.useFusedKernel)
-        ? lightingSettings.numDisocclusionBoostSamples
-        : 0;
+    constants.numSpatialSamples = useSpatialResampling ? lightingSettings.numSpatialSamples : 0;
+    constants.numDisocclusionBoostSamples = useTemporalResampling ? lightingSettings.numDisocclusionBoostSamples : 0;
     constants.spatialSamplingRadius = lightingSettings.spatialSamplingRadius;
     constants.spatialNormalThreshold = lightingSettings.spatialNormalThreshold;
     constants.spatialDepthThreshold = lightingSettings.spatialDepthThreshold;
@@ -364,8 +380,8 @@ void LightingPasses::FillResamplingConstants(
     constants.secondarySamplingRadius = lightingSettings.secondarySamplingRadius;
     constants.secondaryDepthThreshold = lightingSettings.secondaryDepthThreshold;
     constants.secondaryNormalThreshold = lightingSettings.secondaryNormalThreshold;
-
-    if (lightingSettings.useFusedKernel)
+    
+    if (lightingSettings.resamplingMode == ResamplingMode::FusedSpatiotemporal)
     {
         constants.initialOutputBufferIndex = (m_LastFrameOutputReservoir + 1) % RtxdiResources::c_NumReservoirBuffers;
         constants.temporalInputBufferIndex = m_LastFrameOutputReservoir;
@@ -376,11 +392,11 @@ void LightingPasses::FillResamplingConstants(
         constants.initialOutputBufferIndex = (m_LastFrameOutputReservoir + 1) % RtxdiResources::c_NumReservoirBuffers;
         constants.temporalInputBufferIndex = m_LastFrameOutputReservoir;
         constants.temporalOutputBufferIndex = (constants.temporalInputBufferIndex + 1) % RtxdiResources::c_NumReservoirBuffers;
-        constants.spatialInputBufferIndex = lightingSettings.enableTemporalResampling
+        constants.spatialInputBufferIndex = useTemporalResampling
             ? constants.temporalOutputBufferIndex
             : constants.initialOutputBufferIndex;
         constants.spatialOutputBufferIndex = (constants.spatialInputBufferIndex + 1) % RtxdiResources::c_NumReservoirBuffers;
-        constants.shadeInputBufferIndex = lightingSettings.enableSpatialResampling
+        constants.shadeInputBufferIndex = useSpatialResampling
             ? constants.spatialOutputBufferIndex
             : constants.temporalOutputBufferIndex;
     }
@@ -417,15 +433,14 @@ void LightingPasses::FillConstantBufferForProbeTracing(
     commandList->writeBuffer(m_ConstantBuffer, &constants, sizeof(constants));
 }
 
-void LightingPasses::Render(
+void LightingPasses::PrepareForLightSampling(
     nvrhi::ICommandList* commandList,
     rtxdi::Context& context,
     const donut::engine::IView& view,
     const donut::engine::IView& previousView,
     const RenderSettings& localSettings,
     const rtxdi::FrameParameters& frameParameters,
-    bool enableAccumulation,
-    uint32_t visualizationMode)
+    bool enableAccumulation)
 {
     ResamplingConstants constants = {};
     constants.frameIndex = frameParameters.frameIndex;
@@ -436,8 +451,8 @@ void LightingPasses::Render(
     constants.enableAccumulation = enableAccumulation;
 
     commandList->writeBuffer(m_ConstantBuffer, &constants, sizeof(constants));
-    
-    if (frameParameters.enableLocalLightImportanceSampling && 
+
+    if (frameParameters.enableLocalLightImportanceSampling &&
         frameParameters.numLocalLights > 0)
     {
         dm::int2 presampleDispatchSize = {
@@ -458,8 +473,8 @@ void LightingPasses::Render(
         ExecuteComputePass(commandList, m_PresampleEnvironmentMapPass, "PresampleEnvironmentMap", presampleDispatchSize, ProfilerSection::PresampleEnvMap);
     }
 
-    if (context.GetParameters().ReGIR.Mode != rtxdi::ReGIRMode::Disabled && 
-        localSettings.enableReGIR && 
+    if (context.GetParameters().ReGIR.Mode != rtxdi::ReGIRMode::Disabled &&
+        localSettings.enableReGIR &&
         frameParameters.numLocalLights > 0)
     {
         dm::int2 worldGridDispatchSize = {
@@ -469,7 +484,14 @@ void LightingPasses::Render(
 
         ExecuteComputePass(commandList, m_PresampleReGIR, "PresampleReGIR", worldGridDispatchSize, ProfilerSection::PresampleReGIR);
     }
+}
 
+void LightingPasses::RenderDirectLighting(
+    nvrhi::ICommandList* commandList,
+    rtxdi::Context& context,
+    const donut::engine::IView& view,
+    const RenderSettings& localSettings)
+{
     dm::int2 dispatchSize = { 
         view.GetViewExtent().width(),
         view.GetViewExtent().height()
@@ -486,7 +508,7 @@ void LightingPasses::Render(
 
     ExecuteRayTracingPass(commandList, m_GenerateInitialSamplesPass, localSettings.enableRayCounts, "GenerateInitialSamples", dispatchSize, ProfilerSection::InitialSamples);
 
-    if (localSettings.useFusedKernel)
+    if (localSettings.resamplingMode == ResamplingMode::FusedSpatiotemporal)
     {
         nvrhi::utils::BufferUavBarrier(commandList, m_LightReservoirBuffer);
 
@@ -494,14 +516,14 @@ void LightingPasses::Render(
     }
     else
     {
-        if (localSettings.enableTemporalResampling)
+        if (localSettings.resamplingMode == ResamplingMode::Temporal || localSettings.resamplingMode == ResamplingMode::TemporalAndSpatial)
         {
             nvrhi::utils::BufferUavBarrier(commandList, m_LightReservoirBuffer);
 
             ExecuteRayTracingPass(commandList, m_TemporalResamplingPass, localSettings.enableRayCounts, "TemporalResampling", dispatchSize, ProfilerSection::TemporalResampling);
         }
 
-        if (localSettings.enableSpatialResampling)
+        if (localSettings.resamplingMode == ResamplingMode::Spatial || localSettings.resamplingMode == ResamplingMode::TemporalAndSpatial)
         {
             nvrhi::utils::BufferUavBarrier(commandList, m_LightReservoirBuffer);
 
@@ -525,28 +547,107 @@ void LightingPasses::RenderBrdfRays(
     nvrhi::ICommandList* commandList, 
     rtxdi::Context& context,
     const donut::engine::IView& view,
+    const donut::engine::IView& previousView,
     const RenderSettings& localSettings,
+    const GBufferSettings& gbufferSettings,
     const rtxdi::FrameParameters& frameParameters,
     const EnvironmentLight& environmentLight,
     bool enableIndirect,
     bool enableAdditiveBlend,
+    bool enableEmissiveSurfaces,
     uint32_t numRtxgiVolumes,
-    bool enableAccumulation)
+    bool enableAccumulation,
+    bool enableReStirGI
+    )
 {
     ResamplingConstants constants = {};
     view.FillPlanarViewConstants(constants.view);
+    previousView.FillPlanarViewConstants(constants.prevView);
+
     constants.frameIndex = frameParameters.frameIndex;
     constants.denoiserMode = localSettings.denoiserMode;
     constants.enableBrdfIndirect = enableIndirect;
     constants.enableBrdfAdditiveBlend = enableAdditiveBlend;
+    constants.enableIndirectEmissiveSurfaces = enableEmissiveSurfaces;
     constants.numRtxgiVolumes = numRtxgiVolumes;
     constants.enableEnvironmentMap = (environmentLight.textureIndex >= 0);
     constants.enableAccumulation = enableAccumulation;
     constants.environmentMapTextureIndex = (environmentLight.textureIndex >= 0) ? environmentLight.textureIndex : 0;
     constants.environmentScale = environmentLight.radianceScale.x;
     constants.environmentRotation = environmentLight.rotation;
+    constants.roughnessOverride = gbufferSettings.enableRoughnessOverride ? gbufferSettings.roughnessOverride : -1.f;
+    constants.metalnessOverride = gbufferSettings.enableMetalnessOverride ? gbufferSettings.metalnessOverride : -1.f;
+    constants.minSecondaryRoughness = localSettings.minSecondaryRoughness;
+    constants.enableFallbackSampling = localSettings.reStirGI.enableFallbackSampling;
+    constants.giEnableFinalMIS = localSettings.reStirGI.enableFinalMIS;
     context.FillRuntimeParameters(constants.runtimeParams, frameParameters);
     FillResamplingConstants(constants, localSettings, frameParameters);
+
+    // Override various DI related settings set in FillResamplingConstants
+
+    constants.boilingFilterStrength = localSettings.reStirGI.enableBoilingFilter ? localSettings.reStirGI.boilingFilterStrength : 0.f;
+    
+    constants.enableReSTIRIndirect = enableReStirGI;
+
+    // There are 2 sets of GI reservoirs in total.
+    switch(localSettings.reStirGI.resamplingMode)
+    {
+    case ResamplingMode::None:
+        constants.initialOutputBufferIndex = 0;
+        constants.shadeInputBufferIndex = 0;
+        break;
+    case ResamplingMode::Temporal:
+        constants.initialOutputBufferIndex = frameParameters.frameIndex & 1;
+        constants.temporalInputBufferIndex = !constants.initialOutputBufferIndex;
+        constants.temporalOutputBufferIndex = constants.initialOutputBufferIndex;
+        constants.shadeInputBufferIndex = constants.temporalOutputBufferIndex;
+        break;
+    case ResamplingMode::Spatial:
+        constants.initialOutputBufferIndex = 0;
+        constants.spatialInputBufferIndex = 0;
+        constants.spatialOutputBufferIndex = 1;
+        constants.shadeInputBufferIndex = 1;
+        break;
+    case ResamplingMode::TemporalAndSpatial:
+        constants.initialOutputBufferIndex = 0;
+        constants.temporalInputBufferIndex = 1;
+        constants.temporalOutputBufferIndex = 0;
+        constants.spatialInputBufferIndex = 0;
+        constants.spatialOutputBufferIndex = 1;
+        constants.shadeInputBufferIndex = 1;
+        break;
+    case ResamplingMode::FusedSpatiotemporal:
+        constants.initialOutputBufferIndex = frameParameters.frameIndex & 1;
+        constants.temporalInputBufferIndex = !constants.initialOutputBufferIndex;
+        constants.spatialOutputBufferIndex = constants.initialOutputBufferIndex;
+        constants.shadeInputBufferIndex = constants.spatialOutputBufferIndex;
+        break;
+    }
+
+    m_CurrentFrameGIOutputReservoir = constants.shadeInputBufferIndex;
+    
+    constants.temporalDepthThreshold = localSettings.reStirGI.depthThreshold;
+    constants.temporalNormalThreshold = localSettings.reStirGI.normalThreshold;
+    constants.spatialDepthThreshold = localSettings.reStirGI.depthThreshold;
+    constants.spatialNormalThreshold = localSettings.reStirGI.normalThreshold;
+
+    constants.giReservoirMaxAge = localSettings.reStirGI.maxReservoirAge;
+    constants.maxHistoryLength = localSettings.reStirGI.maxHistoryLength;
+    constants.enablePermutationSampling = localSettings.reStirGI.enablePermutationSampling;
+
+    constants.numSpatialSamples = localSettings.reStirGI.numSpatialSamples;
+    constants.spatialSamplingRadius = localSettings.reStirGI.samplingRadius;
+    constants.giEnableFinalVisibility = localSettings.reStirGI.enableFinalVisibility;
+
+    constants.temporalBiasCorrection = localSettings.reStirGI.temporalBiasCorrection;
+    constants.spatialBiasCorrection = localSettings.reStirGI.spatialBiasCorrection;
+    // Pairwise bias correction is not supported, fallback to RT for safety (although UI should not allow it anyway)
+    if (constants.temporalBiasCorrection == RTXDI_BIAS_CORRECTION_PAIRWISE) {
+        constants.temporalBiasCorrection = RTXDI_BIAS_CORRECTION_RAY_TRACED;
+    }
+    if (constants.spatialBiasCorrection == RTXDI_BIAS_CORRECTION_PAIRWISE) {
+        constants.spatialBiasCorrection = RTXDI_BIAS_CORRECTION_RAY_TRACED;
+    }
 
     commandList->writeBuffer(m_ConstantBuffer, &constants, sizeof(constants));
 
@@ -562,10 +663,42 @@ void LightingPasses::RenderBrdfRays(
 
     if (enableIndirect)
     {
-        // Place an explicit UAV barrier between the passes. See the note on barriers in Render(...)
+        // Place an explicit UAV barrier between the passes. See the note on barriers in RenderDirectLighting(...)
         nvrhi::utils::BufferUavBarrier(commandList, m_SecondarySurfaceBuffer);
 
-        ExecuteRayTracingPass(commandList, m_ShadeSecondarySurfacesPass, localSettings.enableRayCounts, "ShadeSecondarySurfacesPass", dispatchSize, ProfilerSection::ShadeSecondary, m_RtxgiBindingSet);
+        ExecuteRayTracingPass(commandList, m_ShadeSecondarySurfacesPass, localSettings.enableRayCounts, "ShadeSecondarySurfaces", dispatchSize, ProfilerSection::ShadeSecondary, m_RtxgiBindingSet);
+        
+        if (enableReStirGI)
+        {
+            if (localSettings.reStirGI.resamplingMode == ResamplingMode::FusedSpatiotemporal)
+            {
+                nvrhi::utils::BufferUavBarrier(commandList, m_GIReservoirBuffer);
+
+                ExecuteRayTracingPass(commandList, m_GIFusedResamplingPass, localSettings.enableRayCounts, "GIFusedResampling", dispatchSize, ProfilerSection::GIFusedResampling, nullptr);
+            }
+            else
+            {
+                if (localSettings.reStirGI.resamplingMode == ResamplingMode::Temporal || 
+                    localSettings.reStirGI.resamplingMode == ResamplingMode::TemporalAndSpatial)
+                {
+                    nvrhi::utils::BufferUavBarrier(commandList, m_GIReservoirBuffer);
+
+                    ExecuteRayTracingPass(commandList, m_GITemporalResamplingPass, localSettings.enableRayCounts, "GITemporalResampling", dispatchSize, ProfilerSection::GITemporalResampling, nullptr);
+                }
+
+                if (localSettings.reStirGI.resamplingMode == ResamplingMode::Spatial ||
+                    localSettings.reStirGI.resamplingMode == ResamplingMode::TemporalAndSpatial)
+                {
+                    nvrhi::utils::BufferUavBarrier(commandList, m_GIReservoirBuffer);
+
+                    ExecuteRayTracingPass(commandList, m_GISpatialResamplingPass, localSettings.enableRayCounts, "GISpatialResampling", dispatchSize, ProfilerSection::GISpatialResampling, nullptr);
+                }
+            }
+
+            nvrhi::utils::BufferUavBarrier(commandList, m_GIReservoirBuffer);
+
+            ExecuteRayTracingPass(commandList, m_GIFinalShadingPass, localSettings.enableRayCounts, "GIFinalShading", dispatchSize, ProfilerSection::GIFinalShading, nullptr);
+        }
     }
 }
 

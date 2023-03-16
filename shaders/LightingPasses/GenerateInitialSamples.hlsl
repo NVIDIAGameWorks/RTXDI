@@ -1,5 +1,5 @@
 /***************************************************************************
- # Copyright (c) 2020-2022, NVIDIA CORPORATION.  All rights reserved.
+ # Copyright (c) 2020-2023, NVIDIA CORPORATION.  All rights reserved.
  #
  # NVIDIA CORPORATION and its licensors retain all intellectual property
  # and proprietary rights in and to this software, related documentation
@@ -28,7 +28,7 @@ void RayGen()
 
     const RTXDI_ResamplingRuntimeParameters params = g_Const.runtimeParams;
 
-    uint2 pixelPosition = RTXDI_ReservoirToPixelPos(GlobalIndex, params);
+    uint2 pixelPosition = RTXDI_ReservoirPosToPixelPos(GlobalIndex, params);
 
     RAB_RandomSamplerState rng = RAB_InitRandomSampler(pixelPosition, 1);
     RAB_RandomSamplerState tileRng = RAB_InitRandomSampler(pixelPosition / RTXDI_TILE_SIZE_IN_PIXELS, 1);

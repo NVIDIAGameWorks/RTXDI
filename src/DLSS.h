@@ -1,5 +1,5 @@
 /***************************************************************************
- # Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
+ # Copyright (c) 2021-2023, NVIDIA CORPORATION.  All rights reserved.
  #
  # NVIDIA CORPORATION and its licensors retain all intellectual property
  # and proprietary rights in and to this software, related documentation
@@ -78,8 +78,12 @@ public:
 
     virtual ~DLSS() = default;
 
+#if defined(USE_DX12)
     static std::unique_ptr<DLSS> CreateDX12(nvrhi::IDevice* device, donut::engine::ShaderFactory& shaderFactory);
+#endif
+#if defined(USE_VK)
     static std::unique_ptr<DLSS> CreateVK(nvrhi::IDevice* device, donut::engine::ShaderFactory& shaderFactory);
+#endif
     static void GetRequiredVulkanExtensions(std::vector<std::string>& instanceExtensions, std::vector<std::string>& deviceExtensions);
 };
 

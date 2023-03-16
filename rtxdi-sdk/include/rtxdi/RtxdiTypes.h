@@ -24,6 +24,7 @@
 #define float2 vec2
 #define float3 vec3
 #define float4 vec4
+#define float3x3 mat3
 #define static
 #define atan2 atan
 #define sincos(x,s,c) {s=sin(x);c=cos(x);}
@@ -36,6 +37,8 @@
 #define WaveActiveCountBits(x) subgroupBallotBitCount(uvec4(x,0,0,0))
 #define WaveIsFirstLane subgroupElect
 #define GroupMemoryBarrierWithGroupSync barrier
+#define f32tof16(f) packHalf2x16(vec2(f, 0))
+#define f16tof32(u) unpackHalf2x16(u).x
 
 #define RTXDI_TEX2D sampler2D
 #define RTXDI_TEX2D_LOAD(t,pos,lod) texelFetch(t,pos,lod)

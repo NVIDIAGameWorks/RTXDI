@@ -1,5 +1,5 @@
 /***************************************************************************
- # Copyright (c) 2020-2021, NVIDIA CORPORATION.  All rights reserved.
+ # Copyright (c) 2020-2023, NVIDIA CORPORATION.  All rights reserved.
  #
  # NVIDIA CORPORATION and its licensors retain all intellectual property
  # and proprietary rights in and to this software, related documentation
@@ -36,9 +36,10 @@ public:
     nvrhi::BufferHandle RisLightDataBuffer;
     nvrhi::BufferHandle NeighborOffsetsBuffer;
     nvrhi::BufferHandle LightReservoirBuffer;
-    nvrhi::BufferHandle SecondarySurfaceBuffer;
+    nvrhi::BufferHandle SecondaryGBuffer;
     nvrhi::TextureHandle EnvironmentPdfTexture;
     nvrhi::TextureHandle LocalLightPdfTexture;
+    nvrhi::BufferHandle GIReservoirBuffer;
 
     RtxdiResources(
         nvrhi::IDevice* device, 
@@ -58,4 +59,5 @@ public:
     uint32_t GetMaxGeometryInstances() const { return m_MaxGeometryInstances; }
 
     static constexpr uint32_t c_NumReservoirBuffers = 3;
+    static constexpr uint32_t c_NumGIReservoirBuffers = 2;
 };

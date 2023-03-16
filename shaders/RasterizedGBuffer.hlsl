@@ -1,5 +1,5 @@
 /***************************************************************************
- # Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
+ # Copyright (c) 2021-2023, NVIDIA CORPORATION.  All rights reserved.
  #
  # NVIDIA CORPORATION and its licensors retain all intellectual property
  # and proprietary rights in and to this software, related documentation
@@ -140,8 +140,22 @@ void ps_main(
         GeomAttr_All, t_InstanceData, t_GeometryData, t_MaterialConstants);
 #endif
 
+    float3 worldSpacePosition = mul(gs.instance.transform, float4(gs.objectSpacePosition, 1.0)).xyz;
+#ifdef SPIRV
+    gs.flatNormal = normalize(cross(ddy(worldSpacePosition), ddx(worldSpacePosition)));
+#endif
+    
+    float3 viewDirection = worldSpacePosition - g_Const.view.cameraDirectionOrPosition.xyz;
+    float viewDistance = length(viewDirection);
+    viewDirection /= viewDistance;
+
+    if (dot(gs.geometryNormal, viewDirection) > 0)
+        gs.geometryNormal = -gs.geometryNormal;
+
     MaterialSample ms = sampleGeometryMaterial(gs, g_Const.textureLodBias, MatAttr_All, s_MaterialSampler, g_Const.normalMapScale);
     
+    ms.shadingNormal = getBentNormal(gs.flatNormal, ms.shadingNormal, viewDirection);
+
 #if ALPHA_TESTED
     bool alphaMask = (ms.opacity >= gs.material.alphaCutoff);
 
@@ -170,15 +184,6 @@ void ps_main(
     {
         u_RayCountBuffer[g_Const.materialReadbackBufferIndex] = gs.geometry.materialIndex + 1;
     }
-
-    float3 worldSpacePosition = mul(gs.instance.transform, float4(gs.objectSpacePosition, 1.0)).xyz;
-#ifdef SPIRV
-    gs.flatNormal = normalize(cross(ddy(worldSpacePosition), ddx(worldSpacePosition)));
-#endif
-    float3 viewDirection = worldSpacePosition - g_Const.view.cameraDirectionOrPosition.xyz;
-    float viewDistance = length(viewDirection);
-    viewDirection /= viewDistance;
-    ms.shadingNormal = getBentNormal(gs.flatNormal, ms.shadingNormal, viewDirection);
 
     if (g_Const.roughnessOverride >= 0)
         ms.roughness = g_Const.roughnessOverride;

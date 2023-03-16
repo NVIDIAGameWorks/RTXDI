@@ -1,5 +1,5 @@
 /***************************************************************************
- # Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+ # Copyright (c) 2021-2023, NVIDIA CORPORATION.  All rights reserved.
  #
  # NVIDIA CORPORATION and its licensors retain all intellectual property
  # and proprietary rights in and to this software, related documentation
@@ -10,12 +10,12 @@
 
 #pragma pack_matrix(row_major)
 
-#include "RtxdiApplicationBridge.hlsli"
-
 #if USE_RAY_QUERY
 #define RTXDI_ENABLE_BOILING_FILTER
 #define RTXDI_BOILING_FILTER_GROUP_SIZE RTXDI_SCREEN_SPACE_GROUP_SIZE
 #endif
+
+#include "RtxdiApplicationBridge.hlsli"
 
 #include <rtxdi/ResamplingFunctions.hlsli>
 
@@ -40,7 +40,7 @@ void RayGen()
 
     const RTXDI_ResamplingRuntimeParameters params = g_Const.runtimeParams;
 
-    uint2 pixelPosition = RTXDI_ReservoirToPixelPos(GlobalIndex, params);
+    uint2 pixelPosition = RTXDI_ReservoirPosToPixelPos(GlobalIndex, params);
 
     RAB_RandomSamplerState rng = RAB_InitRandomSampler(pixelPosition, 2);
 
@@ -72,6 +72,7 @@ void RayGen()
     stparams.samplingRadius = g_Const.spatialSamplingRadius;
     stparams.enableVisibilityShortcut = g_Const.discardInvisibleSamples;
     stparams.enablePermutationSampling = usePermutationSampling;
+    stparams.enableMaterialSimilarityTest = true;
 
     RAB_LightSample lightSample;
     reservoir = RTXDI_SpatioTemporalResampling(pixelPosition, surface, reservoir,

@@ -1,5 +1,5 @@
 /***************************************************************************
- # Copyright (c) 2020-2022, NVIDIA CORPORATION.  All rights reserved.
+ # Copyright (c) 2020-2023, NVIDIA CORPORATION.  All rights reserved.
  #
  # NVIDIA CORPORATION and its licensors retain all intellectual property
  # and proprietary rights in and to this software, related documentation
@@ -173,6 +173,15 @@ bool RAB_GetTemporalConservativeVisibility(RAB_Surface currentSurface, RAB_Surfa
     RAB_LightSample lightSample)
 {
     return RAB_GetConservativeVisibility(currentSurface, lightSample);
+}
+
+// This function is called in the spatial resampling passes to make sure that 
+// the samples actually land on the screen and not outside of its boundaries.
+// It can clamp the position or reflect it about the nearest screen edge.
+// The simplest implementation will just return the input pixelPosition.
+int2 RAB_ClampSamplePositionIntoView(int2 pixelPosition, bool previousFrame)
+{
+    return clamp(pixelPosition, 0, int2(g_Const.view.viewportSize) - 1);
 }
 
 // Load a sample from the previous G-buffer.

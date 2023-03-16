@@ -1,5 +1,5 @@
 /***************************************************************************
- # Copyright (c) 2020-2022, NVIDIA CORPORATION.  All rights reserved.
+ # Copyright (c) 2020-2023, NVIDIA CORPORATION.  All rights reserved.
  #
  # NVIDIA CORPORATION and its licensors retain all intellectual property
  # and proprietary rights in and to this software, related documentation
@@ -72,6 +72,11 @@ bool RAB_GetConservativeVisibility(RAB_Surface surface, RAB_LightSample lightSam
 bool RAB_GetTemporalConservativeVisibility(RAB_Surface currentSurface, RAB_Surface previousSurface, RAB_LightSample lightSample)
 {
     return true;
+}
+
+int2 RAB_ClampSamplePositionIntoView(int2 pixelPosition, bool previousFrame)
+{
+    return pixelPosition;
 }
 
 RAB_Surface RAB_GetGBufferSurface(int2 pixelPosition, bool previousFrame)
@@ -185,6 +190,26 @@ bool RAB_AreMaterialsSimilar(RAB_Surface a, RAB_Surface b)
     return true;
 }
 
+bool RAB_ValidateGISampleWithJacobian(inout float jacobian)
+{
+    return true;
+}
+
+float RAB_GetGISampleTargetPdfForSurface(float3 samplePosition, float3 sampleRadiance, RAB_Surface surface)
+{
+    return 1.0;
+}
+
+bool RAB_GetConservativeVisibility(RAB_Surface surface, float3 samplePosition)
+{
+    return true;
+}
+
+bool RAB_GetTemporalConservativeVisibility(RAB_Surface currentSurface, RAB_Surface previousSurface, float3 samplePosition)
+{
+    return true;
+}
+
 #define RTXDI_ENABLE_BOILING_FILTER
 #define RTXDI_BOILING_FILTER_GROUP_SIZE 16
 
@@ -200,9 +225,14 @@ layout(set = 0, binding = 2) readonly buffer NEIGHBOR_OFFSET_BUFFER {
     vec2 t_NeighborOffsets[];
 };
 
+layout(set = 0, binding = 3) buffer GI_RESERVOIR_BUFFER {
+    RTXDI_PackedGIReservoir u_GIReservoirs[];
+};
+
 #define RTXDI_RIS_BUFFER u_RisBuffer
 #define RTXDI_LIGHT_RESERVOIR_BUFFER u_LightReservoirs
 #define RTXDI_NEIGHBOR_OFFSETS_BUFFER t_NeighborOffsets
+#define RTXDI_GI_RESERVOIR_BUFFER u_GIReservoirs
 
 #include "rtxdi/ResamplingFunctions.hlsli"
 

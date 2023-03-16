@@ -1,5 +1,5 @@
 /***************************************************************************
- # Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+ # Copyright (c) 2021-2023, NVIDIA CORPORATION.  All rights reserved.
  #
  # NVIDIA CORPORATION and its licensors retain all intellectual property
  # and proprietary rights in and to this software, related documentation
@@ -26,10 +26,13 @@ Texture2D<float4> t_DenoisedDiffuse : register(t5);
 Texture2D<float4> t_DenoisedSpecular : register(t6);
 Texture2D<float4> t_Gradients : register(t7);
 StructuredBuffer<RTXDI_PackedReservoir> t_Reservoirs : register(t8);
+StructuredBuffer<RTXDI_PackedGIReservoir> t_GIReservoirs : register(t9);
 
 #define RTXDI_LIGHT_RESERVOIR_BUFFER t_Reservoirs
+#define RTXDI_GI_RESERVOIR_BUFFER t_GIReservoirs
 #define RTXDI_ENABLE_STORE_RESERVOIR 0
 #include <rtxdi/Reservoir.hlsli>
+#include <rtxdi/GIReservoir.hlsli>
 
 float4 blend(float4 top, float4 bottom)
 {
@@ -48,7 +51,7 @@ float4 main(float4 i_position : SV_Position) : SV_Target
         resolutionScale = 1.0;
 
     int2 inputPos = int2(pixelPos.x * resolutionScale.x, g_Const.outputSize.y * resolutionScale.y * 0.5);
-    int2 reservoirPos = RTXDI_PixelPosToReservoir(inputPos, g_Const.runtimeParams);
+    int2 reservoirPos = RTXDI_PixelPosToReservoirPos(inputPos, g_Const.runtimeParams);
     float input = 0;
 
     switch(g_Const.visualizationMode)
@@ -101,6 +104,18 @@ float4 main(float4 i_position : SV_Position) : SV_Target
     case VIS_MODE_SPECULAR_GRADIENT: {
         float4 gradient = t_Gradients[reservoirPos / RTXDI_GRAD_FACTOR];
         input = gradient.y;
+        break;
+    }
+                                   
+    case VIS_MODE_GI_WEIGHT: {
+        RTXDI_GIReservoir reservoir = RTXDI_LoadGIReservoir(g_Const.runtimeParams, reservoirPos, g_Const.inputBufferIndex);
+        input = reservoir.weightSum;
+        break;
+    }
+
+    case VIS_MODE_GI_M: {
+        RTXDI_GIReservoir reservoir = RTXDI_LoadGIReservoir(g_Const.runtimeParams, reservoirPos, g_Const.inputBufferIndex);
+        input = reservoir.M;
         break;
     }
     }

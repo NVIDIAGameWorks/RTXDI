@@ -1,5 +1,5 @@
 /***************************************************************************
- # Copyright (c) 2020-2022, NVIDIA CORPORATION.  All rights reserved.
+ # Copyright (c) 2020-2023, NVIDIA CORPORATION.  All rights reserved.
  #
  # NVIDIA CORPORATION and its licensors retain all intellectual property
  # and proprietary rights in and to this software, related documentation
@@ -51,7 +51,7 @@ void RayGen()
     {
         // Translate the gradient stratum index (GlobalIndex) into reservoir and pixel positions.
         int2 srcReservoirPos = GlobalIndex * RTXDI_GRAD_FACTOR + int2(xx, yy);
-        int2 srcPixelPos = RTXDI_ReservoirToPixelPos(srcReservoirPos, g_Const.runtimeParams);
+        int2 srcPixelPos = RTXDI_ReservoirPosToPixelPos(srcReservoirPos, g_Const.runtimeParams);
 
         if (any(srcPixelPos >= int2(g_Const.view.viewportSize)))
             continue;
@@ -59,7 +59,7 @@ void RayGen()
         // Find the matching pixel in the previous frame - that information is produced
         // by the temporal resampling or fused resampling shaders.
         int2 temporalPixelPos = u_TemporalSamplePositions[srcReservoirPos];
-        int2 temporalReservoirPos = RTXDI_PixelPosToReservoir(temporalPixelPos, g_Const.runtimeParams);
+        int2 temporalReservoirPos = RTXDI_PixelPosToReservoirPos(temporalPixelPos, g_Const.runtimeParams);
 
         // Load the previous frame sampled lighting luminance.
         // For invalid gradients, temporalPixelPos is negative, and prevLuminance will be 0
@@ -98,7 +98,7 @@ void RayGen()
 
         // Translate the pixel pos into reservoir pos - the math the same for both current and prev frames,
         // unlike the reverse translation that has to take the active checkerboard field into account.
-        int2 selectedCurrentOrPrevReservoirPos = RTXDI_PixelPosToReservoir(selectedCurrentOrPrevPixelPos, g_Const.runtimeParams);
+        int2 selectedCurrentOrPrevReservoirPos = RTXDI_PixelPosToReservoirPos(selectedCurrentOrPrevPixelPos, g_Const.runtimeParams);
 
         // Load the reservoir that was selected for gradient evaluation, either from the current or the previous frame.
         RTXDI_Reservoir selectedReservoir = RTXDI_LoadReservoir(params,

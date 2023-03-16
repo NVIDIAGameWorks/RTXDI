@@ -1,5 +1,5 @@
 /***************************************************************************
- # Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
+ # Copyright (c) 2021-2023, NVIDIA CORPORATION.  All rights reserved.
  #
  # NVIDIA CORPORATION and its licensors retain all intellectual property
  # and proprietary rights in and to this software, related documentation
@@ -22,6 +22,8 @@ Texture2D<float> t_ViewDepth : register(t1);
 
 #define NRD_BILATERAL_WEIGHT_VIEWZ_SENSITIVITY 100.0
 #define NRD_BILATERAL_WEIGHT_CUTOFF            0.03
+
+static const float kMirrorRoughness = 0.01f;
 
 float GetBilateralWeight( float z, float zc )
 {
@@ -72,7 +74,11 @@ void main(uint2 pixelPosition : SV_DispatchThreadID)
     float invSumW = 1.0 / sumW;
     averageNormal *= invSumW;
 
-    float currentRoughnessModified = GetModifiedRoughnessFromNormalVariance(currentRoughness, averageNormal);
+    float currentRoughnessModified;
+    if (currentRoughness <= kMirrorRoughness)
+        currentRoughnessModified = 0;
+    else 
+        currentRoughnessModified = GetModifiedRoughnessFromNormalVariance(currentRoughness, averageNormal);
 
     u_SpecularRough[pixelPosition] = Pack_R8G8B8A8_Gamma_UFLOAT(float4(specularRough.rgb, currentRoughnessModified));
     u_NormalRoughness[pixelPosition] = float4(currentNormal * 0.5 + 0.5, currentRoughness);

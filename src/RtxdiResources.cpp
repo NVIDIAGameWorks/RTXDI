@@ -1,5 +1,5 @@
 /***************************************************************************
- # Copyright (c) 2020-2021, NVIDIA CORPORATION.  All rights reserved.
+ # Copyright (c) 2020-2023, NVIDIA CORPORATION.  All rights reserved.
  #
  # NVIDIA CORPORATION and its licensors retain all intellectual property
  # and proprietary rights in and to this software, related documentation
@@ -119,14 +119,14 @@ RtxdiResources::RtxdiResources(
     LightReservoirBuffer = device->createBuffer(lightReservoirBufferDesc);
 
 
-    nvrhi::BufferDesc secondarySurfaceBufferDesc;
-    secondarySurfaceBufferDesc.byteSize = sizeof(SecondarySurface) * context.GetReservoirBufferElementCount();
-    secondarySurfaceBufferDesc.structStride = sizeof(SecondarySurface);
-    secondarySurfaceBufferDesc.initialState = nvrhi::ResourceStates::UnorderedAccess;
-    secondarySurfaceBufferDesc.keepInitialState = true;
-    secondarySurfaceBufferDesc.debugName = "SecondarySurfaceBuffer";
-    secondarySurfaceBufferDesc.canHaveUAVs = true;
-    SecondarySurfaceBuffer = device->createBuffer(secondarySurfaceBufferDesc);
+    nvrhi::BufferDesc secondaryGBufferDesc;
+    secondaryGBufferDesc.byteSize = sizeof(SecondaryGBufferData) * context.GetReservoirBufferElementCount();
+    secondaryGBufferDesc.structStride = sizeof(SecondaryGBufferData);
+    secondaryGBufferDesc.initialState = nvrhi::ResourceStates::UnorderedAccess;
+    secondaryGBufferDesc.keepInitialState = true;
+    secondaryGBufferDesc.debugName = "SecondaryGBuffer";
+    secondaryGBufferDesc.canHaveUAVs = true;
+    SecondaryGBuffer = device->createBuffer(secondaryGBufferDesc);
 
 
     nvrhi::TextureDesc environmentPdfDesc;
@@ -149,6 +149,15 @@ RtxdiResources::RtxdiResources(
     localLightPdfDesc.keepInitialState = true;
     localLightPdfDesc.format = nvrhi::Format::R32_FLOAT; // Use FP32 here to allow a wide range of flux values, esp. when downsampled.
     LocalLightPdfTexture = device->createTexture(localLightPdfDesc);
+    
+    nvrhi::BufferDesc giReservoirBufferDesc;
+    giReservoirBufferDesc.byteSize = sizeof(RTXDI_PackedGIReservoir) * context.GetReservoirBufferElementCount() * c_NumGIReservoirBuffers;
+    giReservoirBufferDesc.structStride = sizeof(RTXDI_PackedGIReservoir);
+    giReservoirBufferDesc.initialState = nvrhi::ResourceStates::UnorderedAccess;
+    giReservoirBufferDesc.keepInitialState = true;
+    giReservoirBufferDesc.debugName = "GIReservoirBuffer";
+    giReservoirBufferDesc.canHaveUAVs = true;
+    GIReservoirBuffer = device->createBuffer(giReservoirBufferDesc);
 }
 
 void RtxdiResources::InitializeNeighborOffsets(nvrhi::ICommandList* commandList, const rtxdi::Context& context)

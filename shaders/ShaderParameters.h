@@ -1,5 +1,5 @@
 /***************************************************************************
- # Copyright (c) 2020-2021, NVIDIA CORPORATION.  All rights reserved.
+ # Copyright (c) 2020-2023, NVIDIA CORPORATION.  All rights reserved.
  #
  # NVIDIA CORPORATION and its licensors retain all intellectual property
  # and proprietary rights in and to this software, related documentation
@@ -13,6 +13,7 @@
 
 #include <donut/shaders/view_cb.h>
 #include <donut/shaders/sky_cb.h>
+
 #include <rtxdi/RtxdiParameters.h>
 
 #define TASK_PRIMITIVE_LIGHT_BIT 0x80000000u
@@ -46,6 +47,8 @@
 #define VIS_MODE_SPECULAR_GRADIENT   10
 #define VIS_MODE_DIFFUSE_CONFIDENCE  11
 #define VIS_MODE_SPECULAR_CONFIDENCE 12
+#define VIS_MODE_GI_WEIGHT           13
+#define VIS_MODE_GI_M                14
 
 #define BACKGROUND_DEPTH 65504.f
 
@@ -218,7 +221,7 @@ struct ResamplingConstants
     uint enableBrdfIndirect;
     uint enableBrdfAdditiveBlend;
     uint enableAlphaTestedGeometry;
-    uint pad1;
+    uint enableReSTIRIndirect;
     
     uint enableTransparentGeometry;
     uint enableDenoiserInputPacking;
@@ -233,12 +236,12 @@ struct ResamplingConstants
     uint numIndirectRegirSamples;
     uint numIndirectLocalLightSamples;
     uint numIndirectInfiniteLightSamples;
-    uint pad2;
+    uint enableIndirectEmissiveSurfaces;
 
     uint enableInitialVisibility;
     uint enableFinalVisibility;
     uint initialOutputBufferIndex;
-    uint pad3;
+    uint enableFallbackSampling;
 
     uint temporalInputBufferIndex;
     uint temporalOutputBufferIndex;
@@ -287,6 +290,14 @@ struct ResamplingConstants
     float secondaryDepthThreshold;
     float secondaryNormalThreshold;
     float permutationSamplingThreshold;
+
+    float roughnessOverride;
+    float metalnessOverride;
+    float minSecondaryRoughness;
+    uint giReservoirMaxAge;
+
+    uint giEnableFinalVisibility;
+    uint giEnableFinalMIS;
 };
 
 struct PerPassConstants
@@ -295,15 +306,22 @@ struct PerPassConstants
     uint rtxgiVolumeIndex;
 };
 
-struct SecondarySurface
+struct SecondaryGBufferData
 {
     float3 worldPos;
     uint normal;
 
-    uint2 throughput;
-    uint diffuseAlbedo;
-    uint specularAndRoughness;
+    uint2 throughputAndFlags;   // .x = throughput.rg as float16, .y = throughput.b as float16, flags << 16
+    uint diffuseAlbedo;         // R11G11B10_UFLOAT
+    uint specularAndRoughness;  // R8G8B8A8_Gamma_UFLOAT
+    
+    float3 emission;
+    float pdf;
 };
+
+static const uint kSecondaryGBuffer_IsSpecularRay = 1;
+static const uint kSecondaryGBuffer_IsDeltaSurface = 2;
+static const uint kSecondaryGBuffer_IsEnvironmentMap = 4;
 
 static const uint kPolymorphicLightTypeShift = 24;
 static const uint kPolymorphicLightTypeMask = 0xf;

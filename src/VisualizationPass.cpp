@@ -1,5 +1,5 @@
 /***************************************************************************
- # Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
+ # Copyright (c) 2021-2023, NVIDIA CORPORATION.  All rights reserved.
  #
  # NVIDIA CORPORATION and its licensors retain all intellectual property
  # and proprietary rights in and to this software, related documentation
@@ -49,6 +49,7 @@ VisualizationPass::VisualizationPass(nvrhi::IDevice* device,
         .addItem(nvrhi::BindingSetItem::Texture_SRV(6, renderTargets.DenoisedSpecularLighting))
         .addItem(nvrhi::BindingSetItem::Texture_SRV(7, renderTargets.Gradients))
         .addItem(nvrhi::BindingSetItem::StructuredBuffer_SRV(8, rtxdiResources.LightReservoirBuffer))
+        .addItem(nvrhi::BindingSetItem::StructuredBuffer_SRV(9, rtxdiResources.GIReservoirBuffer))
         .addItem(nvrhi::BindingSetItem::ConstantBuffer(0, m_ConstantBuffer));
 
     nvrhi::utils::CreateBindingSetAndLayout(device, nvrhi::ShaderType::AllGraphics, 0, bindingDesc, m_HdrBindingLayout, m_HdrBindingSet);

@@ -1,5 +1,5 @@
 /***************************************************************************
- # Copyright (c) 2020-2021, NVIDIA CORPORATION.  All rights reserved.
+ # Copyright (c) 2020-2023, NVIDIA CORPORATION.  All rights reserved.
  #
  # NVIDIA CORPORATION and its licensors retain all intellectual property
  # and proprietary rights in and to this software, related documentation
@@ -67,6 +67,9 @@ void shadeSurface(
 
     texGrad_x *= g_Const.textureGradientScale;
     texGrad_y *= g_Const.textureGradientScale;
+
+    if (dot(gs.geometryNormal, viewDirection) > 0)
+        gs.geometryNormal = -gs.geometryNormal;
 
     MaterialSample ms = sampleGeometryMaterial(gs, texGrad_x, texGrad_y, -1, MatAttr_All, 
         s_MaterialSampler, g_Const.normalMapScale);

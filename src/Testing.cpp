@@ -1,5 +1,5 @@
 /***************************************************************************
- # Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
+ # Copyright (c) 2021-2023, NVIDIA CORPORATION.  All rights reserved.
  #
  # NVIDIA CORPORATION and its licensors retain all intellectual property
  # and proprietary rights in and to this software, related documentation
@@ -53,21 +53,62 @@ std::istream& operator>> (std::istream& is, AntiAliasingMode& mode)
     return is;
 }
 
-std::istream& operator>> (std::istream& is, RenderingMode& mode)
+std::istream& operator>> (std::istream& is, DirectLightingMode& mode)
 {
     std::string s;
     is >> s;
     toupper(s);
 
-    if (s == "BRDF")
-        mode = RenderingMode::BrdfDirectOnly;
+    if (s == "NONE")
+        mode = DirectLightingMode::None;
+    else if (s == "BRDF")
+        mode = DirectLightingMode::Brdf;
     else if (s == "RESTIR")
-        mode = RenderingMode::ReStirDirectOnly;
-    else if (s == "INDIRECT")
-        mode = RenderingMode::ReStirDirectBrdfIndirect;
+        mode = DirectLightingMode::ReStir;
     else
-        throw cxxopts::OptionException("Unrecognized value passed to the --render-mode argument.");
+        throw cxxopts::OptionException("Unrecognized value passed to the --direct-mode argument.");
 
+    return is;
+}
+
+std::istream& operator>> (std::istream& is, IndirectLightingMode& mode)
+{
+    std::string s;
+    is >> s;
+    toupper(s);
+
+    if (s == "NONE")
+        mode = IndirectLightingMode::None;
+    else if (s == "BRDF")
+        mode = IndirectLightingMode::Brdf;
+    else if (s == "RESTIRGI")
+        mode = IndirectLightingMode::ReStirGI;
+    else
+        throw cxxopts::OptionException("Unrecognized value passed to the --indirect-mode argument.");
+
+    return is;
+}
+
+std::istream& operator>> (std::istream& is, ResamplingMode& mode)
+{
+    std::string s;
+    is >> s;
+    toupper(s);
+
+    if (s == "NONE")
+        mode = ResamplingMode::None;
+    else if (s == "TEMPORAL")
+        mode = ResamplingMode::Temporal;
+    else if (s == "SPATIAL")
+        mode = ResamplingMode::Spatial;
+    else if (s == "TEMPORAL_SPATIAL")
+        mode = ResamplingMode::TemporalAndSpatial;
+    else if (s == "FUSED")
+        mode = ResamplingMode::FusedSpatiotemporal;
+
+    else
+        throw cxxopts::OptionException("Unrecognized value passed to the --gi-mode argument.");
+    
     return is;
 }
 
@@ -116,22 +157,22 @@ void ProcessCommandLine(int argc, char** argv, donut::app::DeviceCreationParamet
         ("checkerboard", "Use checkerboard rendering", value(checkerboard))
         ("d,debug", "Enable the DX12 or Vulkan validation layers", value(deviceParams.enableDebugRuntime))
         ("disable-bg-opt", "Disable DX12 driver background optimization", value(args.disableBackgroundOptimization))
-        ("fused-kernel", "Fused vs Separate kernel switch", value(ui.lightingSettings.useFusedKernel))
+        ("direct-resampling", "Direct lighting resampling mode: NONE, TEMPORAL, SPATIAL, TEMPORAL_SPATIAL, FUSED", value(ui.lightingSettings.resamplingMode))
         ("fullscreen", "Run in full screen", value(deviceParams.startFullscreen))
         ("h,help", "Display this help message", value(help))
         ("height", "Window height", value(deviceParams.backBufferHeight))
+        ("indirect-resampling", "ReSTIR GI resampling mode: NONE, TEMPORAL, SPATIAL, TEMPORAL_SPATIAL, FUSED", value(ui.lightingSettings.reStirGI.resamplingMode))
         ("noise-mix", "Amount of noise to mix in after denoising", value(ui.noiseMix))
         ("pixel-jitter", "Pixel jitter toggle", value(ui.enablePixelJitter))
         ("preset", "Rendering settings preset: FAST, MEDIUM, UNBIASED, ULTRA, REFERENCE", value(ui))
         ("rasterize-gbuffer", "G-buffer rasterization toggle", value(ui.rasterizeGBuffer))
         ("ray-query", "Ray Query toggle", value(ui.useRayQuery))
-        ("render-mode", "Rendering mode: BRDF, RESTIR, INDIRECT", value(ui.renderingMode))
+        ("direct-mode", "Direct lighting mode: NONE, BRDF, RESTIR", value(ui.directLightingMode))
+        ("indirect-mode", "Indirect lighting mode: NONE, BRDF, RESTIRGI", value(ui.indirectLightingMode))
         ("render-width", "Internal render target width, overrides window size", value(args.renderWidth))
         ("render-height", "Internal render target height, overrides window size", value(args.renderHeight))
         ("save-file", "Save frame to file and exit", value(args.saveFrameFileName))
         ("save-frame", "Index of the frame to save, default is 0", value(args.saveFrameIndex))
-        ("spatial-resampling", "Spatial resampling toggle", value(ui.lightingSettings.enableSpatialResampling))
-        ("temporal-resampling", "Temporal resampling toggle", value(ui.lightingSettings.enableTemporalResampling))
         ("tone-mapping", "Tone mapping toggle", value(ui.enableToneMapping))
         ("transparent", "Transparent materials toggle", value(ui.gbufferSettings.enableTransparentGeometry))
         ("verbose", "Enable debug log messages", value(args.verbose))
@@ -150,7 +191,7 @@ void ProcessCommandLine(int argc, char** argv, donut::app::DeviceCreationParamet
         ("rtxgi", "RTXGI toggle", value(ui.rtxgi.enabled))
     ;
 #endif
-    
+
     try
     {
         options.parse(argc, argv);

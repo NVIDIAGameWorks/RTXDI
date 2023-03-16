@@ -1,5 +1,5 @@
 /***************************************************************************
- # Copyright (c) 2020-2022, NVIDIA CORPORATION.  All rights reserved.
+ # Copyright (c) 2020-2023, NVIDIA CORPORATION.  All rights reserved.
  #
  # NVIDIA CORPORATION and its licensors retain all intellectual property
  # and proprietary rights in and to this software, related documentation
@@ -82,19 +82,16 @@ RTXDI_SampleParameters RTXDI_InitSampleParameters(
     return result;
 }
 
-/** Heuristic to determine a max visibility ray length from a PDF wrt. solid angle.
-       \param[in] pdf PDF wrt. solid angle.
-   */
+// Heuristic to determine a max visibility ray length from a PDF wrt. solid angle.
 float RTXDI_BrdfMaxDistanceFromPdf(float brdfCutoff, float pdf)
 {
     const float kRayTMax = 3.402823466e+38F; // FLT_MAX
     return brdfCutoff > 0.f ? sqrt((1.f / brdfCutoff - 1.f) * pdf) : kRayTMax;
 }
 
-/** Computes the multi importance sampling pdf for brdf and light sample.
-    For light and BRDF PDFs wrt solid angle, blend between the two
-        \param[in] lightSelectionPdf is a dimensionless selection pdf
-*/
+// Computes the multi importance sampling pdf for brdf and light sample.
+// For light and BRDF PDFs wrt solid angle, blend between the two.
+//      lightSelectionPdf is a dimensionless selection pdf
 float RTXDI_LightBrdfMisWeight(RAB_Surface surface, RAB_LightSample lightSample, 
     float lightSelectionPdf, float lightMisWeight, bool isEnvironmentMap,
     RTXDI_SampleParameters sampleParams)
@@ -1092,12 +1089,6 @@ RTXDI_Reservoir RTXDI_SampleLightsForSurface(
 }
 
 #ifdef RTXDI_ENABLE_BOILING_FILTER
-// RTXDI_BOILING_FILTER_GROUP_SIZE must be defined - 16 is a reasonable value
-#define RTXDI_BOILING_FILTER_MIN_LANE_COUNT 32
-
-groupshared float s_weights[(RTXDI_BOILING_FILTER_GROUP_SIZE * RTXDI_BOILING_FILTER_GROUP_SIZE + RTXDI_BOILING_FILTER_MIN_LANE_COUNT - 1) / RTXDI_BOILING_FILTER_MIN_LANE_COUNT];
-groupshared uint s_count[(RTXDI_BOILING_FILTER_GROUP_SIZE * RTXDI_BOILING_FILTER_GROUP_SIZE + RTXDI_BOILING_FILTER_MIN_LANE_COUNT - 1) / RTXDI_BOILING_FILTER_MIN_LANE_COUNT];
-
 // Boiling filter that should be applied at the end of the temporal resampling pass.
 // Can be used inside the same shader that does temporal resampling if it's a compute shader,
 // or in a separate pass if temporal resampling is a raygen shader.
@@ -1107,70 +1098,12 @@ void RTXDI_BoilingFilter(
     uint2 LocalIndex,
     float filterStrength, // (0..1]
     RTXDI_ResamplingRuntimeParameters params,
-    inout RTXDI_Reservoir state)
+    inout RTXDI_Reservoir reservoir)
 {
-    // Boiling happens when some highly unlikely light is discovered and it is relevant
-    // for a large surface area around the pixel that discovered it. Then this light sample
-    // starts to propagate to the neighborhood through spatiotemporal reuse, which looks like
-    // a flash. We can detect such lights because their weight is significantly higher than 
-    // the weight of their neighbors. So, compute the average group weight and apply a threshold.
-
-    float boilingFilterMultiplier = 10.f / clamp(filterStrength, 1e-6, 1.0) - 9.f;
-
-    // Start with average nonzero weight within the wavefront
-    float waveWeight = WaveActiveSum(state.weightSum);
-    uint waveCount = WaveActiveCountBits(state.weightSum > 0);
-
-    // Store the results of each wavefront into shared memory
-    uint linearThreadIndex = LocalIndex.x + LocalIndex.y * RTXDI_BOILING_FILTER_GROUP_SIZE;
-    uint waveIndex = linearThreadIndex / WaveGetLaneCount();
-
-    if (WaveIsFirstLane())
-    {
-        s_weights[waveIndex] = waveWeight;
-        s_count[waveIndex] = waveCount;
-    }
-
-    GroupMemoryBarrierWithGroupSync();
-
-    // Reduce the per-wavefront averages into a global average using one wavefront
-    if (linearThreadIndex < (RTXDI_BOILING_FILTER_GROUP_SIZE * RTXDI_BOILING_FILTER_GROUP_SIZE + WaveGetLaneCount() - 1) / WaveGetLaneCount())
-    {
-        waveWeight = s_weights[linearThreadIndex];
-        waveCount = s_count[linearThreadIndex];
-
-        waveWeight = WaveActiveSum(waveWeight);
-        waveCount = WaveActiveSum(waveCount);
-
-        if (linearThreadIndex == 0)
-        {
-            s_weights[0] = (waveCount > 0) ? (waveWeight / float(waveCount)) : 0.0;
-        }
-    }
-
-    GroupMemoryBarrierWithGroupSync();
-
-    // Read the per-group average and apply the threshold
-    float averageNonzeroWeight = s_weights[0];
-    if (state.weightSum > averageNonzeroWeight * boilingFilterMultiplier)
-    {
-        state = RTXDI_EmptyReservoir();
-    }
+    if (RTXDI_BoilingFilterInternal(LocalIndex, filterStrength, params, reservoir.weightSum))
+        reservoir = RTXDI_EmptyReservoir();
 }
 #endif // RTXDI_ENABLE_BOILING_FILTER
-
-
-// Internal SDK function that permutes the pixels sampled from the previous frame.
-void RTXDI_ApplyPermutationSampling(inout int2 prevPixelPos, uint uniformRandomNumber)
-{
-    int2 offset = int2(uniformRandomNumber & 3, (uniformRandomNumber >> 2) & 3);
-    prevPixelPos += offset;
- 
-    prevPixelPos.x ^= 3;
-    prevPixelPos.y ^= 3;
-    
-    prevPixelPos -= offset;
-}
 
 // A structure that groups the application-provided settings for temporal resampling.
 struct RTXDI_TemporalResamplingParameters
@@ -1286,10 +1219,7 @@ RTXDI_Reservoir RTXDI_TemporalResampling(
             RTXDI_ApplyPermutationSampling(idx, params.uniformRandomNumber);
         }
 
-        if (!RTXDI_IsActiveCheckerboardPixel(idx, true, params))
-        {
-            idx.x += int(params.activeCheckerboardField) * 2 - 3;
-        }
+        RTXDI_ActivateCheckerboardPixel(idx, true, params);
 
         // Grab shading / g-buffer data from last frame
         temporalSurface = RAB_GetGBufferSurface(idx, true);
@@ -1317,7 +1247,7 @@ RTXDI_Reservoir RTXDI_TemporalResampling(
     {
         // Resample the previous frame sample into the current reservoir, but reduce the light's weight
         // according to the bilinear weight of the current pixel
-        uint2 prevReservoirPos = RTXDI_PixelPosToReservoir(prevPos, params);
+        uint2 prevReservoirPos = RTXDI_PixelPosToReservoirPos(prevPos, params);
         RTXDI_Reservoir prevSample = RTXDI_LoadReservoir(params,
             prevReservoirPos, tparams.sourceBufferIndex);
         prevSample.M = min(prevSample.M, historyLimit);
@@ -1451,6 +1381,9 @@ struct RTXDI_SpatialResamplingParameters
     // Surface normal similarity threshold for spatial reuse.
     // See 'RTXDI_TemporalResamplingParameters::normalThreshold' for more information.
     float normalThreshold;
+
+    // Enables the comparison of surface materials before taking a surface into resampling.
+    bool enableMaterialSimilarityTest;
 };
 
 // Spatial resampling pass, using pairwise MIS.  
@@ -1485,9 +1418,9 @@ RTXDI_Reservoir RTXDI_SpatialResamplingWithPairwiseMIS(
         uint sampleIdx = (startIdx + i) & params.neighborOffsetMask;
         int2 spatialOffset = int2(float2(RTXDI_NEIGHBOR_OFFSETS_BUFFER[sampleIdx].xy) * sparams.samplingRadius);
         int2 idx = int2(pixelPosition)+spatialOffset;
+        idx = RAB_ClampSamplePositionIntoView(idx, false);
 
-        if (!RTXDI_IsActiveCheckerboardPixel(idx, false, params))
-            idx.x += (idx.y & 1) != 0 ? 1 : -1;
+        RTXDI_ActivateCheckerboardPixel(idx, false, params);
 
         RAB_Surface neighborSurface = RAB_GetGBufferSurface(idx, false);
 
@@ -1500,12 +1433,12 @@ RTXDI_Reservoir RTXDI_SpatialResamplingWithPairwiseMIS(
             sparams.normalThreshold, sparams.depthThreshold))
             continue;
 
-        if (!RAB_AreMaterialsSimilar(centerSurface, neighborSurface))
+        if (sparams.enableMaterialSimilarityTest && !RAB_AreMaterialsSimilar(centerSurface, neighborSurface))
             continue;
 
         // The surfaces are similar enough so we *can* reuse a neighbor from this pixel, so load it.
         RTXDI_Reservoir neighborSample = RTXDI_LoadReservoir(params,
-            RTXDI_PixelPosToReservoir(idx, params), sparams.sourceBufferIndex);
+            RTXDI_PixelPosToReservoirPos(idx, params), sparams.sourceBufferIndex);
         neighborSample.spatialDistance += spatialOffset;
 
         validSpatialSamples++;
@@ -1599,8 +1532,9 @@ RTXDI_Reservoir RTXDI_SpatialResampling(
         int2 spatialOffset = int2(float2(RTXDI_NEIGHBOR_OFFSETS_BUFFER[sampleIdx].xy) * sparams.samplingRadius);
         int2 idx = int2(pixelPosition) + spatialOffset;
 
-        if (!RTXDI_IsActiveCheckerboardPixel(idx, false, params))
-            idx.x += (idx.y & 1) != 0 ? 1 : -1;
+        idx = RAB_ClampSamplePositionIntoView(idx, false);
+
+        RTXDI_ActivateCheckerboardPixel(idx, false, params);
 
         RAB_Surface neighborSurface = RAB_GetGBufferSurface(idx, false);
 
@@ -1612,10 +1546,10 @@ RTXDI_Reservoir RTXDI_SpatialResampling(
             sparams.normalThreshold, sparams.depthThreshold))
             continue;
 
-        if (!RAB_AreMaterialsSimilar(centerSurface, neighborSurface))
+        if (sparams.enableMaterialSimilarityTest && !RAB_AreMaterialsSimilar(centerSurface, neighborSurface))
             continue;
 
-        uint2 neighborReservoirPos = RTXDI_PixelPosToReservoir(idx, params);
+        uint2 neighborReservoirPos = RTXDI_PixelPosToReservoirPos(idx, params);
 
         RTXDI_Reservoir neighborSample = RTXDI_LoadReservoir(params,
             neighborReservoirPos, sparams.sourceBufferIndex);
@@ -1666,8 +1600,9 @@ RTXDI_Reservoir RTXDI_SpatialResampling(
                 // Get the screen-space location of our neighbor
                 int2 idx = int2(pixelPosition) + int2(float2(RTXDI_NEIGHBOR_OFFSETS_BUFFER[sampleIdx].xy) * sparams.samplingRadius);
 
-                if (!RTXDI_IsActiveCheckerboardPixel(idx, false, params))
-                    idx.x += (idx.y & 1) != 0 ? 1 : -1;
+                idx = RAB_ClampSamplePositionIntoView(idx, false);
+
+                RTXDI_ActivateCheckerboardPixel(idx, false, params);
 
                 // Load our neighbor's G-buffer
                 RAB_Surface neighborSurface = RAB_GetGBufferSurface(idx, false);
@@ -1688,7 +1623,7 @@ RTXDI_Reservoir RTXDI_SpatialResampling(
                 }
 #endif
 
-                uint2 neighborReservoirPos = RTXDI_PixelPosToReservoir(idx, params);
+                uint2 neighborReservoirPos = RTXDI_PixelPosToReservoirPos(idx, params);
 
                 RTXDI_Reservoir neighborSample = RTXDI_LoadReservoir(params,
                     neighborReservoirPos, sparams.sourceBufferIndex);
@@ -1766,6 +1701,9 @@ struct RTXDI_SpatioTemporalResamplingParameters
     // Enables permuting the pixels sampled from the previous frame in order to add temporal
     // variation to the output signal and make it more denoiser friendly.
     bool enablePermutationSampling;
+
+    // Enables the comparison of surface materials before taking a surface into resampling.
+    bool enableMaterialSimilarityTest;
 };
 
 // Fused spatialtemporal resampling pass, using pairwise MIS.  
@@ -1815,10 +1753,7 @@ RTXDI_Reservoir RTXDI_SpatioTemporalResamplingWithPairwiseMIS(
             RTXDI_ApplyPermutationSampling(centralIdx, params.uniformRandomNumber);
         }
 
-        if (!RTXDI_IsActiveCheckerboardPixel(centralIdx, true, params))
-        {
-            centralIdx.x += int(params.activeCheckerboardField) * 2 - 3;
-        }
+        RTXDI_ActivateCheckerboardPixel(centralIdx, true, params);
 
         // Grab shading / g-buffer data from last frame
         temporalSurface = RAB_GetGBufferSurface(centralIdx, true);
@@ -1851,7 +1786,7 @@ RTXDI_Reservoir RTXDI_SpatioTemporalResamplingWithPairwiseMIS(
 
     // Load the "temporal" reservoir at the temporally backprojected "central" pixel
     RTXDI_Reservoir prevSample = RTXDI_LoadReservoir(params,
-        RTXDI_PixelPosToReservoir(centralIdx, params), stparams.sourceBufferIndex);
+        RTXDI_PixelPosToReservoirPos(centralIdx, params), stparams.sourceBufferIndex);
     prevSample.M = min(prevSample.M, historyLimit);
     prevSample.spatialDistance += temporalSpatialOffset;
     prevSample.age += 1;
@@ -1889,10 +1824,9 @@ RTXDI_Reservoir RTXDI_SpatioTemporalResamplingWithPairwiseMIS(
         if (idx.x < 0 || idx.y < 0)
             continue;
 
-        if (!RTXDI_IsActiveCheckerboardPixel(idx, false, params))
-        {
-            idx.x += (idx.y & 1) != 0 ? 1 : -1;
-        }
+        idx = RAB_ClampSamplePositionIntoView(idx, false);
+        
+        RTXDI_ActivateCheckerboardPixel(idx, false, params);
 
         RAB_Surface neighborSurface = RAB_GetGBufferSurface(idx, true);
 
@@ -1905,12 +1839,12 @@ RTXDI_Reservoir RTXDI_SpatioTemporalResamplingWithPairwiseMIS(
             stparams.normalThreshold, stparams.depthThreshold))
             continue;
 
-        if (!RAB_AreMaterialsSimilar(surface, neighborSurface))
+        if (stparams.enableMaterialSimilarityTest && !RAB_AreMaterialsSimilar(surface, neighborSurface))
             continue;
 
         // The surfaces are similar enough so we *can* reuse a neighbor from this pixel, so load it.
         RTXDI_Reservoir neighborSample = RTXDI_LoadReservoir(params,
-            RTXDI_PixelPosToReservoir(idx, params), stparams.sourceBufferIndex);
+            RTXDI_PixelPosToReservoirPos(idx, params), stparams.sourceBufferIndex);
         neighborSample.M = min(neighborSample.M, historyLimit);
         neighborSample.spatialDistance += spatialOffset;
         neighborSample.age += 1;
@@ -2026,10 +1960,7 @@ RTXDI_Reservoir RTXDI_SpatioTemporalResampling(
             RTXDI_ApplyPermutationSampling(idx, params.uniformRandomNumber);
         }
 
-        if (!RTXDI_IsActiveCheckerboardPixel(idx, true, params))
-        {
-            idx.x += int(params.activeCheckerboardField) * 2 - 3;
-        }
+        RTXDI_ActivateCheckerboardPixel(idx, true, params);
 
         // Grab shading / g-buffer data from last frame
         temporalSurface = RAB_GetGBufferSurface(idx, true);
@@ -2076,16 +2007,13 @@ RTXDI_Reservoir RTXDI_SpatioTemporalResampling(
         else
         {
             uint sampleIdx = (startIdx + i) & params.neighborOffsetMask;
-            spatialOffset = (i == 0 && foundTemporalSurface) 
-                ? temporalSpatialOffset 
-                : int2(float2(RTXDI_NEIGHBOR_OFFSETS_BUFFER[sampleIdx].xy) * stparams.samplingRadius);
+            spatialOffset = int2(float2(RTXDI_NEIGHBOR_OFFSETS_BUFFER[sampleIdx].xy) * stparams.samplingRadius);
 
             idx = prevPos + spatialOffset;
 
-            if (!RTXDI_IsActiveCheckerboardPixel(idx, true, params))
-            {
-                idx.x += int(params.activeCheckerboardField) * 2 - 3;
-            }
+            idx = RAB_ClampSamplePositionIntoView(idx, true);
+
+            RTXDI_ActivateCheckerboardPixel(idx, true, params);
 
             temporalSurface = RAB_GetGBufferSurface(idx, true);
 
@@ -2097,13 +2025,13 @@ RTXDI_Reservoir RTXDI_SpatioTemporalResampling(
                 stparams.normalThreshold, stparams.depthThreshold))
                 continue;
 
-            if (!RAB_AreMaterialsSimilar(surface, temporalSurface))
+            if (stparams.enableMaterialSimilarityTest && !RAB_AreMaterialsSimilar(surface, temporalSurface))
                 continue;
         }
         
         cachedResult |= (1u << uint(i));
 
-        uint2 neighborReservoirPos = RTXDI_PixelPosToReservoir(idx, params);
+        uint2 neighborReservoirPos = RTXDI_PixelPosToReservoirPos(idx, params);
 
         RTXDI_Reservoir prevSample = RTXDI_LoadReservoir(params,
             neighborReservoirPos, stparams.sourceBufferIndex);
@@ -2187,10 +2115,12 @@ RTXDI_Reservoir RTXDI_SpatioTemporalResampling(
                         : int2(float2(RTXDI_NEIGHBOR_OFFSETS_BUFFER[sampleIdx].xy) * stparams.samplingRadius);
                     int2 idx = prevPos + spatialOffset;
 
-                    if (!RTXDI_IsActiveCheckerboardPixel(idx, true, params))
+                    if (!(i == 0 && foundTemporalSurface))
                     {
-                        idx.x += int(params.activeCheckerboardField) * 2 - 3;
+                        idx = RAB_ClampSamplePositionIntoView(idx, true);
                     }
+
+                    RTXDI_ActivateCheckerboardPixel(idx, true, params);
 
                     // Load our neighbor's G-buffer
                     RAB_Surface neighborSurface = RAB_GetGBufferSurface(idx, true);
@@ -2218,7 +2148,7 @@ RTXDI_Reservoir RTXDI_SpatioTemporalResampling(
                     }
 #endif
 
-                    uint2 neighborReservoirPos = RTXDI_PixelPosToReservoir(idx, params);
+                    uint2 neighborReservoirPos = RTXDI_PixelPosToReservoirPos(idx, params);
 
                     RTXDI_Reservoir prevSample = RTXDI_LoadReservoir(params,
                         neighborReservoirPos, stparams.sourceBufferIndex);

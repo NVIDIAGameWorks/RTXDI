@@ -1,5 +1,5 @@
 /***************************************************************************
- # Copyright (c) 2020-2021, NVIDIA CORPORATION.  All rights reserved.
+ # Copyright (c) 2020-2023, NVIDIA CORPORATION.  All rights reserved.
  #
  # NVIDIA CORPORATION and its licensors retain all intellectual property
  # and proprietary rights in and to this software, related documentation
@@ -1205,21 +1205,41 @@ public:
 
         const bool checkerboard = m_RtxdiContext->GetParameters().CheckerboardSamplingMode != rtxdi::CheckerboardMode::Off;
 
-        if (m_ui.renderingMode == RenderingMode::ReStirDirectOnly || m_ui.renderingMode == RenderingMode::ReStirDirectBrdfIndirect)
+        bool enableDirectReStirPass = m_ui.directLightingMode == DirectLightingMode::ReStir;
+        bool enableBrdfAndIndirectPass = m_ui.directLightingMode == DirectLightingMode::Brdf || m_ui.indirectLightingMode != IndirectLightingMode::None;
+        bool enableIndirect = m_ui.indirectLightingMode != IndirectLightingMode::None;
+
+        // When indirect lighting is enabled, we don't want ReSTIR to be the NRD front-end,
+        // it should just write out the raw color data.
+        lightingSettings.enableDenoiserInputPacking = !enableIndirect;
+
+        if (!enableDirectReStirPass)
         {
-            // In the combined modes (ReStirDirectBrdfIndirect and ReStirDirectBrdfMIS), we don't want ReSTIR to be the NRD front-end,
-            // it should just write out the raw color data.
-            lightingSettings.enableDenoiserInputPacking = (m_ui.renderingMode == RenderingMode::ReStirDirectOnly);
+            // Secondary resampling can only be done as a post-process of ReSTIR direct lighting
+            lightingSettings.enableSecondaryResampling = false;
 
-            m_CommandList->clearTextureFloat(m_RenderTargets->Gradients, nvrhi::AllSubresources, nvrhi::Color(0.f));
+            // Gradients are only produced by the direct ReSTIR pass
+            lightingSettings.enableGradients = false;
+        }
 
-            m_LightingPasses->Render(m_CommandList,
+        if (enableDirectReStirPass || enableIndirect)
+        {
+            m_LightingPasses->PrepareForLightSampling(m_CommandList,
                 *m_RtxdiContext,
                 m_View, m_ViewPrevious,
                 lightingSettings,
                 frameParameters,
-                /* enableAccumulation = */ m_ui.aaMode == AntiAliasingMode::Accumulation,
-                m_ui.visualizationMode);
+                /* enableAccumulation = */ m_ui.aaMode == AntiAliasingMode::Accumulation);
+        }
+
+        if (enableDirectReStirPass)
+        {
+            m_CommandList->clearTextureFloat(m_RenderTargets->Gradients, nvrhi::AllSubresources, nvrhi::Color(0.f));
+
+            m_LightingPasses->RenderDirectLighting(m_CommandList,
+                *m_RtxdiContext,
+                m_View,
+                lightingSettings);
 
             // Post-process the gradients into a confidence buffer usable by NRD
             if (lightingSettings.enableGradients)
@@ -1229,21 +1249,35 @@ public:
             }
         }
 
-        if (m_ui.renderingMode == RenderingMode::BrdfDirectOnly || m_ui.renderingMode == RenderingMode::ReStirDirectBrdfIndirect)
+        if (enableBrdfAndIndirectPass)
         {
             lightingSettings.enableDenoiserInputPacking = true;
+
+            bool enableReStirGI = m_ui.indirectLightingMode == IndirectLightingMode::ReStirGI;
 
             m_LightingPasses->RenderBrdfRays(
                 m_CommandList,
                 *m_RtxdiContext,
-                m_View,
+                m_View, m_ViewPrevious,
                 lightingSettings,
+                m_ui.gbufferSettings,
                 frameParameters,
                 *m_EnvironmentLight,
-                /* enableIndirect = */ m_ui.renderingMode == RenderingMode::ReStirDirectBrdfIndirect,
-                /* enableAdditiveBlend = */ m_ui.renderingMode == RenderingMode::ReStirDirectBrdfIndirect,
+                /* enableIndirect = */ enableIndirect,
+                /* enableAdditiveBlend = */ enableDirectReStirPass,
+                /* enableEmissiveSurfaces = */ m_ui.directLightingMode == DirectLightingMode::Brdf,
                 numRtxgiVolumes,
-                /* enableAccumulation = */ m_ui.aaMode == AntiAliasingMode::Accumulation);
+                /* enableAccumulation = */ m_ui.aaMode == AntiAliasingMode::Accumulation,
+                enableReStirGI
+                );
+        }
+
+        // If none of the passes above were executed, clear the textures to avoid stale data there.
+        // It's a weird mode but it can be selected from the UI.
+        if (!enableDirectReStirPass && !enableBrdfAndIndirectPass)
+        {
+            m_CommandList->clearTextureFloat(m_RenderTargets->DiffuseLighting, nvrhi::AllSubresources, nvrhi::Color(0.f));
+            m_CommandList->clearTextureFloat(m_RenderTargets->SpecularLighting, nvrhi::AllSubresources, nvrhi::Color(0.f));
         }
         
 #if WITH_NRD
@@ -1267,7 +1301,7 @@ public:
             m_View,
             m_ViewPrevious,
             denoiserMode,
-            /* numRtxgiVolumes = */ m_ui.renderingMode != RenderingMode::ReStirDirectBrdfIndirect ? numRtxgiVolumes : 0,
+            /* numRtxgiVolumes = */ (! enableIndirect) ? numRtxgiVolumes : 0,
             checkerboard,
             m_ui,
             *m_EnvironmentLight);
@@ -1331,6 +1365,7 @@ public:
         if (m_ui.visualizationMode != VIS_MODE_NONE)
         {
             bool haveSignal = true;
+            uint32_t inputBufferIndex = 0;
             switch(m_ui.visualizationMode)
             {
             case VIS_MODE_DENOISED_DIFFUSE:
@@ -1341,6 +1376,18 @@ public:
             case VIS_MODE_DIFFUSE_CONFIDENCE:
             case VIS_MODE_SPECULAR_CONFIDENCE:
                 haveSignal = m_ui.lightingSettings.enableGradients && m_ui.enableDenoiser;
+                break;
+
+            case VIS_MODE_RESERVOIR_WEIGHT:
+            case VIS_MODE_RESERVOIR_M:
+                inputBufferIndex = m_LightingPasses->GetOutputReservoirBufferIndex();
+                haveSignal = m_ui.directLightingMode == DirectLightingMode::ReStir;
+                break;
+                
+            case VIS_MODE_GI_WEIGHT:
+            case VIS_MODE_GI_M:
+                inputBufferIndex = m_LightingPasses->GetGIOutputReservoirBufferIndex();
+                haveSignal = m_ui.indirectLightingMode == IndirectLightingMode::ReStirGI;
                 break;
             }
 
@@ -1353,7 +1400,7 @@ public:
                     m_UpscaledView,
                     *m_RtxdiContext,
                     frameParameters,
-                    m_LightingPasses->GetOutputReservoirBufferIndex(),
+                    inputBufferIndex,
                     m_ui.visualizationMode,
                     m_ui.aaMode == AntiAliasingMode::Accumulation);
             }
@@ -1509,6 +1556,9 @@ int main(int argc, char** argv)
     std::string windowTitle = std::string(g_ApplicationTitle) + " (" + std::string(apiString) + ")";
     
     log::SetErrorMessageCaption(windowTitle.c_str());
+
+    // Disable Window scaling.
+    SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
 
     if (!deviceManager->CreateWindowDeviceAndSwapChain(deviceParams, windowTitle.c_str()))
     {

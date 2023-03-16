@@ -73,12 +73,13 @@ RWTexture2D<float4> u_SpecularLighting : register(u2);
 RWTexture2D<int2> u_TemporalSamplePositions : register(u3);
 RWTexture2DArray<float4> u_Gradients : register(u4);
 RWTexture2D<float2> u_RestirLuminance : register(u5);
+RWStructuredBuffer<RTXDI_PackedGIReservoir> u_GIReservoirs : register(u6);
 
 // RTXDI UAVs
 RWBuffer<uint2> u_RisBuffer : register(u10);
 RWBuffer<uint4> u_RisLightDataBuffer : register(u11);
 RWBuffer<uint> u_RayCountBuffer : register(u12);
-RWStructuredBuffer<SecondarySurface> u_SecondaryGBuffer : register(u13);
+RWStructuredBuffer<SecondaryGBufferData> u_SecondaryGBuffer : register(u13);
 
 // Other
 ConstantBuffer<ResamplingConstants> g_Const : register(b0);
@@ -89,6 +90,7 @@ SamplerState s_EnvironmentSampler : register(s1);
 #define RTXDI_RIS_BUFFER u_RisBuffer
 #define RTXDI_LIGHT_RESERVOIR_BUFFER u_LightReservoirs
 #define RTXDI_NEIGHBOR_OFFSETS_BUFFER t_NeighborOffsets
+#define RTXDI_GI_RESERVOIR_BUFFER u_GIReservoirs
 
 #define IES_SAMPLER s_EnvironmentSampler
 
@@ -130,6 +132,27 @@ float getSurfaceDiffuseProbability(RAB_Surface surface)
     return sumWeights < 1e-7f ? 1.f : (diffuseWeight / sumWeights);
 }
 
+struct SplitBrdf
+{
+    float demodulatedDiffuse;
+    float3 specular;
+};
+
+SplitBrdf EvaluateBrdf(RAB_Surface surface, float3 samplePosition)
+{
+    float3 N = surface.normal;
+    float3 V = surface.viewDir;
+    float3 L = normalize(samplePosition - surface.worldPos);
+
+    SplitBrdf brdf;
+    brdf.demodulatedDiffuse = Lambert(surface.normal, -L);
+    if (surface.roughness == 0)
+        brdf.specular = 0;
+    else
+        brdf.specular = GGX_times_NdotL(V, L, surface.normal, max(surface.roughness, kMinRoughness), surface.specularF0);
+    return brdf;
+}
+
 RAB_Surface RAB_EmptySurface()
 {
     RAB_Surface surface = (RAB_Surface)0;
@@ -158,13 +181,13 @@ struct RayPayload
     float2 barycentrics;
 };
 
-RayDesc setupVisibilityRay(RAB_Surface surface, RAB_LightSample lightSample, float offset = 0.001)
+RayDesc setupVisibilityRay(RAB_Surface surface, float3 samplePosition, float offset = 0.001)
 {
-    float3 L = lightSample.position - surface.worldPos;
+    float3 L = samplePosition - surface.worldPos;
 
     RayDesc ray;
     ray.TMin = offset;
-    ray.TMax = length(L) - offset;
+    ray.TMax = max(offset, length(L) - offset * 2);
     ray.Direction = normalize(L);
     ray.Origin = surface.worldPos;
 
@@ -243,9 +266,9 @@ void AnyHit(inout RayPayload payload : SV_RayPayload, in RayAttributes attrib : 
 }
 #endif
 
-bool GetConservativeVisibility(RaytracingAccelerationStructure accelStruct, RAB_Surface surface, RAB_LightSample lightSample)
+bool GetConservativeVisibility(RaytracingAccelerationStructure accelStruct, RAB_Surface surface, float3 samplePosition)
 {
-    RayDesc ray = setupVisibilityRay(surface, lightSample);
+    RayDesc ray = setupVisibilityRay(surface, samplePosition);
 
 #if USE_RAY_QUERY
     RayQuery<RAY_FLAG_CULL_NON_OPAQUE | RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH> rayQuery;
@@ -276,7 +299,7 @@ bool GetConservativeVisibility(RaytracingAccelerationStructure accelStruct, RAB_
 // This function is used in the spatial resampling functions for ray traced bias correction.
 bool RAB_GetConservativeVisibility(RAB_Surface surface, RAB_LightSample lightSample)
 {
-    return GetConservativeVisibility(SceneBVH, surface, lightSample);
+    return GetConservativeVisibility(SceneBVH, surface, lightSample.position);
 }
 
 // Same as RAB_GetConservativeVisibility but for temporal resampling.
@@ -285,17 +308,17 @@ bool RAB_GetConservativeVisibility(RAB_Surface surface, RAB_LightSample lightSam
 bool RAB_GetTemporalConservativeVisibility(RAB_Surface currentSurface, RAB_Surface previousSurface, RAB_LightSample lightSample)
 {
     if (g_Const.enablePreviousTLAS)
-        return GetConservativeVisibility(PrevSceneBVH, previousSurface, lightSample);
+        return GetConservativeVisibility(PrevSceneBVH, previousSurface, lightSample.position);
     else
-        return GetConservativeVisibility(SceneBVH, currentSurface, lightSample);
+        return GetConservativeVisibility(SceneBVH, currentSurface, lightSample.position);
 }
 
 // Traces an expensive visibility ray that considers all alpha tested  and transparent geometry along the way.
 // Only used for final shading.
 // Not a required bridge function.
-float3 GetFinalVisibility(RaytracingAccelerationStructure accelStruct, RAB_Surface surface, RAB_LightSample lightSample)
+float3 GetFinalVisibility(RaytracingAccelerationStructure accelStruct, RAB_Surface surface, float3 samplePosition)
 {
-    RayDesc ray = setupVisibilityRay(surface, lightSample, 0.01);
+    RayDesc ray = setupVisibilityRay(surface, samplePosition, 0.01);
 
     uint instanceMask = INSTANCE_MASK_OPAQUE;
     uint rayFlags = RAY_FLAG_NONE;
@@ -355,6 +378,25 @@ float3 GetFinalVisibility(RaytracingAccelerationStructure accelStruct, RAB_Surfa
         return 0;
 }
 
+// This function is called in the spatial resampling passes to make sure that 
+// the samples actually land on the screen and not outside of its boundaries.
+// It can clamp the position or reflect it across the nearest screen edge.
+// The simplest implementation will just return the input pixelPosition.
+int2 RAB_ClampSamplePositionIntoView(int2 pixelPosition, bool previousFrame)
+{
+    int width = int(g_Const.view.viewportSize.x);
+    int height = int(g_Const.view.viewportSize.y);
+
+    // Reflect the position across the screen edges.
+    // Compared to simple clamping, this prevents the spread of colorful blobs from screen edges.
+    if (pixelPosition.x < 0) pixelPosition.x = -pixelPosition.x;
+    if (pixelPosition.y < 0) pixelPosition.y = -pixelPosition.y;
+    if (pixelPosition.x >= width) pixelPosition.x = 2 * width - pixelPosition.x - 1;
+    if (pixelPosition.y >= height) pixelPosition.y = 2 * height - pixelPosition.y - 1;
+
+    return pixelPosition;
+}
+
 RAB_Surface GetGBufferSurface(
     int2 pixelPosition, 
     PlanarViewConstants view, 
@@ -396,8 +438,8 @@ RAB_Surface RAB_GetGBufferSurface(int2 pixelPosition, bool previousFrame)
     if(previousFrame)
     {
         return GetGBufferSurface(
-            pixelPosition, 
-            g_Const.prevView, 
+            pixelPosition,
+            g_Const.prevView,
             t_PrevGBufferDepth, 
             t_PrevGBufferNormals, 
             t_PrevGBufferGeoNormals, 
@@ -589,7 +631,11 @@ float RAB_GetLightSampleTargetPdfForSurface(RAB_LightSample lightSample, RAB_Sur
     float3 V = surface.viewDir;
 
     float d = Lambert(surface.normal, -L);
-    float3 s = GGX_times_NdotL(V, L, surface.normal, max(surface.roughness, kMinRoughness), surface.specularF0);
+    float3 s;
+    if (surface.roughness == 0)
+        s = 0;
+    else
+        s = GGX_times_NdotL(V, L, surface.normal, max(surface.roughness, kMinRoughness), surface.specularF0);
 
     float3 reflectedRadiance = lightSample.radiance * (d * surface.diffuseAlbedo + s);
     
@@ -808,5 +854,52 @@ bool RAB_TraceRayForLocalLight(float3 origin, float3 direction, float tMin, floa
 
     return hitAnything;
 }
+
+
+// Check if the sample is fine to be used as a valid spatial sample.
+// This function also be able to clamp the value of the Jacobian.
+bool RAB_ValidateGISampleWithJacobian(inout float jacobian)
+{
+    // Sold angle ratio is too different. Discard the sample.
+    if (jacobian > 10.0 || jacobian < 1 / 10.0) {
+        return false;
+    }
+
+    // clamp Jacobian.
+    jacobian = clamp(jacobian, 1 / 3.0, 3.0);
+
+    return true;
+}
+
+// Computes the weight of the given GI sample when the given surface is shaded using that GI sample.
+float RAB_GetGISampleTargetPdfForSurface(float3 samplePosition, float3 sampleRadiance, RAB_Surface surface)
+{
+    SplitBrdf brdf = EvaluateBrdf(surface, samplePosition);
+
+    float3 reflectedRadiance = sampleRadiance * (brdf.demodulatedDiffuse * surface.diffuseAlbedo + brdf.specular);
+
+    return RTXDI_Luminance(reflectedRadiance);
+}
+
+// Traces a cheap visibility ray that returns approximate, conservative visibility
+// between the surface and the light sample. Conservative means if unsure, assume the light is visible.
+// Significant differences between this conservative visibility and the final one will result in more noise.
+// This function is used in the spatial resampling functions for ray traced bias correction.
+bool RAB_GetConservativeVisibility(RAB_Surface surface, float3 samplePosition)
+{
+    return GetConservativeVisibility(SceneBVH, surface, samplePosition);
+}
+
+// Same as RAB_GetConservativeVisibility but for temporal resampling.
+// When the previous frame TLAS and BLAS are available, the implementation should use the previous position and the previous AS.
+// When they are not available, use the current AS. That will result in transient bias.
+bool RAB_GetTemporalConservativeVisibility(RAB_Surface currentSurface, RAB_Surface previousSurface, float3 samplePosition)
+{
+    if (g_Const.enablePreviousTLAS)
+        return GetConservativeVisibility(PrevSceneBVH, previousSurface, samplePosition);
+    else
+        return GetConservativeVisibility(SceneBVH, currentSurface, samplePosition);
+}
+
 
 #endif // RTXDI_APPLICATION_BRIDGE_HLSLI

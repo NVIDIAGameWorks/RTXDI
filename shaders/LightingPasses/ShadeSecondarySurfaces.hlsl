@@ -1,5 +1,5 @@
 /***************************************************************************
- # Copyright (c) 2020-2022, NVIDIA CORPORATION.  All rights reserved.
+ # Copyright (c) 2020-2023, NVIDIA CORPORATION.  All rights reserved.
  #
  # NVIDIA CORPORATION and its licensors retain all intellectual property
  # and proprietary rights in and to this software, related documentation
@@ -17,6 +17,7 @@
 #include "RtxdiApplicationBridge.hlsli"
 
 #include <rtxdi/ResamplingFunctions.hlsli>
+#include <rtxdi/GIResamplingFunctions.hlsli>
 
 #ifdef WITH_NRD
 #define NRD_HEADER_ONLY
@@ -45,7 +46,7 @@ void RayGen()
 #if !USE_RAY_QUERY
     uint2 GlobalIndex = DispatchRaysIndex().xy;
 #endif
-    uint2 pixelPosition = RTXDI_ReservoirToPixelPos(GlobalIndex, g_Const.runtimeParams);
+    uint2 pixelPosition = RTXDI_ReservoirPosToPixelPos(GlobalIndex, g_Const.runtimeParams);
 
     if (any(pixelPosition > int2(g_Const.view.viewportSize)))
         return;
@@ -54,32 +55,37 @@ void RayGen()
     RAB_RandomSamplerState tileRng = RAB_InitRandomSampler(GlobalIndex / RTXDI_TILE_SIZE_IN_PIXELS, 1);
 
     const RTXDI_ResamplingRuntimeParameters params = g_Const.runtimeParams;
-    uint gbufferIndex = RTXDI_ReservoirPositionToPointer(params, GlobalIndex, 0);
+    const uint gbufferIndex = RTXDI_ReservoirPositionToPointer(params, GlobalIndex, 0);
 
     RAB_Surface primarySurface = RAB_GetGBufferSurface(pixelPosition, false);
 
-    SecondarySurface secondarySurface = u_SecondaryGBuffer[gbufferIndex];
+    SecondaryGBufferData secondaryGBufferData = u_SecondaryGBuffer[gbufferIndex];
 
-    float3 diffuse = 0;
-    float3 specular = 0;
+    const float3 throughput = Unpack_R16G16B16A16_FLOAT(secondaryGBufferData.throughputAndFlags).rgb;
+    const uint secondaryFlags = secondaryGBufferData.throughputAndFlags.y >> 16;
+    const bool isValidSecondarySurface = any(throughput != 0);
+    const bool isSpecularRay = (secondaryFlags & kSecondaryGBuffer_IsSpecularRay) != 0;
+    const bool isDeltaSurface = (secondaryFlags & kSecondaryGBuffer_IsDeltaSurface) != 0;
+    const bool isEnvironmentMap = (secondaryFlags & kSecondaryGBuffer_IsEnvironmentMap) != 0;
 
-    if (any(secondarySurface.throughput != 0))
+    RAB_Surface secondarySurface;
+    float3 radiance = secondaryGBufferData.emission;
+
+    // Unpack the G-buffer data
+    secondarySurface.worldPos = secondaryGBufferData.worldPos;
+    secondarySurface.viewDepth = 1.0; // doesn't matter
+    secondarySurface.normal = octToNdirUnorm32(secondaryGBufferData.normal);
+    secondarySurface.geoNormal = secondarySurface.normal;
+    secondarySurface.diffuseAlbedo = Unpack_R11G11B10_UFLOAT(secondaryGBufferData.diffuseAlbedo);
+    float4 specularRough = Unpack_R8G8B8A8_Gamma_UFLOAT(secondaryGBufferData.specularAndRoughness);
+    secondarySurface.specularF0 = specularRough.rgb;
+    secondarySurface.roughness = specularRough.a;
+    secondarySurface.diffuseProbability = getSurfaceDiffuseProbability(secondarySurface);
+    secondarySurface.viewDir = normalize(primarySurface.worldPos - secondarySurface.worldPos);
+
+    // Shade the secondary surface.
+    if (isValidSecondarySurface && !isEnvironmentMap)
     {
-        RAB_Surface surface;
-        surface.worldPos = secondarySurface.worldPos;
-        surface.viewDepth = 1.0; // doesn't matter
-        surface.normal = octToNdirUnorm32(secondarySurface.normal);
-        surface.geoNormal = surface.normal;
-        surface.diffuseAlbedo = Unpack_R11G11B10_UFLOAT(secondarySurface.diffuseAlbedo);
-        float4 specularRough = Unpack_R8G8B8A8_Gamma_UFLOAT(secondarySurface.specularAndRoughness);
-        surface.specularF0 = specularRough.rgb;
-        surface.roughness = specularRough.a;
-        surface.diffuseProbability = getSurfaceDiffuseProbability(surface);
-        surface.viewDir = normalize(primarySurface.worldPos - surface.worldPos);
-
-        float4 throughput = Unpack_R16G16B16A16_FLOAT(secondarySurface.throughput);
-        bool isSpecularRay = throughput.a != 0;
-
         RTXDI_SampleParameters sampleParams = RTXDI_InitSampleParameters(
             g_Const.numIndirectRegirSamples,
             g_Const.numIndirectLocalLightSamples,
@@ -90,7 +96,7 @@ void RayGen()
             0.f);   // brdfMinRayT
 
         RAB_LightSample lightSample;
-        RTXDI_Reservoir reservoir = RTXDI_SampleLightsForSurface(rng, tileRng, surface,
+        RTXDI_Reservoir reservoir = RTXDI_SampleLightsForSurface(rng, tileRng, secondarySurface,
             sampleParams, params, lightSample);
 
         if (g_Const.numSecondarySamples)
@@ -98,13 +104,13 @@ void RayGen()
             // Try to find this secondary surface in the G-buffer. If found, resample the lights
             // from that G-buffer surface into the reservoir using the spatial resampling function.
 
-            float4 secondaryClipPos = mul(float4(secondarySurface.worldPos, 1.0), g_Const.view.matWorldToClip);
+            float4 secondaryClipPos = mul(float4(secondaryGBufferData.worldPos, 1.0), g_Const.view.matWorldToClip);
             secondaryClipPos.xyz /= secondaryClipPos.w;
-            
+
             if (all(abs(secondaryClipPos.xy) < 1.0) && secondaryClipPos.w > 0)
             {
                 int2 secondaryPixelPos = int2(secondaryClipPos.xy * g_Const.view.clipToWindowScale + g_Const.view.clipToWindowBias);
-                surface.viewDepth = secondaryClipPos.w;
+                secondarySurface.viewDepth = secondaryClipPos.w;
 
                 RTXDI_SpatialResamplingParameters sparams;
                 sparams.sourceBufferIndex = g_Const.shadeInputBufferIndex;
@@ -115,51 +121,74 @@ void RayGen()
                 sparams.samplingRadius = g_Const.secondarySamplingRadius;
                 sparams.depthThreshold = g_Const.secondaryDepthThreshold;
                 sparams.normalThreshold = g_Const.secondaryNormalThreshold;
+                sparams.enableMaterialSimilarityTest = false;
 
-                reservoir = RTXDI_SpatialResampling(secondaryPixelPos, surface, reservoir,
-                    rng, sparams,params, lightSample);
+                reservoir = RTXDI_SpatialResampling(secondaryPixelPos, secondarySurface, reservoir,
+                    rng, sparams, params, lightSample);
             }
         }
-
-        float lightSampleScale = (lightSample.solidAnglePdf > 0) ? RTXDI_GetReservoirInvPdf(reservoir) / lightSample.solidAnglePdf : 0;
-
-        // Firefly suppression
-        float indirectLuminance = calcLuminance(lightSample.radiance) * lightSampleScale;
-        if(indirectLuminance > c_MaxIndirectRadiance)
-            lightSampleScale *= c_MaxIndirectRadiance / indirectLuminance;
 
         float3 indirectDiffuse = 0;
         float3 indirectSpecular = 0;
         float lightDistance = 0;
-        ShadeSurfaceWithLightSample(reservoir, surface, lightSample, /* previousFrameTLAS = */ false, 
+        ShadeSurfaceWithLightSample(reservoir, secondarySurface, lightSample, /* previousFrameTLAS = */ false,
             /* enableVisibilityReuse = */ false, indirectDiffuse, indirectSpecular, lightDistance);
-        
-        float3 radiance = indirectDiffuse * surface.diffuseAlbedo + indirectSpecular;
+
+        radiance += indirectDiffuse * secondarySurface.diffuseAlbedo + indirectSpecular;
+
+        // Firefly suppression
+        float indirectLuminance = calcLuminance(radiance);
+        if (indirectLuminance > c_MaxIndirectRadiance)
+            radiance *= c_MaxIndirectRadiance / indirectLuminance;
 
 #ifdef WITH_RTXGI
         if (g_Const.numRtxgiVolumes)
         {
             float3 indirectIrradiance = GetIrradianceFromDDGI(
-                surface.worldPos,
-                surface.normal,
+                secondarySurface.worldPos,
+                secondarySurface.normal,
                 primarySurface.worldPos,
                 g_Const.numRtxgiVolumes,
                 t_DDGIVolumes,
                 t_DDGIVolumeResourceIndices,
                 s_ProbeSampler);
 
-            radiance += indirectIrradiance * surface.diffuseAlbedo;
+            radiance += indirectIrradiance * secondarySurface.diffuseAlbedo;
         }
 #endif
-
-        radiance *= throughput.rgb;
-
-        diffuse = isSpecularRay ? 0.0 : radiance;
-        specular = isSpecularRay ? radiance : 0.0;
     }
 
-    specular = DemodulateSpecular(primarySurface.specularF0, specular);
+    bool outputShadingResult = true;
+    if (g_Const.enableReSTIRIndirect)
+    {
+        RTXDI_GIReservoir reservoir = RTXDI_EmptyGIReservoir();
 
-    StoreShadingOutput(GlobalIndex, pixelPosition, 
-        primarySurface.viewDepth, primarySurface.roughness, diffuse, specular, 0, false, true);
+        // For delta reflection rays, just output the shading result in this shader
+        // and don't include it into ReSTIR GI reservoirs.
+        outputShadingResult = isSpecularRay && isDeltaSurface;
+
+        if (isValidSecondarySurface && !outputShadingResult)
+        {
+            // This pixel has a valid indirect sample so it stores information as an initial GI reservoir.
+            reservoir = RTXDI_MakeGIReservoir(secondarySurface.worldPos,
+                secondarySurface.normal, radiance, secondaryGBufferData.pdf);
+        }
+        uint2 reservoirPosition = RTXDI_PixelPosToReservoirPos(pixelPosition, g_Const.runtimeParams);
+        RTXDI_StoreGIReservoir(reservoir, g_Const.runtimeParams, reservoirPosition, g_Const.initialOutputBufferIndex);
+
+        // Save the initial sample radiance for MIS in the final shading pass
+        secondaryGBufferData.emission = outputShadingResult ? 0 : radiance;
+        u_SecondaryGBuffer[gbufferIndex] = secondaryGBufferData;
+    }
+
+    if (outputShadingResult)
+    {
+        float3 diffuse = isSpecularRay ? 0.0 : radiance * throughput.rgb;
+        float3 specular = isSpecularRay ? radiance * throughput.rgb : 0.0;
+
+        specular = DemodulateSpecular(primarySurface.specularF0, specular);
+
+        StoreShadingOutput(GlobalIndex, pixelPosition, 
+            primarySurface.viewDepth, primarySurface.roughness, diffuse, specular, 0, false, true);
+    }
 }

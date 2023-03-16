@@ -35,7 +35,7 @@ void RayGen()
 
     const RTXDI_ResamplingRuntimeParameters params = g_Const.runtimeParams;
 
-    uint2 pixelPosition = RTXDI_ReservoirToPixelPos(GlobalIndex, g_Const.runtimeParams);
+    uint2 pixelPosition = RTXDI_ReservoirPosToPixelPos(GlobalIndex, g_Const.runtimeParams);
 
     RAB_Surface surface = RAB_GetGBufferSurface(pixelPosition, false);
 

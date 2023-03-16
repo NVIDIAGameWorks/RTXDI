@@ -1,5 +1,5 @@
 /***************************************************************************
- # Copyright (c) 2020-2022, NVIDIA CORPORATION.  All rights reserved.
+ # Copyright (c) 2020-2023, NVIDIA CORPORATION.  All rights reserved.
  #
  # NVIDIA CORPORATION and its licensors retain all intellectual property
  # and proprietary rights in and to this software, related documentation
@@ -28,7 +28,7 @@ void RayGen()
 
     const RTXDI_ResamplingRuntimeParameters params = g_Const.runtimeParams;
 
-    uint2 pixelPosition = RTXDI_ReservoirToPixelPos(GlobalIndex, params);
+    uint2 pixelPosition = RTXDI_ReservoirPosToPixelPos(GlobalIndex, params);
 
     RAB_RandomSamplerState rng = RAB_InitRandomSampler(pixelPosition, 3);
 
@@ -50,6 +50,7 @@ void RayGen()
         sparams.samplingRadius = g_Const.spatialSamplingRadius;
         sparams.depthThreshold = g_Const.spatialDepthThreshold;
         sparams.normalThreshold = g_Const.spatialNormalThreshold;
+        sparams.enableMaterialSimilarityTest = true;
 
         RAB_LightSample lightSample = (RAB_LightSample)0;
         spatialResult = RTXDI_SpatialResampling(pixelPosition, surface, centerSample, 

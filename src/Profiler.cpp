@@ -1,5 +1,5 @@
 /***************************************************************************
- # Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
+ # Copyright (c) 2021-2023, NVIDIA CORPORATION.  All rights reserved.
  #
  # NVIDIA CORPORATION and its licensors retain all intellectual property
  # and proprietary rights in and to this software, related documentation
@@ -33,6 +33,10 @@ static const char* g_SectionNames[ProfilerSection::Count] = {
     "RTXGI Probe Updates",
     "BRDF or MIS Rays",
     "Shade Secondary Surf.",
+    "GI - Temporal Resampling",
+    "GI - Spatial Resampling",
+    "GI - Fused Resampling",
+    "GI - Final Shading",
     "Gradients",
     "Denoising",
     "Glass",

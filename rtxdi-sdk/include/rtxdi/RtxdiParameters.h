@@ -1,5 +1,5 @@
 /***************************************************************************
- # Copyright (c) 2020-2022, NVIDIA CORPORATION.  All rights reserved.
+ # Copyright (c) 2020-2023, NVIDIA CORPORATION.  All rights reserved.
  #
  # NVIDIA CORPORATION and its licensors retain all intellectual property
  # and proprietary rights in and to this software, related documentation
@@ -177,6 +177,21 @@ struct RTXDI_PackedReservoir
     uint32_t distanceAge;
     float targetPdf;
     float weight;
+};
+
+struct RTXDI_PackedGIReservoir
+{
+#ifdef __cplusplus
+    using float3 = float[3];
+#endif
+
+    float3      position;
+    uint32_t    packed_miscData_age_M; // See Reservoir.hlsli about the detail of the bit field.
+
+    uint32_t    packed_radiance;    // Stored as 32bit LogLUV format.
+    float       weight;
+    uint32_t    packed_normal;      // Stored as 2x 16-bit snorms in the octahedral mapping
+    float       unused;
 };
 
 #endif // RTXDI_PARAMETERS_H

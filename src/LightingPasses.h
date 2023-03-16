@@ -1,5 +1,5 @@
 /***************************************************************************
- # Copyright (c) 2020-2021, NVIDIA CORPORATION.  All rights reserved.
+ # Copyright (c) 2020-2023, NVIDIA CORPORATION.  All rights reserved.
  #
  # NVIDIA CORPORATION and its licensors retain all intellectual property
  # and proprietary rights in and to this software, related documentation
@@ -42,6 +42,7 @@ class Profiler;
 class EnvironmentLight;
 struct ResamplingConstants;
 class RtxgiIntegration;
+struct GBufferSettings;
 
 namespace nrd
 {
@@ -50,6 +51,36 @@ namespace nrd
 
 // A 32-bit bool type to directly use from the command line parser.
 typedef int ibool;
+
+enum class ResamplingMode : uint32_t
+{
+    None                = 0,
+    Temporal            = 1,
+    Spatial             = 2,
+    TemporalAndSpatial  = 3,
+    FusedSpatiotemporal = 4,
+};
+
+struct ReStirGIParameters
+{
+    ResamplingMode  resamplingMode = ResamplingMode::TemporalAndSpatial;
+    float           depthThreshold = 0.1f;
+    float           normalThreshold = 0.6f;
+    uint32_t        maxReservoirAge = 30;
+    uint32_t        maxHistoryLength = 8;
+    float           samplingRadius = 30.f;
+    uint32_t        numSpatialSamples = 2;
+
+    ibool           enableBoilingFilter = true;
+    float           boilingFilterStrength = 0.2f;
+    
+    uint32_t        temporalBiasCorrection = RTXDI_BIAS_CORRECTION_BASIC;
+    uint32_t        spatialBiasCorrection = RTXDI_BIAS_CORRECTION_BASIC;
+    ibool           enablePermutationSampling = false;
+    ibool           enableFinalVisibility = true;
+    ibool           enableFallbackSampling = true;
+    ibool           enableFinalMIS = true;
+};
 
 class LightingPasses
 {
@@ -72,6 +103,10 @@ private:
     RayTracingPass m_ShadeSecondarySurfacesPass;
     RayTracingPass m_FusedResamplingPass;
     RayTracingPass m_GradientsPass;
+    RayTracingPass m_GITemporalResamplingPass;
+    RayTracingPass m_GISpatialResamplingPass;
+    RayTracingPass m_GIFusedResamplingPass;
+    RayTracingPass m_GIFinalShadingPass;
     nvrhi::BindingLayoutHandle m_BindingLayout;
     nvrhi::BindingLayoutHandle m_BindlessLayout;
     nvrhi::BindingLayoutHandle m_RtxgiBindingLayout;
@@ -81,11 +116,14 @@ private:
     nvrhi::BufferHandle m_ConstantBuffer;
     nvrhi::BufferHandle m_LightReservoirBuffer;
     nvrhi::BufferHandle m_SecondarySurfaceBuffer;
+    nvrhi::BufferHandle m_GIReservoirBuffer;
+
     dm::uint2 m_EnvironmentPdfTextureSize;
     dm::uint2 m_LocalLightPdfTextureSize;
 
     uint32_t m_LastFrameOutputReservoir = 0;
     uint32_t m_CurrentFrameOutputReservoir = 0;
+    uint32_t m_CurrentFrameGIOutputReservoir = 0;
 
     std::shared_ptr<donut::engine::ShaderFactory> m_ShaderFactory;
     std::shared_ptr<donut::engine::CommonRenderPasses> m_CommonPasses;
@@ -99,6 +137,7 @@ private:
 public:
     struct RenderSettings
     {
+        ResamplingMode resamplingMode = ResamplingMode::TemporalAndSpatial;
         uint32_t denoiserMode = 0;
         bool enableDenoiserInputPacking = false;
 
@@ -125,8 +164,7 @@ public:
         uint32_t numRtxgiLocalLightSamples = 8;
         uint32_t numRtxgiInfiniteLightSamples = 1;
         uint32_t numRtxgiEnvironmentSamples = 1;
-
-        ibool enableTemporalResampling = true;
+        
         float temporalNormalThreshold = 0.5f;
         float temporalDepthThreshold = 0.1f;
         uint32_t maxHistoryLength = 20;
@@ -135,8 +173,7 @@ public:
 
         ibool enableBoilingFilter = true;
         float boilingFilterStrength = 0.2f;
-
-        ibool enableSpatialResampling = true;
+        
         uint32_t numSpatialSamples = 1;
         uint32_t numDisocclusionBoostSamples = 8;
         float spatialSamplingRadius = 32.f;
@@ -154,6 +191,9 @@ public:
         float secondaryNormalThreshold = 0.9f;
         float secondaryDepthThreshold = 0.1f;
         uint32_t secondaryBiasCorrection = RTXDI_BIAS_CORRECTION_BASIC;
+
+        // Roughness of secondary surfaces is clamped to suppress caustics.
+        float minSecondaryRoughness = 0.5f;
         
         // Enables discarding the reservoirs if their lights turn out to be occluded in the final pass.
         // This mode significantly reduces the noise in the penumbra but introduces bias. That bias can be 
@@ -162,8 +202,7 @@ public:
         
         ibool enableReGIR = true;
         uint32_t numRegirBuildSamples = 8;
-
-        ibool useFusedKernel = false;
+        
         ibool enableGradients = true;
         float gradientLogDarknessBias = -12.f;
         float gradientSensitivity = 8.f;
@@ -173,6 +212,8 @@ public:
         const nrd::HitDistanceParameters* reblurDiffHitDistanceParams = nullptr;
         const nrd::HitDistanceParameters* reblurSpecHitDistanceParams = nullptr;
 #endif
+        
+        ReStirGIParameters reStirGI;
     };
 
     LightingPasses(
@@ -192,33 +233,44 @@ public:
         const RtxdiResources& resources,
         const RtxgiIntegration* rtxgi);
 
-    void Render(
+    void PrepareForLightSampling(
         nvrhi::ICommandList* commandList,
         rtxdi::Context& context,
         const donut::engine::IView& view,
         const donut::engine::IView& previousView,
         const RenderSettings& localSettings,
         const rtxdi::FrameParameters& frameParameters,
-        bool enableAccumulation,
-        uint32_t visualizationMode);
+        bool enableAccumulation);
+
+    void RenderDirectLighting(
+        nvrhi::ICommandList* commandList,
+        rtxdi::Context& context,
+        const donut::engine::IView& view,
+        const RenderSettings& localSettings);
 
     void RenderBrdfRays(
         nvrhi::ICommandList* commandList,
         rtxdi::Context& context,
         const donut::engine::IView& view,
+        const donut::engine::IView& previousView,
         const RenderSettings& localSettings,
+        const GBufferSettings& gbufferSettings,
         const rtxdi::FrameParameters& frameParameters,
         const EnvironmentLight& environmentLight,
         bool enableIndirect,
         bool enableAdditiveBlend,
+        bool enableEmissiveSurfaces,
         uint32_t numRtxgiVolumes,
-        bool enableAccumulation);
+        bool enableAccumulation,
+        bool enableReStirGI
+    );
 
     void NextFrame();
 
     [[nodiscard]] nvrhi::IBindingLayout* GetBindingLayout() const { return m_BindingLayout; }
     [[nodiscard]] nvrhi::IBindingSet* GetCurrentBindingSet() const { return m_BindingSet; }
     [[nodiscard]] uint32_t GetOutputReservoirBufferIndex() const { return m_CurrentFrameOutputReservoir; }
+    [[nodiscard]] uint32_t GetGIOutputReservoirBufferIndex() const { return m_CurrentFrameGIOutputReservoir; }
 
     void FillConstantBufferForProbeTracing(
         nvrhi::ICommandList* commandList,

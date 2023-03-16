@@ -1,5 +1,5 @@
 /***************************************************************************
- # Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
+ # Copyright (c) 2021-2023, NVIDIA CORPORATION.  All rights reserved.
  #
  # NVIDIA CORPORATION and its licensors retain all intellectual property
  # and proprietary rights in and to this software, related documentation
@@ -36,11 +36,18 @@ namespace donut::app {
     class FirstPersonCamera;
 }
 
-enum class RenderingMode : uint32_t
+enum class DirectLightingMode : uint32_t
 {
-    BrdfDirectOnly,
-    ReStirDirectOnly,
-    ReStirDirectBrdfIndirect
+    None,
+    Brdf,
+    ReStir
+};
+
+enum class IndirectLightingMode : uint32_t
+{
+    None,
+    Brdf,
+    ReStirGI
 };
 
 enum class QualityPreset : uint32_t
@@ -138,7 +145,8 @@ struct UIData
 
     uint32_t numAccumulatedFrames = 1;
 
-    RenderingMode renderingMode = RenderingMode::ReStirDirectOnly;
+    DirectLightingMode directLightingMode = DirectLightingMode::ReStir;
+    IndirectLightingMode indirectLightingMode = IndirectLightingMode::None;
     ibool enableAnimations = true;
     float animationSpeed = 1.f;
     int environmentMapDirty = 0; // 1 -> needs to be rendered; 2 -> passes/textures need to be created
@@ -149,7 +157,7 @@ struct UIData
     float environmentRotation = 0.f;
     
     RtxgiParameters rtxgi;
-
+    
     bool enableDenoiser = true;
 #ifdef WITH_NRD
     bool usePrePass = false;

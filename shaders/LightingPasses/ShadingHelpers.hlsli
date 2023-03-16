@@ -1,5 +1,5 @@
 /***************************************************************************
- # Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
+ # Copyright (c) 2021-2023, NVIDIA CORPORATION.  All rights reserved.
  #
  # NVIDIA CORPORATION and its licensors retain all intellectual property
  # and proprietary rights in and to this software, related documentation
@@ -10,6 +10,8 @@
 
 #ifndef SHADING_HELPERS_HLSLI
 #define SHADING_HELPERS_HLSLI
+
+#ifdef RESERVOIR_HLSLI
 
 bool ShadeSurfaceWithLightSample(
     inout RTXDI_Reservoir reservoir,
@@ -46,9 +48,9 @@ bool ShadeSurfaceWithLightSample(
         if (!visibilityReused)
         {
             if (previousFrameTLAS && g_Const.enablePreviousTLAS)
-                visibility = GetFinalVisibility(PrevSceneBVH, surface, lightSample);
+                visibility = GetFinalVisibility(PrevSceneBVH, surface, lightSample.position);
             else
-                visibility = GetFinalVisibility(SceneBVH, surface, lightSample);
+                visibility = GetFinalVisibility(SceneBVH, surface, lightSample.position);
             RTXDI_StoreVisibilityInReservoir(reservoir, visibility, g_Const.discardInvisibleSamples);
             needToStore = true;
         }
@@ -60,21 +62,18 @@ bool ShadeSurfaceWithLightSample(
 
     if (any(lightSample.radiance > 0))
     {
-        float3 L = lightSample.position - RAB_GetSurfaceWorldPos(surface);
-        lightDistance = length(L);
-        L /= lightDistance;
+        SplitBrdf brdf = EvaluateBrdf(surface, lightSample.position);
 
-        float3 V = surface.viewDir;
-        
-        float d = Lambert(surface.normal, -L);
-        float3 s = GGX_times_NdotL(V, L, surface.normal, max(surface.roughness, kMinRoughness), surface.specularF0);
-    
-        diffuse = d * lightSample.radiance;
-        specular = s * lightSample.radiance;
+        diffuse = brdf.demodulatedDiffuse * lightSample.radiance;
+        specular = brdf.specular * lightSample.radiance;
+
+        lightDistance = length(lightSample.position - surface.worldPos);
     }
 
     return needToStore;
 }
+
+#endif // RESERVOIR_HLSLI
 
 float3 DemodulateSpecular(float3 surfaceSpecularF0, float3 specular)
 {

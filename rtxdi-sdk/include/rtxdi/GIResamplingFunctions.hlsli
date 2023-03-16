@@ -232,7 +232,8 @@ RTXDI_GIReservoir RTXDI_GITemporalResampling(
         // Grab shading / g-buffer data from last frame
         temporalSurface = RAB_GetGBufferSurface(idx, true);
 
-        if (!RAB_IsSurfaceValid(temporalSurface)) {
+        if (!RAB_IsSurfaceValid(temporalSurface))
+        {
             continue;
         }
 
@@ -241,7 +242,14 @@ RTXDI_GIReservoir RTXDI_GITemporalResampling(
         if (!isFallbackSample && !RTXDI_IsValidNeighbor(
             RAB_GetSurfaceNormal(surface), RAB_GetSurfaceNormal(temporalSurface),
             expectedPrevLinearDepth, RAB_GetSurfaceLinearDepth(temporalSurface),
-            tparams.normalThreshold, tparams.depthThreshold)) {
+            tparams.normalThreshold, tparams.depthThreshold))
+        {
+            continue;
+        }
+
+        // Test material similarity and perform any other app-specific tests.
+        if (!RAB_AreMaterialsSimilar(surface, temporalSurface))
+        {
             continue;
         }
 
@@ -422,6 +430,12 @@ RTXDI_GIReservoir RTXDI_GISpatialResampling(
             RAB_GetSurfaceNormal(surface), RAB_GetSurfaceNormal(neighborSurface),
             RAB_GetSurfaceLinearDepth(surface), RAB_GetSurfaceLinearDepth(neighborSurface),
             sparams.normalThreshold, sparams.depthThreshold))
+        {
+            continue;
+        }
+
+        // Test material similarity and perform any other app-specific tests.
+        if (!RAB_AreMaterialsSimilar(surface, neighborSurface))
         {
             continue;
         }
@@ -692,10 +706,17 @@ RTXDI_GIReservoir RTXDI_GISpatioTemporalResampling(
         RAB_Surface neighborSurface = RAB_GetGBufferSurface(idx, true);
 
         // Test surface similarity, discard the sample if the surface is too different.
+        // Skip the test if we're sampling around the fallback location.
         if (!usingFallback && !RTXDI_IsValidNeighbor(
             RAB_GetSurfaceNormal(surface), RAB_GetSurfaceNormal(neighborSurface),
             expectedPrevLinearDepth, RAB_GetSurfaceLinearDepth(neighborSurface),
             stparams.normalThreshold, stparams.depthThreshold))
+        {
+            continue;
+        }
+
+        // Test material similarity and perform any other app-specific tests.
+        if (!RAB_AreMaterialsSimilar(surface, neighborSurface))
         {
             continue;
         }

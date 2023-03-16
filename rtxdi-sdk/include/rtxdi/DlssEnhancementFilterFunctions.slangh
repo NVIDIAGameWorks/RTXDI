@@ -1,0 +1,223 @@
+/***************************************************************************
+ # Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
+ #
+ # NVIDIA CORPORATION and its licensors retain all intellectual property
+ # and proprietary rights in and to this software, related documentation
+ # and any modifications thereto.  Any use, reproduction, disclosure or
+ # distribution of this software and related documentation without an express
+ # license agreement from NVIDIA CORPORATION is strictly prohibited.
+ **************************************************************************/
+
+#pragma once
+
+#include "Reservoir.slangh"
+
+// This file contains functions that are necessary for DLSS Enhancement filtering
+// The functions calculating average BRDF of 4 directly neighbor pixels for both
+// direct diffuse/specular and indirect diffuse/specular signals
+
+float16_t2 RTXDI_GetDlssEnhancementDirectFactor(
+  int2 pixel, float3 lightSamplePosition, float3 cameraPosition,
+  float neighborDepthThreshold, float neighborNormalThreshold, float brdfClampMin, float brdfClampMax)
+{
+  float16_t2 factor = float16_t2(1);
+
+  const RAB_Surface centerSurface = RAB_GetGBufferSurface(pixel, false);
+  const SurfaceMaterialInteractionSplitWeight centerBrdf = RAB_CalculateBRDF(normalize(lightSamplePosition - centerSurface.minimalSurfaceInteraction.position), centerSurface);
+  float16_t2 centerBrdfValue;
+  centerBrdfValue.x = calcBt709Luminance(centerBrdf.diffuseReflectionWeight);
+  centerBrdfValue.y = calcBt709Luminance(centerBrdf.specularReflectionWeight);
+  centerBrdfValue = clamp(centerBrdfValue, float16_t2(brdfClampMin), float16_t2(brdfClampMax));
+
+  const float16_t3 centerDiffuseAlbedo = centerSurface.opaqueSurfaceMaterialInteraction.albedo;
+  const float16_t3 centerSpecularF0 = centerSurface.opaqueSurfaceMaterialInteraction.baseReflectivity;
+  const float centerDepth = length(centerSurface.minimalSurfaceInteraction.position - cameraPosition);
+  const float16_t3 centerNormal = centerSurface.minimalSurfaceInteraction.triangleNormal; ;
+
+  float16_t2 neighborBRDFSum = float16_t2(0);
+  int16_t neighborWeight = 0;
+
+  for (int i = 0; i < 4; ++i)
+  {
+    int2 offset;
+    switch (i)
+    {
+      case 0: offset = int2( 1,  0); break;
+      case 1: offset = int2(-1,  0); break;
+      case 2: offset = int2( 0,  1); break;
+      case 3: offset = int2( 0, -1); break;
+    }
+
+    RAB_Surface neighborSurface = RAB_GetGBufferSurface(pixel + offset, false);
+
+    float neighborDepth = length(neighborSurface.minimalSurfaceInteraction.position - cameraPosition);
+    // Ignore neighbors with very different normal and depth
+    if (abs(neighborDepth - centerDepth) > centerDepth * neighborDepthThreshold ||
+        dot(centerNormal, neighborSurface.minimalSurfaceInteraction.triangleNormal) < neighborNormalThreshold)
+    {
+      continue;
+    }
+
+    // Diffuse and specular color are demodulated, no need to consider pixel difference.
+    neighborSurface.opaqueSurfaceMaterialInteraction.albedo = centerDiffuseAlbedo;
+    neighborSurface.opaqueSurfaceMaterialInteraction.baseReflectivity = centerSpecularF0;
+
+    SurfaceMaterialInteractionSplitWeight neighborBrdf = RAB_CalculateBRDF(normalize(lightSamplePosition - neighborSurface.minimalSurfaceInteraction.position), neighborSurface);
+    float16_t2 neighborBrdfValue;
+    neighborBrdfValue.x = calcBt709Luminance(neighborBrdf.diffuseReflectionWeight);
+    neighborBrdfValue.y = calcBt709Luminance(neighborBrdf.specularReflectionWeight);
+    neighborBrdfValue = clamp(neighborBrdfValue, float16_t2(brdfClampMin), float16_t2(brdfClampMax));
+
+    neighborBRDFSum += neighborBrdfValue;
+    neighborWeight++;
+  }
+
+  if (neighborWeight > 0)
+  {
+    neighborBRDFSum /= (half)neighborWeight;
+    factor.x = neighborBRDFSum.x > float16_t(0) ? centerBrdfValue.x / neighborBRDFSum.x : float16_t(1);
+    factor.y = neighborBRDFSum.y > float16_t(0) ? centerBrdfValue.y / neighborBRDFSum.y : float16_t(1);
+  }
+
+  return factor;
+}
+
+float2 ReSTIRGI_GetDlssEnhancementIndirectFactorLaplacian(
+  int2 pixel, float3 cameraPosition, float3 surfaceInteractionPosition, uint16_t opacityMask,
+  ReSTIRGI_Reservoir spatialReservoir, ReSTIRGI_Reservoir temporalReservoir,
+  float enhanceBSDFIndirectLightMinRoughness, float2 brdfClampMin, float2 brdfClampMax)
+{
+  float2 factor = 1;
+
+  // Center pixel is not opaque, we just return 1
+  if ((opacityMask & 1) == 0)
+  {
+    return factor;
+  }
+
+  RAB_Surface centerSurface = RAB_GetGBufferSurface(pixel, false);
+
+  float3 LR = reflect(-centerSurface.minimalRayInteraction.viewDirection, centerSurface.opaqueSurfaceMaterialInteraction.shadingNormal);
+  float weight = pow(calcBt709Luminance(spatialReservoir.radiance) * spatialReservoir.avgWeight, 2);
+  float3 L = normalize(spatialReservoir.position - surfaceInteractionPosition) * weight;
+
+  weight = pow(calcBt709Luminance(temporalReservoir.radiance) * temporalReservoir.avgWeight, 2);
+  L += normalize(temporalReservoir.position - surfaceInteractionPosition) * weight;
+  L = normalize(L);
+
+  float16_t3 centerDiffuseAlbedo = centerSurface.opaqueSurfaceMaterialInteraction.albedo;
+  float16_t3 centerSpecularF0 = centerSurface.opaqueSurfaceMaterialInteraction.baseReflectivity;
+  float16_t3 centerShadingNormal = centerSurface.opaqueSurfaceMaterialInteraction.shadingNormal;
+  float16_t3 centerTriangleNormal = centerSurface.minimalSurfaceInteraction.triangleNormal;
+  const float centerDepth = length(centerSurface.minimalSurfaceInteraction.position - cameraPosition);
+
+  SurfaceMaterialInteractionSplitWeight centerBrdf = RAB_CalculateBRDF(L, centerSurface);
+
+  float2 centerBrdfValue;
+  centerBrdfValue.x = calcBt709Luminance(centerBrdf.diffuseReflectionWeight);
+  centerBrdfValue.y = calcBt709Luminance(centerBrdf.specularReflectionWeight);
+  centerBrdfValue = clamp(centerBrdfValue, brdfClampMin, brdfClampMax);
+
+  float2 neighborBRDF = float16_t2(0);
+  float16_t neighborWeight = float16_t(0);
+  for (int i = 0; i < 4; ++i)
+  {
+    int2 offset;
+    switch (i)
+    {
+      case 0: offset = int2( 1,  0); break;
+      case 1: offset = int2( 0,  1); break;
+      case 2: offset = int2(-1,  0); break;
+      case 3: offset = int2( 0, -1); break;
+    }
+
+    // Ignore transparent neighbors
+    RAB_Surface surface = RAB_GetGBufferSurface(pixel + offset, false);
+    if ((opacityMask & (1 << (i + 1))) == 0)
+    {
+      continue;
+    }
+
+    // Diffuse and specular color are demodulated, no need to consider pixel difference.
+    float depth = length(surface.minimalSurfaceInteraction.position - cameraPosition);
+    // Ignore neighbors with very different normal
+    if (abs(depth - centerDepth) > centerDepth * 0.05 ||
+        dot(centerShadingNormal, surface.opaqueSurfaceMaterialInteraction.shadingNormal) < 0.1 ||
+        dot(centerTriangleNormal, surface.minimalSurfaceInteraction.triangleNormal) < 0.9)
+    {
+      continue;
+    }
+    
+    surface.opaqueSurfaceMaterialInteraction.albedo = centerDiffuseAlbedo;
+    surface.opaqueSurfaceMaterialInteraction.baseReflectivity = centerSpecularF0;
+
+    // Clamp roughness to improve stability on specular surfaces
+    surface.opaqueSurfaceMaterialInteraction.isotropicRoughness = max(surface.opaqueSurfaceMaterialInteraction.isotropicRoughness, enhanceBSDFIndirectLightMinRoughness);
+    surface.opaqueSurfaceMaterialInteraction.anisotropicRoughness = max(surface.opaqueSurfaceMaterialInteraction.anisotropicRoughness, float16_t2(enhanceBSDFIndirectLightMinRoughness));
+
+    // Calculate BRDF value
+    SurfaceMaterialInteractionSplitWeight brdf = RAB_CalculateBRDF(L, surface);
+    float2 brdfValue;
+    brdfValue.x = calcBt709Luminance(brdf.diffuseReflectionWeight);
+    brdfValue.y = calcBt709Luminance(brdf.specularReflectionWeight);
+    brdfValue = clamp(brdfValue, brdfClampMin, brdfClampMax);
+
+    float16_t w = float16_t(1);
+    neighborBRDF += brdfValue * w;
+    neighborWeight += w;
+  }
+
+  if (neighborWeight > float16_t(0))
+  {
+    neighborBRDF /= neighborWeight;
+    factor.x = neighborBRDF.x > float16_t(0) ? centerBrdfValue.x / neighborBRDF.x : float16_t(1);
+    factor.y = neighborBRDF.y > float16_t(0) ? centerBrdfValue.y / neighborBRDF.y : float16_t(1);
+  }
+
+  return factor;
+}
+
+float2 ReSTIRGI_GetDlssEnhancementIndirectFactorNormalDifference(
+  int2 pixel, float3 surfaceInteractionPosition, float3 interpolatedNormal, ReSTIRGI_Reservoir spatialReservoir,
+  float enhanceBSDFIndirectLightMinRoughness, float2 brdfClampMin, float2 brdfClampMax)
+{
+  RAB_Surface centerSurface = RAB_GetGBufferSurface(pixel, false);
+
+  float3 incomingDir = normalize(spatialReservoir.position - surfaceInteractionPosition);
+  int2 centerPixel = pixel;
+
+  float3 diffNormal = interpolatedNormal - centerSurface.opaqueSurfaceMaterialInteraction.shadingNormal;
+  // The BRDF ratio is sensitive to tiny normal difference due to numerical stability issue.
+  // Tiny normal difference here should be ignored. The value 0.001 is based on experiment.
+  float diffLength = length(diffNormal) - 0.001;
+  if (diffLength > 0)
+  {
+    diffNormal = normalize(diffNormal) * min(diffLength, 0.1);
+  }
+  interpolatedNormal = normalize(centerSurface.opaqueSurfaceMaterialInteraction.shadingNormal + diffNormal);
+
+  centerSurface.opaqueSurfaceMaterialInteraction.isotropicRoughness = max(centerSurface.opaqueSurfaceMaterialInteraction.isotropicRoughness, enhanceBSDFIndirectLightMinRoughness);
+  centerSurface.opaqueSurfaceMaterialInteraction.anisotropicRoughness = max(centerSurface.opaqueSurfaceMaterialInteraction.anisotropicRoughness, float16_t2(enhanceBSDFIndirectLightMinRoughness));
+  // The following code needs to calculate the ratio between two BRDF specular value.
+  // For low roughness objects, specular lobe tail should be clamped to improve stability.
+  // However, for objects with low base reflectivity, a fixed threshold may cause a large portion of specular
+  // lobe get clamped, so base reflectivity should be removed to normalize the specular lobe here.
+  centerSurface.opaqueSurfaceMaterialInteraction.baseReflectivity = float16_t3(1);
+
+  // Calculate BRDF value
+  SurfaceMaterialInteractionSplitWeight brdf0 = RAB_CalculateBRDF(incomingDir, centerSurface);
+  float2 brdfValue0;
+  brdfValue0.x = dot(incomingDir, centerSurface.opaqueSurfaceMaterialInteraction.shadingNormal);
+  brdfValue0.y = calcBt709Luminance(brdf0.specularReflectionWeight);
+  brdfValue0 = clamp(brdfValue0, brdfClampMin, brdfClampMax);
+
+  centerSurface.opaqueSurfaceMaterialInteraction.shadingNormal = (float16_t3)interpolatedNormal;
+  SurfaceMaterialInteractionSplitWeight brdf1 = RAB_CalculateBRDF(incomingDir, centerSurface);
+  float2 brdfValue1;
+  brdfValue1.x = dot(incomingDir, centerSurface.opaqueSurfaceMaterialInteraction.shadingNormal);
+  brdfValue1.y = calcBt709Luminance(brdf1.specularReflectionWeight);
+  brdfValue1 = clamp(brdfValue1, brdfClampMin, brdfClampMax);
+
+  // Calculate Factor and return
+  return brdfValue0 / brdfValue1;
+}

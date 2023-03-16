@@ -1,0 +1,31 @@
+/***************************************************************************
+ # Copyright (c) 2020-2023, NVIDIA CORPORATION.  All rights reserved.
+ #
+ # NVIDIA CORPORATION and its licensors retain all intellectual property
+ # and proprietary rights in and to this software, related documentation
+ # and any modifications thereto.  Any use, reproduction, disclosure or
+ # distribution of this software and related documentation without an express
+ # license agreement from NVIDIA CORPORATION is strictly prohibited.
+ **************************************************************************/
+
+#pragma once
+
+#include "RtxdiMath.slangh"
+
+int RTXDI_ReservoirPositionToPointer(int2 pixel, int2 dim, int page)
+{
+  // Use block addressing to improve memory coherence
+  int2 blockIdx = pixel / RTXDI_RESERVOIR_BLOCK_SIZE;
+  int2 positionInBlock = pixel % RTXDI_RESERVOIR_BLOCK_SIZE;
+
+  int renderWidthBlocks = (dim.x + RTXDI_RESERVOIR_BLOCK_SIZE - 1) / RTXDI_RESERVOIR_BLOCK_SIZE;
+  int renderHeightBlocks = (dim.y + RTXDI_RESERVOIR_BLOCK_SIZE - 1) / RTXDI_RESERVOIR_BLOCK_SIZE;
+  int reservoirBlockRowPitch = renderWidthBlocks * (RTXDI_RESERVOIR_BLOCK_SIZE * RTXDI_RESERVOIR_BLOCK_SIZE);
+  int reservoirArrayPitch = reservoirBlockRowPitch * renderHeightBlocks;
+
+  return page * reservoirArrayPitch
+    + blockIdx.y * reservoirBlockRowPitch
+    + blockIdx.x * (RTXDI_RESERVOIR_BLOCK_SIZE * RTXDI_RESERVOIR_BLOCK_SIZE)
+    + positionInBlock.y * RTXDI_RESERVOIR_BLOCK_SIZE
+    + positionInBlock.x;
+}

@@ -1,0 +1,200 @@
+/***************************************************************************
+ # Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
+ #
+ # NVIDIA CORPORATION and its licensors retain all intellectual property
+ # and proprietary rights in and to this software, related documentation
+ # and any modifications thereto.  Any use, reproduction, disclosure or
+ # distribution of this software and related documentation without an express
+ # license agreement from NVIDIA CORPORATION is strictly prohibited.
+ **************************************************************************/
+
+#pragma once
+
+#include "RtxdiParameters.h"
+
+// This file contains functions necessary for gradient filtering and confidence calculation.
+// They could have been defined in ResamplingFunctions, but then they would require
+// the RAB to be included with all its dependencies, which is not really needed in the 
+// gradient and confidence shaders.
+
+
+float RTXDI_GetConfidenceGeometricWeight(float referenceHitDistance, float sampleHitDistance, float hitDistanceSensitivity)
+{
+  return saturate(1.0 - hitDistanceSensitivity * abs(sampleHitDistance - referenceHitDistance)
+       / max(sampleHitDistance, referenceHitDistance));
+}
+
+// Get minimum confidence weight base on a quadratic relation to the hit distance
+float RTXDI_GetConfidenceClampWeight(float referenceHitDistance, float confidenceHitDistanceSensitivity)
+{
+  const float confidenceClampWeight = (referenceHitDistance / max(confidenceHitDistanceSensitivity, 1e-3f));
+  return saturate(confidenceClampWeight * confidenceClampWeight);
+}
+
+
+void RTXDI_FilterGradients(
+  RWTexture2DArray<float2> RtxdiGradients,
+  int2 gradientPos,
+  int inputBufferIndex,
+  int outputBufferIndex,
+  int filterStep,
+  int2 gradientImageSize,
+  float hitDistanceSensitivity)
+{
+  float2 center = RtxdiGradients[int3(gradientPos, inputBufferIndex)];
+
+  // Initialize the accumulator with the center pixel
+  float acc = center.x;
+  float wSum = 1.0;
+
+  // Accumulate 8 neighbors +/- 'filterStep' pixels away
+  [unroll] for (int yy = -1; yy <= 1; ++yy)
+  [unroll] for (int xx = -1; xx <= 1; ++xx)
+  {
+    // Exclude the center because it's accumulated above
+    if (xx == 0 && yy == 0)
+      continue;
+
+    int2 pos = gradientPos + int2(xx, yy) * filterStep;
+    float2 c = RtxdiGradients[int3(pos, inputBufferIndex)];
+
+    if (all(pos >= 0) && all(pos < int2(gradientImageSize)))
+    {
+      // Triangular filter kernel produces a smooth result after a few iterations
+      float w = (xx == 0 ? 1.0 : 0.5) * (yy == 0 ? 1.0 : 0.5);
+
+      // Geometric weight: 1.0 where the depths are equal, falling off to 0 as they diverge
+      w *= RTXDI_GetConfidenceGeometricWeight(c.y, center.y, hitDistanceSensitivity);
+
+      acc += c.x * w;
+      wSum += w;
+    }
+  }
+
+  // Normalize and store the output into the output buffer
+  acc /= wSum;
+
+  RtxdiGradients[int3(gradientPos, outputBufferIndex)] = float2(acc, center.y);
+}
+
+
+struct RTXDI_ConfidenceParameters
+{
+  float confidenceHitDistanceSensitivity;
+  float gradientPower;
+  float gradientScale;
+  float hitDistanceSensitivity;
+  int inputBufferIndex;
+  float minimumConfidence;
+  float referenceHitDistance;
+  int2 resolution;
+  float2 screenSpaceMotionVector;
+  float temporalBlendFactor;
+};
+
+float RTXDI_ConvertGradientsToConfidence(
+  Texture2DArray<float2> RtxdiGradients,
+  Texture2D<float> PreviousConfidence,
+  int2 pixelPos,
+  RTXDI_ConfidenceParameters cparams)
+{
+  // Apply a 3x3 bilateral spatial filter over the gradients, using hit distance as a guide.
+
+  const int2 gradientBasePixel = pixelPos.xy / RTXDI_GRAD_FACTOR;
+  
+  // Keep two accumulators: one with geometric weight (bilateral), and one without.
+  // When the geometric weights are zero for all samples, use the non-geometric fallback result.
+  float gradient = 0;
+  float fallbackGradient = 0;
+  float bilateralWeightSum = 0;
+  float interpolationWeightSum = 0;
+
+  [unroll] for (int yy = -1; yy <= 1; ++yy)
+  [unroll] for (int xx = -1; xx <= 1; ++xx)
+  {
+    // Load the source sample
+    const int2 gradientPos = int2(gradientBasePixel.x + xx, gradientBasePixel.y + yy);
+    const float2 c = RtxdiGradients[int3(gradientPos.xy, cparams.inputBufferIndex)];
+
+    // Compute the geometric weight
+    const float geometricWeight = RTXDI_GetConfidenceGeometricWeight(cparams.referenceHitDistance,
+      c.y, cparams.hitDistanceSensitivity);
+
+    // Compute the interpolation (screen) weight
+    const int2 samplePos = gradientPos * RTXDI_GRAD_FACTOR + (RTXDI_GRAD_FACTOR / 2);
+    // Note: divide the distance by something larger than RTXDI_GRAD_FACTOR, because otherwise only a simple
+    // bilinear footprint has nonzero weights, and we want more than that to make the search more effective.
+    // Using a denominator that is too large, on the other hand, leads to some blockiness of the output
+    // because the filter footprint becomes too small.
+    const float2 wxy = saturate(1.0 - float2(abs(int2(pixelPos.xy) - samplePos.xy)) / (RTXDI_GRAD_FACTOR + 2));
+    float interpolationWeight = wxy.x * wxy.y;
+
+    // Reject samples outside the screen
+    if (any(samplePos.xy < 0) || any(samplePos.xy >= cparams.resolution))
+      interpolationWeight = 0;
+
+    // Accumulate the gradients and the weights
+    gradient += c.x * interpolationWeight * geometricWeight;
+    fallbackGradient += c.x * interpolationWeight;
+    bilateralWeightSum += interpolationWeight * geometricWeight;
+    interpolationWeightSum += interpolationWeight;
+  }
+
+  // Normalize the result, fallback to non-bilateral interpolation if bilateral failed.
+  if (bilateralWeightSum > 0)
+    gradient /= bilateralWeightSum;
+  else
+    gradient = fallbackGradient / interpolationWeightSum;
+
+  gradient = max(gradient, 0);
+
+  // Convert filtered gradients to confidence
+  float confidence = saturate(1.0 - cparams.gradientScale * gradient);
+  
+  confidence = saturate(pow(confidence, cparams.gradientPower));
+
+  // Apply the temporal filter, if enabled.
+  if (cparams.temporalBlendFactor < 1.0)
+  {
+    // Find the previous input position using the motion vector.
+    int2 prevInputPos = int2(float2(pixelPos) + 0.5 + cparams.screenSpaceMotionVector);
+
+    if (all(prevInputPos >= 0) && all(prevInputPos < cparams.resolution))
+    {
+      // Blend the history in a non-linear space to make the result
+      // hold on to lower confidence values longer than to high confidence.
+      // We want to discard history for more than one frame when a singular change happens
+      // (e.g. a light turning off), because ReSTIR needs a little time to stabilize.
+      const float power = 0.25;
+
+      // Load the previous confidence values
+      float prevConfidence = PreviousConfidence[prevInputPos];
+
+      // Heuristic method: we use temporal smoothing only when confidence increasing.
+      // This can eliminate the ghost issue cause by temporal confidence, and also help NRD
+      // denoise low confidence region well
+      float blendFactor = confidence > prevConfidence ? cparams.temporalBlendFactor : 1.0f;
+
+      // Convert the current and previous values to the non-linear space
+      confidence = pow(confidence, power);
+      prevConfidence = pow(prevConfidence, power);
+
+      // Blend
+      confidence = lerp(prevConfidence, confidence, blendFactor);
+
+      // Convert the result back into linear space
+      confidence = pow(saturate(confidence), 1.0 / power);
+    }
+  }
+
+  // Adaptively scale up/down minimum confidence base on the hit distance. The heuristic method will make the low confidence lagged and reject
+  // history fast in current frame. This will bring back noise and stuck in the pixel longer, because current ReLAX doesn't change history length base on confidence across frames.
+  // Also, when the hit distance increases, spatial blending will cover larger world space region, the noise will have wider effect.
+  // So we use the HitT as a guidance to adaptively scale the minimum confidence. We allow low confidence when HitT is low to fight with ghosting,
+  // and we have a larger minimum confidence when the distance increasing to avoid noise influence wide regions.
+  const float minimumConfidence = cparams.minimumConfidence * RTXDI_GetConfidenceClampWeight(cparams.referenceHitDistance,
+    cparams.confidenceHitDistanceSensitivity);
+  confidence = max(confidence, minimumConfidence);
+
+  return confidence;
+}

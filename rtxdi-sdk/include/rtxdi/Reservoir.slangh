@@ -1,0 +1,397 @@
+/***************************************************************************
+ # Copyright (c) 2020-2023, NVIDIA CORPORATION.  All rights reserved.
+ #
+ # NVIDIA CORPORATION and its licensors retain all intellectual property
+ # and proprietary rights in and to this software, related documentation
+ # and any modifications thereto.  Any use, reproduction, disclosure or
+ # distribution of this software and related documentation without an express
+ # license agreement from NVIDIA CORPORATION is strictly prohibited.
+ **************************************************************************/
+
+#pragma once
+
+#include "RtxdiParameters.h"
+#include "RtxdiHelpers.slangh"
+
+#define RTXDI_INVALID_LIGHT_INDEX 0xffff
+#define RTXDI_INVALID_PORTAL_INDEX 7
+#define RTXDI_MAX_PORTAL_COUNT 2
+#define RESTIR_GI_FLAG_OCCLUDED_SAMPLE (0x1 << 29)
+#define RESTIR_GI_INVALID_INDIRECT_LIGHT_PORTAL_ID 0x2
+
+struct RTXDI_Reservoir
+{
+  uint16_t lightIdx;
+  uint8_t portalIdx;
+  float2 uv;
+  float weightSum;
+  float targetPdf;
+  uint16_t M;
+};
+
+RTXDI_PackedReservoir RTXDI_PackReservoir(RTXDI_Reservoir reservoir)
+{
+  RTXDI_PackedReservoir packedReservoir;
+  packedReservoir.data0 = asuint(float4(reservoir.uv, reservoir.weightSum, reservoir.targetPdf));
+  packedReservoir.data1.x = ((uint(reservoir.lightIdx) << 16) | (reservoir.M & 0xffff));
+  packedReservoir.data1.y = uint(reservoir.portalIdx);
+  packedReservoir.data1.zw = 0;
+  return packedReservoir;
+}
+
+RTXDI_Reservoir RTXDI_EmptyReservoir()
+{
+  RTXDI_Reservoir s;
+  s.lightIdx = RTXDI_INVALID_LIGHT_INDEX;
+  s.uv = float2(0);
+  s.targetPdf = 0.0f;
+  s.weightSum = 0.0f;
+  s.M = uint16_t(0);
+  s.portalIdx = RTXDI_INVALID_PORTAL_INDEX;
+  return s;
+}
+
+RTXDI_Reservoir RTXDI_UnpackReservoir(RTXDI_PackedReservoir packedReservoir)
+{
+  RTXDI_Reservoir reservoir;
+  reservoir.uv = asfloat(packedReservoir.data0.xy);
+  reservoir.weightSum = asfloat(packedReservoir.data0.z);
+  reservoir.targetPdf = asfloat(packedReservoir.data0.w);
+  reservoir.lightIdx = uint16_t(packedReservoir.data1.x >> 16);
+  reservoir.M = uint16_t(packedReservoir.data1.x & 0xffff);
+
+  reservoir.portalIdx = uint8_t(packedReservoir.data1.y);
+  return reservoir;
+}
+
+void RTXDI_StoreVisibilityInReservoir(
+  inout RTXDI_Reservoir reservoir,
+  float3 visibility,
+  bool discardIfInvisible)
+{
+  if (discardIfInvisible && all(visibility == 0))
+  {
+    reservoir.lightIdx = RTXDI_INVALID_LIGHT_INDEX;
+    reservoir.weightSum = 0;
+  }
+}
+
+bool RTXDI_IsValidReservoir(const RTXDI_Reservoir reservoir)
+{
+  return reservoir.lightIdx != RTXDI_INVALID_LIGHT_INDEX;
+}
+
+
+struct ReSTIRGI_Reservoir
+{
+  float3 position;                ///< Hit point's position.
+  float3 normal;                  ///< Hit point's normal.
+  float3 radiance;                ///< Chosen sample's radiance.
+  int    M;                       ///< Input sample count.
+  float avgWeight;                ///< Average weight for chosen sample.
+  uint32_t flagsAndVirtualFraction;///< flags and virtual fraction length for virtual samples
+
+  static ReSTIRGI_Reservoir createEmpty()
+  {
+    ReSTIRGI_Reservoir reservoir = {};
+    reservoir.position = float3(0.f, 0.f, 1.f);
+    reservoir.normal = float3(0.f, 0.f, -1.f);
+    reservoir.radiance = float3(0.f);
+    reservoir.M = 0;
+    reservoir.avgWeight = 0.f;
+    reservoir.flagsAndVirtualFraction = 0;
+    return reservoir;
+  }
+
+  static ReSTIRGI_Reservoir createFromPacked(const ReSTIRGI_PackedReservoir packed)
+  {
+    ReSTIRGI_Reservoir reservoir = {};
+    reservoir.unpack(packed);
+    return reservoir;
+  }
+
+  ReSTIRGI_PackedReservoir pack()
+  {
+    ReSTIRGI_PackedReservoir packed;
+    packed.hitGeometry.xyz = asuint(position);
+    packed.hitGeometry.w = RAB_EncodeNormal(normal);
+    packed.lightInfo.x = f32tof16(radiance.x) | (f32tof16(radiance.y) << 16);
+    packed.lightInfo.y = f32tof16(radiance.z) | (M << 16);
+    packed.lightInfo.z = asuint(avgWeight);
+    packed.lightInfo.w = flagsAndVirtualFraction;
+    return packed;
+  }
+
+  [mutating] void unpack(const ReSTIRGI_PackedReservoir packed)
+  {
+    position = asfloat(packed.hitGeometry.xyz);
+    normal = RAB_DecodeNormal(packed.hitGeometry.w);
+    radiance.x = f16tof32(packed.lightInfo.x & 0xffff);
+    radiance.y = f16tof32(packed.lightInfo.x >> 16);
+    radiance.z = f16tof32(packed.lightInfo.y & 0xffff);
+    M = (packed.lightInfo.y >> 16);
+    avgWeight = asfloat(packed.lightInfo.z);
+    flagsAndVirtualFraction = packed.lightInfo.w;
+  }
+
+  [mutating] void setPortalID(uint8_t portalIdx)
+  {
+    uint portalIdx32 = (uint)portalIdx;
+    flagsAndVirtualFraction = (flagsAndVirtualFraction & 0x3fffffff) | (portalIdx32 << 30);
+  }
+
+  uint8_t getPortalID()
+  {
+    return flagsAndVirtualFraction >> 30;
+  }
+
+  bool getFlag(uint32_t flag)
+  {
+    return (flagsAndVirtualFraction & flag) != 0;
+  }
+
+  [mutating] void setFlag(uint32_t flag)
+  {
+    flagsAndVirtualFraction |= flag;
+  }
+
+  [mutating] void clearFlag(uint32_t flag)
+  {
+    flagsAndVirtualFraction &= (~flag);
+  }
+
+  // For a virtual sample, only part of the distance between the pixel and the sample should be used for
+  // visibility test, the remaining part is virtual. This function returns the virtual portion length.
+  float getVirtualFraction()
+  {
+    return f16tof32(flagsAndVirtualFraction & 0xffff);
+  }
+
+  [mutating] void setVirtualFraction(float invalidLength)
+  {
+    flagsAndVirtualFraction = (flagsAndVirtualFraction & 0xffff0000) | f32tof16(invalidLength);
+  }
+
+  float3 getVisibilityPoint(float3 srcPoint)
+  {
+    float virtualFraction = getVirtualFraction();
+    if (virtualFraction == 0.0)
+    {
+      return position;
+    }
+    else
+    {
+      float3 offset = position - srcPoint;
+      float offsetLength = length(offset);
+      float validLength = max(offsetLength - virtualFraction, 0.01);
+      return srcPoint + offset * validLength / (offsetLength + 0.001);
+    }
+  }
+
+  /** Randomly update reservoir.
+      \param[in] weight The input reservoir's weight.
+      \param[in] srcReservoir The input reservoir.
+      \param[in] random Random number.
+  */
+  [mutating] bool update(float weight, ReSTIRGI_Reservoir srcReservoir, float random)
+  {
+    avgWeight += weight;
+    M += srcReservoir.M;
+
+    // Conditionally update reservoir.
+    bool isUpdate = random * avgWeight <= weight;
+    if (isUpdate)
+    {
+        position = srcReservoir.position;
+        normal = srcReservoir.normal;
+        radiance = srcReservoir.radiance;
+        flagsAndVirtualFraction = srcReservoir.flagsAndVirtualFraction;
+    }
+    return isUpdate;
+  }
+
+  [mutating] void finalize(float targetPdf, float normalizationNumerator, float normalizationDenominator)
+  {
+    float denominator = targetPdf * normalizationDenominator;
+    avgWeight = (denominator == 0.0) ? 0.0 : (avgWeight * normalizationNumerator) / denominator;
+  }
+};
+
+uint8_t ReSTIRGI_PortalID2BitTo8Bit(uint8_t portalID)
+{
+  if(portalID == RESTIR_GI_INVALID_INDIRECT_LIGHT_PORTAL_ID)
+    return RTXDI_INVALID_PORTAL_INDEX;
+  return portalID;
+}
+
+void ReSTIRGI_StoreHitGeometry(RWTexture2D<float4> hitGeometryTexture, int2 pixel, float3 position, float3 normal, uint8_t portalIdx)
+{
+  // Use last normal 
+  normal = clamp(normal, -1.0, 1.0);
+  uint32_t encodedNormal = RAB_EncodeNormal(normal);
+  encodedNormal = (encodedNormal & 0xfffefffe) | ((portalIdx & 0x2) << 15) | (portalIdx & 0x1);
+  hitGeometryTexture[pixel] = float4(position, asfloat(encodedNormal));
+}
+
+void ReSTIRGI_LoadHitGeometry(Texture2D<float4> hitGeometryTexture, int2 pixel, out float3 position, out float3 normal, out uint8_t portalIdx)
+{
+  float4 hitGeometry = hitGeometryTexture[pixel];
+  position = hitGeometry.xyz;
+  uint32_t normalPortalData = asuint(hitGeometry.w);
+  portalIdx = (((normalPortalData >> 15) & 0x2) | (normalPortalData & 0x1));
+  normalPortalData &= 0xfffefffe;
+  normal = RAB_DecodeNormal(normalPortalData);
+}
+
+
+struct VolumeReSTIR_LightSample
+{
+  // Note: The index and random sampling coordinates of this light sample.
+  uint16_t lightIndex;
+  float16_t2 lightSampleCoordinates;
+  // Note: The PDF of this sample against the target function (usually BRDF, light heuristic weight, visibility, etc), does not
+  // need to be a normalized PDF.
+  // Cached here for future use (only needed for bias correction, not currently used much right now).
+  float targetPdf;
+
+  static VolumeReSTIR_LightSample create(uint16_t lightIndex, float16_t2 lightSampleCoordinates, float targetPdf)
+  {
+    VolumeReSTIR_LightSample newVolumeLightSample;
+
+    newVolumeLightSample.lightIndex = lightIndex;
+    newVolumeLightSample.lightSampleCoordinates = lightSampleCoordinates;
+    newVolumeLightSample.targetPdf = targetPdf;
+
+    return newVolumeLightSample;
+  }
+}
+
+struct VolumeReSTIR_LightCandidateSample
+{
+  VolumeReSTIR_LightSample lightSample;
+  // Note: The inverse of the PDF this candidate sample was generated with (which typically will not be the same distribution
+  // as the target PDF). Inverse done simply to avoid a division later.
+  float inverseSourcePdf;
+
+  static VolumeReSTIR_LightCandidateSample create(VolumeReSTIR_LightSample lightSample, float inverseSourcePdf)
+  {
+    VolumeReSTIR_LightCandidateSample newVolumeLightCandidateSample;
+
+    newVolumeLightCandidateSample.lightSample = lightSample;
+    newVolumeLightCandidateSample.inverseSourcePdf = inverseSourcePdf;
+
+    return newVolumeLightCandidateSample;
+  }
+};
+
+struct VolumeReSTIR_Reservoir
+{
+  static const float invalidWeightSum = 0.0f;
+
+  // Note: The current selected light sample in the reservoir.
+  VolumeReSTIR_LightSample lightSample;
+  // Note: The sum of all of the weights in the reservoir.
+  float weightSum;
+  // Note: The number of samples making up the reservoir.
+  uint16_t sampleCount;
+
+  static VolumeReSTIR_Reservoir createEmpty()
+  {
+    VolumeReSTIR_Reservoir volumeReservoir;
+
+    volumeReservoir.weightSum = invalidWeightSum;
+    volumeReservoir.sampleCount = 0;
+
+    return volumeReservoir;
+  }
+
+  static VolumeReSTIR_Reservoir createFromPacked(const VolumeReSTIR_PackedReservoir packed)
+  {
+    VolumeReSTIR_Reservoir volumeReservoir = {};
+
+    volumeReservoir.unpack(packed);
+
+    return volumeReservoir;
+  }
+
+  VolumeReSTIR_PackedReservoir pack()
+  {
+    VolumeReSTIR_PackedReservoir packed;
+
+    packed.data0.x =
+      (uint32_t(lightSample.lightIndex) << 0) |
+      (uint32_t(sampleCount) << 16);
+    packed.data0.y =
+      f32tof16(lightSample.lightSampleCoordinates.x) |
+      (f32tof16(lightSample.lightSampleCoordinates.y) << 16);
+    packed.data0.z = asuint(lightSample.targetPdf);
+    packed.data0.w = asuint(weightSum);
+
+    return packed;
+  }
+
+  [mutating] void unpack(const VolumeReSTIR_PackedReservoir packed)
+  {
+    lightSample.lightIndex = uint16_t(packed.data0.x);
+    lightSample.lightSampleCoordinates.x = f16tof32(packed.data0.y & 0xFFFF);
+    lightSample.lightSampleCoordinates.y = f16tof32(packed.data0.y >> 16);
+    lightSample.targetPdf = asfloat(packed.data0.z);
+    weightSum = asfloat(packed.data0.w);
+    sampleCount = uint16_t(packed.data0.x >> 16);
+  }
+
+  bool isValid()
+  {
+    return weightSum != invalidWeightSum;
+  }
+
+  [mutating] void invalidate()
+  {
+    weightSum = invalidWeightSum;
+  }
+
+  [mutating] bool update(float random, float weight, uint16_t newSampleCount, VolumeReSTIR_LightSample newLightSample)
+  {
+    // Accumulate weight
+
+    weightSum += weight;
+    // Note: Clamp the sample count to the maximum uint 16 value when adding to prevent wrapping back around to 0.
+    sampleCount = uint16_t(min(uint(sampleCount) + uint(newSampleCount), 0xFFFF));
+
+    // Update sample
+
+    // Note: Mathematically equal to random < weight / weightSum when weightSum is positive, avoids a division.
+    if (weightSum * random < weight)
+    {
+      lightSample = newLightSample;
+
+      return true;
+    }
+
+    return false;
+  }
+
+  [mutating] bool streamSample(float random, VolumeReSTIR_LightCandidateSample candidateSample)
+  {
+    const float weight =
+      candidateSample.lightSample.targetPdf * candidateSample.inverseSourcePdf;
+
+    return update(random, weight, 1, candidateSample.lightSample);
+  }
+
+  [mutating] bool merge(float random, VolumeReSTIR_Reservoir otherVolumeReservoir)
+  {
+    const float weight =
+      otherVolumeReservoir.lightSample.targetPdf * otherVolumeReservoir.weightSum * otherVolumeReservoir.sampleCount;
+
+    return update(random, weight, otherVolumeReservoir.sampleCount, otherVolumeReservoir.lightSample);
+  }
+
+  [mutating] void finalizeResampling(float normalizationNumerator, float normalizationDenominator)
+  {
+    const float denominator = lightSample.targetPdf * normalizationDenominator;
+    const float newWeightSum = (denominator == 0.0f) ? 0.0f : (weightSum * normalizationNumerator) / denominator;
+
+    weightSum = newWeightSum;
+  }
+};

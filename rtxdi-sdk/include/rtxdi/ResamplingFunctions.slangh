@@ -1,0 +1,1471 @@
+/***************************************************************************
+ # Copyright (c) 2020-2023, NVIDIA CORPORATION.  All rights reserved.
+ #
+ # NVIDIA CORPORATION and its licensors retain all intellectual property
+ # and proprietary rights in and to this software, related documentation
+ # and any modifications thereto.  Any use, reproduction, disclosure or
+ # distribution of this software and related documentation without an express
+ # license agreement from NVIDIA CORPORATION is strictly prohibited.
+ **************************************************************************/
+
+#pragma once
+
+#include "Reservoir.slangh"
+
+bool RTXDI_StreamSample(
+  inout RTXDI_Reservoir reservoir,
+  uint lightIndex,
+  uint portalIndex,
+  float2 uv,
+  float random,
+  float targetPdf,
+  float invSourcePdf)
+{
+  // What's the current weight
+  float risWeight = targetPdf * invSourcePdf;
+
+  // Add one sample to the counter
+  reservoir.M += uint16_t(1);
+
+  // Update the weight sum
+  reservoir.weightSum += risWeight;
+
+  // Decide if we will randomly pick this sample
+  bool selectSample = (random * reservoir.weightSum < risWeight);
+
+  // If we did select this sample, update the relevant data.
+  // New samples don't have visibility or age information, we can skip that.
+  if (selectSample)
+  {
+    reservoir.lightIdx = uint16_t(lightIndex);
+    reservoir.portalIdx = uint8_t(portalIndex);
+    reservoir.uv = uv;
+    reservoir.targetPdf = targetPdf;
+  }
+
+  return selectSample;
+}
+
+bool RTXDI_CombineReservoirs(
+  inout RTXDI_Reservoir reservoir,
+  const RTXDI_Reservoir newReservoir,
+  float random,
+  float targetPdf)
+{
+  // What's the current weight (times any prior-step RIS normalization factor)
+  float risWeight = targetPdf * newReservoir.weightSum * newReservoir.M;
+
+  // Our *effective* candidate pool is the sum of our candidates plus those of our neighbors
+  reservoir.M += newReservoir.M;
+
+  // Update the weight sum
+  reservoir.weightSum += risWeight;
+
+  // Decide if we will randomly pick this sample
+  bool selectSample = (random * reservoir.weightSum < risWeight);
+
+  // If we did select this sample, update the relevant data
+  if (selectSample)
+  {
+    reservoir.lightIdx = newReservoir.lightIdx;
+    reservoir.portalIdx = newReservoir.portalIdx;
+    reservoir.uv = newReservoir.uv;
+    reservoir.targetPdf = targetPdf;
+  }
+
+  return selectSample;
+}
+
+void RTXDI_FinalizeResampling(
+  inout RTXDI_Reservoir reservoir,
+  float normalizationNumerator,
+  float normalizationDenominator)
+{
+  float denominator = reservoir.targetPdf * normalizationDenominator;
+
+  float weightSum = (denominator == 0.0) ? 0.0 : (reservoir.weightSum * normalizationNumerator) / denominator;
+  reservoir.weightSum = weightSum;
+}
+
+void RTXDI_UpdateReservoirVisibility(inout RTXDI_Reservoir reservoir, RAB_LightSample lightSample, RAB_Surface surface)
+{
+  if (reservoir.lightIdx == RTXDI_INVALID_LIGHT_INDEX)
+    return;
+
+  float3 attenuation;
+  RAB_TraceLightSampleVisibility(surface, lightSample, reservoir.portalIdx, false, true, false, attenuation);
+        
+  // Discard the sample if it's invisible
+
+  RTXDI_StoreVisibilityInReservoir(reservoir, attenuation, true);
+}
+
+struct RTXDI_LightRange
+{
+  uint firstIndex;
+  uint count;
+  uint sampleCount;
+  uint volumeRISSampleCount;
+};
+
+void RTXDI_SampleRandomLights(
+  inout RTXDI_Reservoir state,
+  inout RAB_RandomSamplerState rng,
+  RAB_Surface surface,
+  uint16_t excludeLightIdx,
+  uint8_t excludePortalIdx,
+  bool testVisibility)
+{
+  // Get importance sampling parameters for portals, assume <= 4 portals
+  float16_t totalPortalPdf;
+  float16_t4 sampleThreshold;
+  RAB_GetPortalSamplingProbablity(surface, totalPortalPdf, sampleThreshold);
+
+  RAB_LightSample selectedSample = RAB_EmptyLightSample();
+
+  [unroll]
+  for (uint lightType = 0; lightType < RAB_GetLightTypeCount(); ++lightType)
+  {
+    RTXDI_LightRange range = RAB_GetLightRange(lightType);
+    if (range.count == 0)
+      continue;
+
+    RTXDI_Reservoir localState = RTXDI_EmptyReservoir();
+    RAB_LightSample localSelectedSample = RAB_EmptyLightSample();
+
+    // PDF of selecting any light in this range from the overall pool of lights of all types,
+    // taking into account the different sample counts per type.
+    const float rangeInvSourcePdf = float(range.count);
+
+    // Begin strided sampling by selecting a random starting light
+    float lightIndex = RAB_GetNextRandom(rng) * range.count;
+    const float stride = max(1.0f, float(range.count) / float(range.sampleCount));
+
+    for (uint i = 0; i < range.sampleCount; i++)
+    {
+      const uint rndLight = uint(lightIndex) + range.firstIndex;
+      const float2 lightUV = float2(RAB_GetNextRandom(rng), RAB_GetNextRandom(rng));
+      const float risRnd = RAB_GetNextRandom(rng);
+
+      // Randomly turn a light into virtual light to get cross portal samples
+      
+      const float portalProbability = totalPortalPdf;
+      float randPortal = RAB_GetNextRandom(rng);
+      uint portalIdx = RTXDI_INVALID_PORTAL_INDEX;
+      float invSourcePdf = rangeInvSourcePdf;
+      if (randPortal >= portalProbability)
+      {
+        invSourcePdf /= (1.0 - portalProbability);
+      }
+      else
+      {
+        randPortal /= portalProbability;
+        invSourcePdf = invSourcePdf / portalProbability;
+
+        [unroll]
+        for(int i = 0; i < RTXDI_MAX_PORTAL_COUNT; ++i)
+        {
+          if (randPortal < sampleThreshold[i])
+          {
+            portalIdx = i;
+            float16_t portalPdf = (i == 0) ? sampleThreshold[0] : sampleThreshold[i] - sampleThreshold[i-1];
+            invSourcePdf /= portalPdf;
+            break;
+          }
+        }
+      }
+
+      if (rndLight != excludeLightIdx || portalIdx != excludePortalIdx)
+      {
+        RAB_Surface localSurface = surface;
+
+        // If a light is virtual, transform the surface to virtual light space
+
+        if (portalIdx != RTXDI_INVALID_PORTAL_INDEX)
+        {
+          RAB_TransformSurface(localSurface, RAB_GetPortalTransform(uint8_t(portalIdx)));
+        }
+
+        // Sample the light
+
+        // Note: lightType comes from the loop, not memoryPolymorphicLight, so that the compiler
+        // can effectively unroll the loop and remove the switch from decodedPolymorphicLightSampleArea
+        RAB_LightSample candidateSample = RAB_GetLightSampleWithTypeHint(rndLight, lightUV, lightType, localSurface);
+
+        // Calculate the weight (targetPdf)
+
+        float targetPdf = RAB_GetLightSampleTargetPdfForSurface(candidateSample, localSurface);
+
+        // Check if this light should be selected
+
+        bool selected = RTXDI_StreamSample(localState, rndLight, portalIdx, lightUV, risRnd, targetPdf, invSourcePdf);
+
+        if (selected) {
+          localSelectedSample = candidateSample;
+        }
+      }
+
+      // Accumulate and wrap the light index
+
+      lightIndex += stride;
+
+      if (lightIndex >= range.count)
+      {
+        lightIndex -= range.count;
+      }
+    }
+
+    RTXDI_FinalizeResampling(localState, 1.0, localState.M);
+    localState.M = 1;
+    
+    const float risRnd = RAB_GetNextRandom(rng);
+    if (RTXDI_CombineReservoirs(state, localState, risRnd, localState.targetPdf))
+      selectedSample = localSelectedSample;
+  }
+
+  if (testVisibility)
+  {
+    RTXDI_UpdateReservoirVisibility(state, selectedSample, surface);
+  }
+}
+
+RTXDI_Reservoir RTXDI_SampleSingleLight(
+  inout RAB_RandomSamplerState rng,
+  RAB_Surface surface,
+  uint16_t lightIdx,
+  uint8_t portalIdx,
+  bool testVisibility)
+{
+  RTXDI_Reservoir state = RTXDI_EmptyReservoir();
+
+  if (lightIdx == RTXDI_INVALID_LIGHT_INDEX)
+    return state;
+
+  RAB_Surface localSurface = surface;
+
+  // If a light is virtual, transform the surface to virtual light space
+
+  if (portalIdx != RTXDI_INVALID_PORTAL_INDEX)
+  {
+    RAB_TransformSurface(localSurface, RAB_GetPortalTransform(portalIdx));
+  }
+
+  // Sample the light
+
+  const float2 lightUV = float2(RAB_GetNextRandom(rng), RAB_GetNextRandom(rng));
+  RAB_LightSample candidateSample = RAB_GetLightSample(lightIdx, lightUV, localSurface);
+
+  // Calculate the weight (targetPdf)
+
+  float targetPdf = RAB_GetLightSampleTargetPdfForSurface(candidateSample, localSurface);
+
+  // Put the light into a reservoir
+
+  const float invSourcePdf = 1.0;
+  state.weightSum = targetPdf > 0 ? invSourcePdf : 0;
+  state.lightIdx = targetPdf > 0 ? lightIdx : RTXDI_INVALID_LIGHT_INDEX;
+  state.portalIdx = portalIdx;
+  state.uv = lightUV;
+  state.targetPdf = targetPdf;
+  state.M = 1;
+  
+  if (testVisibility)
+  {
+    RTXDI_UpdateReservoirVisibility(state, candidateSample, surface);
+  }
+
+  return state;
+}
+
+// Internal SDK function that permutes the pixels sampled from the previous frame.
+void RTXDI_ApplyPermutationSampling(inout int2 prevPixelPos, uint uniformRandomNumber, uint width = 2)
+{
+  int mask = (1 << width) - 1;
+  int2 offset = int2(uniformRandomNumber & mask, (uniformRandomNumber >> width) & mask);
+  prevPixelPos += offset;
+ 
+  prevPixelPos.x ^= mask;
+  prevPixelPos.y ^= mask;
+    
+  prevPixelPos -= offset;
+}
+
+// A structure that groups the application-provided settings for temporal resampling.
+struct RTXDI_TemporalResamplingParameters
+{
+    // Expected position of the same surface on the previous frame.
+    int2 prevPixelCenter;
+
+    // Expected hit distance of the same surface on the previous frame.
+    float expectedPrevHitDistance;
+
+    // Motion vector for the surface in virtual world space, i.e. with PSR resolved.
+    float3 virtualMotionVector;
+
+    // The index of the reservoir buffer to pull the temporal samples from.
+    uint sourceBufferIndex;
+
+    // Maximum history length for temporal reuse, measured in frames.
+    // Higher values result in more stable and high quality sampling, at the cost of slow reaction to changes.
+    uint maxHistoryLength;
+
+    // Controls the bias correction math for temporal reuse. Depending on the setting, it can add
+    // some shader cost and one approximate shadow ray per pixel (or per two pixels if checkerboard sampling is enabled).
+    // Ideally, these rays should be traced through the previous frame's BVH to get fully unbiased results.
+    uint biasCorrectionMode;
+
+    // Surface depth similarity threshold for temporal reuse.
+    // If the previous frame surface's depth is within this threshold from the current frame surface's depth,
+    // the surfaces are considered similar. The threshold is relative, i.e. 0.1 means 10% of the current depth.
+    // Otherwise, the pixel is not reused, and the resampling shader will look for a different one.
+    float depthThreshold;
+
+    // Surface normal similarity threshold for temporal reuse.
+    // If the dot product of two surfaces' normals is higher than this threshold, the surfaces are considered similar.
+    // Otherwise, the pixel is not reused, and the resampling shader will look for a different one.
+    float normalThreshold;
+
+    // Enables permuting the pixels sampled from the previous frame in order to add temporal
+    // variation to the output signal and make it more denoiser friendly.
+    bool enablePermutationSampling;
+
+    // Enables a filter that randomly discards temporal samples for a surface that is growing on screen.
+    bool discardEnlargedPixels;
+
+    // Notifies the logic that the samples available from the previous frame were definitely visible.
+    bool discardInvisibleSamples;
+
+    // Enables reuse from surfaces in a different portal space.
+    bool enableCrossPortalReuse;
+
+    // A random integer that should be the same for all pixels but vary per-frame, for permutation sampling.
+    uint uniformRandomNumber;
+};
+
+void RTXDI_TemporalResampling(
+    inout RTXDI_Reservoir state,
+    uint2 pixelPosition,
+    RAB_Surface surface,
+    inout RAB_RandomSamplerState rng,
+    RTXDI_TemporalResamplingParameters tparams,
+    out int2 temporalSamplePixelPos,
+    out bool isGBufferSimilar)
+{
+  isGBufferSimilar = false;
+  int2 prevPixelID = -1;
+  float16_t3 prevNormal;
+  for (int i = 0; i < 9; i++)
+  {
+    // First, look at the previous surface at the position pointed to by the motion vector.
+    // If that surface doesn't match, try the surface at the same pixel, without the similarity test.
+    // That is often a good candidate for areas of disocclusion and things visible through curved glass.
+    int2 offset = int2(0);
+    if (i > 0)
+    {
+      const float radius = 5;
+      offset.x = int((RAB_GetNextRandom(rng) - 0.5) * radius);
+      offset.y = int((RAB_GetNextRandom(rng) - 0.5) * radius);
+    }
+    int2 idx = (i < 8) ? tparams.prevPixelCenter + offset : pixelPosition;
+
+    if (tparams.enablePermutationSampling)
+    {
+      RTXDI_ApplyPermutationSampling(idx, tparams.uniformRandomNumber);
+    }
+
+    // Compare the surfaces.
+    RAB_Surface prevSurface = RAB_GetGBufferSurface(idx, true);
+    if (!RAB_IsSurfaceValid(prevSurface))
+      continue;
+    if (!tparams.enableCrossPortalReuse && RAB_GetSurfacePortalSpace(prevSurface) != RAB_GetSurfacePortalSpace(surface))
+      continue;
+    if (i < 8 && !RTXDI_IsValidNeighbor(RAB_GetSurfaceNormal(surface), RAB_GetSurfaceNormal(prevSurface),
+        tparams.expectedPrevHitDistance, RAB_GetSurfaceLinearDepth(prevSurface), tparams.normalThreshold, tparams.depthThreshold))
+      continue;
+
+    // Set the reprojection confidence flag if we found a match in the previous frame at the motion vector.
+    isGBufferSimilar = (i < 8);
+    // Remember the pixel position that we selected for resampling .
+    prevPixelID = idx;
+    prevNormal = RAB_GetSurfaceNormal(prevSurface);
+    break;
+  }
+
+  if (tparams.discardEnlargedPixels && prevPixelID.x >= 0)
+  {
+    if (RAB_ShouldDiscardEnlargedPixel(rng, surface, tparams.virtualMotionVector))
+    {
+      // Set the prev position to invalid to disable temporal reuse,
+      // but don't reset isGBufferSimilar so that enlarged pixels don't affect the reprojection confidence calculation below.
+      prevPixelID = -1;
+    }
+  }
+
+  // Output the position of the surface we're going to resample from
+  temporalSamplePixelPos = prevPixelID;
+
+  uint16_t selectedLightPrevIdx = RAB_TranslateLightIndex(state.lightIdx, /* currentToPrevious = */ true);
+
+  // merge new sample
+  int historyLimit = min(0xffff, tparams.maxHistoryLength * state.M);
+  uint initialM = state.M;
+
+  // calculate targetPdf for the old sample
+  bool selectedPreviousSample = false;
+  uint previousM = 0;
+  if (prevPixelID.x >= 0)
+  {
+    RTXDI_Reservoir prevReservoir = RAB_LoadReservoir(prevPixelID, tparams.sourceBufferIndex);
+    prevReservoir.M = min(prevReservoir.M, uint16_t(historyLimit));
+    previousM = prevReservoir.M;
+
+    // Save the light index in the previous frame context
+    const uint16_t originalPrevLightIdx = prevReservoir.lightIdx;
+    
+    uint16_t mappedLightID = RAB_TranslateLightIndex(prevReservoir.lightIdx, /* currentToPrevious = */ false);
+    if (mappedLightID == RTXDI_INVALID_LIGHT_INDEX)
+    {
+      // Kill the reservoir
+      prevReservoir.weightSum = 0;
+      prevReservoir.lightIdx = RTXDI_INVALID_LIGHT_INDEX;
+    }
+    else
+    {
+      prevReservoir.lightIdx = mappedLightID;
+    }
+
+    float weightAtCurrent = 0;
+    if (RTXDI_IsValidReservoir(prevReservoir))
+    {
+      // For cross portal light, transform the surface to light space
+      RAB_Surface virtualSurface = surface;
+      if (prevReservoir.portalIdx != RTXDI_INVALID_PORTAL_INDEX)
+      {
+        RAB_TransformSurface(virtualSurface, RAB_GetPortalTransform(prevReservoir.portalIdx));
+      }
+
+      // Get light sample from light space
+      RAB_LightSample candidateSample = RAB_GetLightSample(prevReservoir.lightIdx, prevReservoir.uv, virtualSurface);
+
+      weightAtCurrent = RAB_GetLightSampleTargetPdfForSurface(candidateSample, virtualSurface);
+    }
+    
+    selectedPreviousSample = RTXDI_CombineReservoirs(state, prevReservoir, RAB_GetNextRandom(rng), weightAtCurrent);
+    if (selectedPreviousSample)
+    {
+      selectedLightPrevIdx = originalPrevLightIdx;
+    }
+  }
+
+  if (tparams.biasCorrectionMode >= RTXDI_BIAS_CORRECTION_BASIC)
+  {
+    // Compute the unbiased normalization term (instead of using 1/M)
+    float pi = state.targetPdf;
+    float piSum = state.targetPdf * initialM;
+
+    if(RTXDI_IsValidReservoir(state) &&
+      selectedLightPrevIdx != RTXDI_INVALID_LIGHT_INDEX &&
+      previousM > 0)
+    {
+      float temporalP = 0;
+      RAB_Surface temporalSurface = RAB_GetSurfaceForTemporalBiasCorrection(surface, prevPixelID, prevNormal, tparams.virtualMotionVector);
+      
+      RAB_Surface virtualTemporalSurface = temporalSurface;
+      if (state.portalIdx != RTXDI_INVALID_PORTAL_INDEX)
+      {
+        RAB_TransformSurface(virtualTemporalSurface, RAB_GetPortalTransform(state.portalIdx));
+      }
+
+      RAB_LightSample selectedSampleAtTemporalSurface = RAB_GetLightSample(selectedLightPrevIdx,
+        state.uv, virtualTemporalSurface, /* usePreviousLights = */ true);
+
+      temporalP = RAB_GetLightSampleTargetPdfForSurface(selectedSampleAtTemporalSurface, virtualTemporalSurface);
+
+      // If we have selected the temporal sample and discard is enabled, we know that the sample was visible
+      // on the previous frame because otherwise it would've been discarded and we couldn't select it.
+      // In practice, temporal samples are selected way more often than new samples, which means this
+      // condition culls the vast majority of visibility rays here.
+      const bool selectedSampleKnownVisible = selectedPreviousSample && tparams.discardInvisibleSamples;
+
+      if (temporalP > 0 && tparams.biasCorrectionMode >= RTXDI_BIAS_CORRECTION_RAY_TRACED && !selectedSampleKnownVisible)
+      {
+        float3 attenuation;
+        bool sampleVisible = RAB_TraceLightSampleVisibility(temporalSurface, selectedSampleAtTemporalSurface,
+          state.portalIdx, false, false, true, attenuation);
+
+        if (!sampleVisible)
+          temporalP = 0;
+      }
+
+      pi = selectedPreviousSample ? temporalP : pi;
+
+      piSum += temporalP * previousM;
+    }
+    // Use "MIS-like" normalization
+    RTXDI_FinalizeResampling(state, pi, piSum);
+  }
+  else
+  {
+    RTXDI_FinalizeResampling(state, 1.0, state.M);
+  }
+}
+
+
+// A structure that groups the application-provided settings for spatial resampling.
+struct RTXDI_SpatialResamplingParameters
+{
+    // The index of the reservoir buffer to pull the spatial samples from.
+    uint sourceBufferIndex;
+    
+    // Number of neighbor pixels considered for resampling (1-32)
+    // Some of the may be skipped if they fail the surface similarity test.
+    uint numSamples;
+
+    // Controls the bias correction math for spatial reuse. Depending on the setting, it can add
+    // some shader cost and one approximate shadow ray *per every spatial sample* per pixel 
+    // (or per two pixels if checkerboard sampling is enabled).
+    uint biasCorrectionMode;
+
+    // Screen-space radius for spatial resampling, measured in pixels.
+    float samplingRadius;
+
+    // Surface depth similarity threshold for spatial reuse.
+    // See 'RTXDI_TemporalResamplingParameters::depthThreshold' for more information.
+    float depthThreshold;
+
+    // Surface normal similarity threshold for spatial reuse.
+    // See 'RTXDI_TemporalResamplingParameters::normalThreshold' for more information.
+    float normalThreshold;
+
+    int2 screenResolution;
+};
+
+// Spatial resampling pass.
+// Operates on the current frame G-buffer and its reservoirs.
+// For each pixel, considers a number of its neighbors and, if their surfaces are 
+// similar enough to the current pixel, combines their light reservoirs.
+// Optionally, one visibility ray is traced for each neighbor being considered, to reduce bias.
+// The selectedLightSample parameter is used to update and return the selected sample; it's optional,
+// and it's safe to pass a null structure there and ignore the result.
+RTXDI_Reservoir RTXDI_SpatialResampling(
+    uint2 pixelPosition,
+    RAB_Surface centerSurface,
+    RTXDI_Reservoir centerSample,
+    inout RAB_RandomSamplerState rng,
+    RTXDI_SpatialResamplingParameters sparams)
+{
+  RAB_RandomSamplerState oldRng = rng;
+
+  // merge new sample
+  RTXDI_Reservoir state = RTXDI_EmptyReservoir();
+  RTXDI_CombineReservoirs(state, centerSample, float16_t(0.5f), centerSample.targetPdf);
+
+  if (sparams.numSamples > 0)
+  {
+    // merge neighbors
+    int2 selectedID = int2(-1);
+
+
+    uint validNeighborMask = 0;
+    for (int i = 0; i < sparams.numSamples; i++)
+    {
+      float2 neighborOffset = float2(RAB_GetNextRandom(rng), RAB_GetNextRandom(rng));
+      neighborOffset = neighborOffset * 2 - 1;
+      int2 neighborID = clamp(int2(neighborOffset * sparams.samplingRadius) + pixelPosition, 0, sparams.screenResolution - 1);
+
+      RAB_Surface neighborSurface = RAB_GetGBufferSurface(neighborID, false);
+      if (!RAB_IsSurfaceValid(neighborSurface) || RAB_GetSurfacePortalSpace(centerSurface) != RAB_GetSurfacePortalSpace(neighborSurface))
+      {
+        continue;
+      }
+
+      if (!RTXDI_IsValidNeighbor(RAB_GetSurfaceNormal(centerSurface), RAB_GetSurfaceNormal(neighborSurface),
+          RAB_GetSurfaceLinearDepth(centerSurface), RAB_GetSurfaceLinearDepth(neighborSurface),
+          sparams.normalThreshold, sparams.depthThreshold))
+      {
+        continue;
+      }
+
+      RTXDI_Reservoir neighborReservoir = RAB_LoadReservoir(neighborID, sparams.sourceBufferIndex);
+
+      float targetPdf = 0;
+      if (RTXDI_IsValidReservoir(neighborReservoir))
+      {
+        // For cross portal light, transform surface to light space
+        RAB_Surface portalSurface = centerSurface;
+        if (neighborReservoir.portalIdx != RTXDI_INVALID_PORTAL_INDEX)
+        {
+          RAB_TransformSurface(portalSurface, RAB_GetPortalTransform(neighborReservoir.portalIdx));
+        }
+
+        RAB_LightSample candidateSample = RAB_GetLightSample(neighborReservoir.lightIdx, neighborReservoir.uv, portalSurface);
+
+        // Calculate target pdf in light space
+        targetPdf = RAB_GetLightSampleTargetPdfForSurface(candidateSample, portalSurface);
+      }
+
+      bool sampleSelected = RTXDI_CombineReservoirs(state, neighborReservoir, RAB_GetNextRandom(rng), targetPdf);
+      if (sampleSelected)
+      {
+        selectedID = neighborID;
+      }
+
+      validNeighborMask |= (0x1 << i);
+    }
+
+    if (sparams.biasCorrectionMode >= RTXDI_BIAS_CORRECTION_BASIC)
+    {
+      float pi = state.targetPdf;
+      float piSum = state.targetPdf * centerSample.M;
+      for (int i = 0; i < sparams.numSamples; i++)
+      {
+        float2 neighborOffset = float2(RAB_GetNextRandom(oldRng), RAB_GetNextRandom(oldRng));
+        if ((validNeighborMask & (0x1 << i)) == 0)
+        {
+          continue;
+        }
+        RAB_GetNextRandom(oldRng);
+        neighborOffset = neighborOffset * 2 - 1;
+        int2 neighborID = clamp(int2(neighborOffset * sparams.samplingRadius) + pixelPosition, 0, sparams.screenResolution - 1);
+
+        // Neighbor surface is in portal space
+        RAB_Surface neighborSurface = RAB_GetGBufferSurface(neighborID, false);
+
+        // Get a light sample in portal space
+        RAB_LightSample lightSample =
+          RAB_GetPortalSpaceLightSample(state.lightIdx, state.uv, state.portalIdx, neighborSurface);
+
+        bool sampleVisible = true;
+        if (sparams.biasCorrectionMode >= RTXDI_BIAS_CORRECTION_RAY_TRACED)
+        {
+          float3 attenuation;
+          sampleVisible = RAB_TraceLightSampleVisibility(neighborSurface, lightSample,
+            state.portalIdx, true, false, false, attenuation);
+        }
+
+        float ps = 0;
+        if (sampleVisible)
+        {
+          ps = RAB_GetLightSampleTargetPdfForSurface(lightSample, neighborSurface);
+        }
+
+        if (all(selectedID == neighborID))
+        {
+          pi = ps;
+        }
+
+        // Add to the sums of weights for the (normalization) denominator
+        RTXDI_Reservoir neighborReservoir = RAB_LoadReservoir(neighborID, sparams.sourceBufferIndex);
+        piSum += ps * neighborReservoir.M;
+      }
+      // Use "MIS-like" normalization
+      RTXDI_FinalizeResampling(state, pi, piSum);
+    }
+    else
+    {
+      RTXDI_FinalizeResampling(state, 1.0, state.M);
+    }
+  }
+  else
+  {
+    // Spatial reuse is disabled - just finalize with the input sample
+    RTXDI_FinalizeResampling(state, 1.0, state.M);
+  }
+
+  return state;
+}
+
+// A structure that groups the application-provided settings for ReSTIR GI temporal resampling.
+struct ReSTIRGI_TemporalResamplingParameters
+{
+  // Expected position of the same surface on the previous frame.
+  int2 prevPixelCenter;
+
+  // Expected hit distance of the same surface on the previous frame.
+  float expectedPrevHitDistance;
+
+  // Motion vector for the surface in virtual world space, i.e. with PSR resolved.
+  float3 virtualMotionVector;
+
+  // The index of the reservoir buffer to pull the temporal samples from.
+  uint sourceBufferIndex;
+
+  // Maximum history length for temporal reuse, measured in frames.
+  // Higher values result in more stable and high quality sampling, at the cost of slow reaction to changes.
+  int temporalHistoryLength;
+
+  // Controls the bias correction math for temporal reuse. Currently no extra ray is traced when enabled.
+  bool enableBiasCorrection;
+
+  // Surface depth similarity threshold for temporal reuse.
+  // If the previous frame surface's depth is within this threshold from the current frame surface's depth,
+  // the surfaces are considered similar. The threshold is relative, i.e. 0.1 means 10% of the current depth.
+  // Otherwise, the pixel is not reused, and the resampling shader will look for a different one.
+  float depthThreshold;
+
+  // Surface normal similarity threshold for temporal reuse.
+  // If the dot product of two surfaces' normals is higher than this threshold, the surfaces are considered similar.
+  // Otherwise, the pixel is not reused, and the resampling shader will look for a different one.
+  float normalThreshold;
+
+  // Enables permuting the pixels sampled from the previous frame in order to add temporal
+  // variation to the output signal and make it more denoiser friendly.
+  bool enablePermutationSampling;
+
+  // Enables a filter that randomly discards temporal samples for a surface that is growing on screen.
+  bool discardEnlargedPixels;
+
+  // A random integer that should be the same for all pixels but vary per-frame, for permutation sampling.
+  uint uniformRandomNumber;
+
+  // Use temporal jacobian determinant.
+  bool enableJacobian;
+
+  // Buffer resolution.
+  int2 resolution;
+
+  // Permutation sampling jitter size.
+  uint permutationSamplingSize;
+
+  // The portal index the camera is going through, offsetted by 1. 0 means the camera is not going through portals. 
+  uint teleportationPortalIndex;
+};
+
+// ReSTIR GI temporal resampling pass.
+// Operates on the current frame and last frame G-buffers and their reservoirs.
+// For each pixel, considers its reprojected pixel in last frame, if the surface is 
+// similar enough to the current pixel, combines its reservoir.
+// Optionally, bsdf based bias correction being considered to reduce bias.
+ReSTIRGI_Reservoir ReSTIRGI_TemporalResampling(
+  ReSTIRGI_Reservoir initialSample,
+  uint2 pixelPosition,
+  RAB_Surface surface,
+  inout RAB_RandomSamplerState rng,
+  ReSTIRGI_TemporalResamplingParameters tparams,
+  out bool isGBufferSimilar,
+  out bool isInitialSample)
+{
+  // Load previous gbuffer
+  isGBufferSimilar = false;
+  int2 prevPixelID = tparams.prevPixelCenter;
+  float16_t3 prevNormal;
+  for (int i = 0; i < 9; i++)
+  {
+    const float radius = 2;
+    int2 offset = int2(0);
+    if (i > 0)
+    {
+      offset.x = int((RAB_GetNextRandom(rng) - 0.5) * radius);
+      offset.y = int((RAB_GetNextRandom(rng) - 0.5) * radius);
+    }
+
+    int2 idx = tparams.prevPixelCenter + offset;
+
+    if (i == 0 && tparams.enablePermutationSampling)
+    {
+      RTXDI_ApplyPermutationSampling(idx, tparams.uniformRandomNumber, tparams.permutationSamplingSize);
+    }
+
+    if (any(idx < float2(0)) || any(idx >= tparams.resolution))
+      continue;
+
+    RAB_Surface prevSurface = RAB_GetGBufferSurface(idx, true);
+    if (tparams.teleportationPortalIndex == 0 && RAB_GetSurfacePortalSpace(prevSurface) != RAB_GetSurfacePortalSpace(surface))
+      continue;
+    if (!RAB_IsSurfaceValid(prevSurface))
+      continue;
+    if (!RTXDI_IsValidNeighbor(RAB_GetSurfaceNormal(surface), RAB_GetSurfaceNormal(prevSurface), tparams.expectedPrevHitDistance, 
+      RAB_GetSurfaceLinearDepth(prevSurface), tparams.normalThreshold, tparams.depthThreshold))
+      continue;
+
+    isGBufferSimilar = true;
+    prevPixelID = idx;
+    prevNormal = RAB_GetSurfaceNormal(prevSurface);
+    break;
+  }
+
+  if (tparams.discardEnlargedPixels && isGBufferSimilar)
+  {
+    if (RAB_ShouldDiscardEnlargedPixel(rng, surface, tparams.virtualMotionVector))
+    {
+      isGBufferSimilar = false;
+    }
+  }
+
+  // Load last frame reservoir
+  ReSTIRGI_Reservoir temporalReservoir = RAB_LoadGIReservoir(prevPixelID, tparams.sourceBufferIndex);
+  int temporalMaxSamples = tparams.temporalHistoryLength;
+  temporalReservoir.M = clamp(temporalReservoir.M, 0, temporalMaxSamples);
+
+  // Compute temporal Jacobian determinant, which corrects bias introduced by inaccurate temporal reprojection.
+  float jacobian = 1.0;
+  if (tparams.enableJacobian && isGBufferSimilar && !RAB_IsSurfaceInCombinedPortalSpace(surface))
+  {
+    // Use actual world position
+    float3 portalSpaceWorldPosition = RAB_GetSurfaceWorldPos(surface);
+    RAB_Surface temporalSurface = RAB_GetSurfaceForTemporalBiasCorrection(surface, prevPixelID, prevNormal, tparams.virtualMotionVector);
+    float3 portalSpacePrevWorldPosition = RAB_GetSurfaceWorldPos(temporalSurface);
+
+    float3 offsetB = temporalReservoir.position - portalSpacePrevWorldPosition;
+    float3 offsetA = temporalReservoir.position - portalSpaceWorldPosition;
+    float RB2 = dot(offsetB, offsetB);
+    float RA2 = dot(offsetA, offsetA);
+    offsetB = normalize(offsetB);
+    offsetA = normalize(offsetA);
+    float cosA = dot(RAB_GetSurfaceNormal(surface), offsetA);
+    float cosB = dot(prevNormal, offsetB);
+    float cosPhiA = -dot(offsetA, temporalReservoir.normal);
+    float cosPhiB = -dot(offsetB, temporalReservoir.normal);
+    if (cosB <= 0.f || cosPhiB <= 0.f || cosA <= 0.f || cosPhiA <= 0.f || RA2 <= 0.f || RB2 <= 0.f)
+    {
+      isGBufferSimilar = false;
+    }
+    else
+    {
+      const float maxJacobian = 3.f;
+      jacobian = clamp(RB2 * cosPhiA / (RA2 * cosPhiB), 0.f, maxJacobian);
+    }
+  }
+
+  // Compute reuse weight.
+  if (!isGBufferSimilar)
+  {
+    temporalReservoir.M = 0;
+  }
+  int oldM = temporalReservoir.M;
+  float wiT = max(0.f, temporalReservoir.avgWeight) * temporalReservoir.M * jacobian * RAB_GetGITargetPdfForSurface(temporalReservoir.radiance, temporalReservoir.position, surface);
+  
+  ReSTIRGI_Reservoir resultReservoir = ReSTIRGI_Reservoir.createEmpty();  
+  resultReservoir.update(wiT, temporalReservoir, 0.5);
+
+  float wi = 0;
+  if(any(initialSample.radiance > float3(0)))
+  {
+    // Ignore low roughness specular sample.
+    float pNew = RAB_GetGITargetPdfForSurface(initialSample.radiance, initialSample.position, surface);
+    float pOld = initialSample.avgWeight;
+    wi = pOld <= 0.f ? 0.f : pNew / pOld;
+  }
+
+  // Update temporal reservoir.
+  bool useNewSample = resultReservoir.update(wi, initialSample, RAB_GetNextRandom(rng));
+  isInitialSample = useNewSample;
+  float pNew = RAB_GetGITargetPdfForSurface(resultReservoir.radiance, resultReservoir.position, surface);
+
+  if (tparams.enableBiasCorrection)
+  {
+    float pi = pNew;
+    float piSum = pNew * initialSample.M;
+    if(isGBufferSimilar)
+    {
+      RAB_Surface temporalSurface = RAB_GetSurfaceForTemporalBiasCorrection(surface, prevPixelID, prevNormal, tparams.virtualMotionVector);
+
+      float ps = 0;
+      if (any(resultReservoir.radiance > float3(0)))
+      {
+        ps = RAB_GetGITargetPdfForSurface(resultReservoir.radiance, resultReservoir.position, temporalSurface);
+      }
+
+      if (!useNewSample)
+      {
+        pi = ps;
+      }
+
+      piSum += ps * oldM;
+    }
+    // Use "MIS-like" normalization
+    resultReservoir.finalize(pNew, pi, piSum);
+  }
+  else
+  {
+    resultReservoir.finalize(pNew, 1.0, resultReservoir.M);
+  }
+  
+  return resultReservoir;
+}
+
+// A structure that groups the application-provided settings for ReSTIR GI spatial resampling.
+struct ReSTIRGI_SpatialResamplingParameters
+{
+  // When an input reservoir's M is lower than this threshold, more aggressive reuse is used.
+  uint fastHistoryLength;
+
+  // Currently frame index
+  uint frameIndex;
+
+  // Bias correction mode:
+  // RTXDI_BIAS_CORRECTION_OFF: Use (1/M) normalization, which is very biased but also very fast.
+  // RTXDI_BIAS_CORRECTION_BASIC: Use MIS-like normalization but assume that every sample is visible.
+  // RTXDI_BIAS_CORRECTION_RAY_TRACED: Use MIS-like normalization with visibility rays. Unbiased.
+  uint biasCorrectionMode;
+
+  // number of active portals.
+  uint numActiveRayPortals;
+
+  // Buffer resolution.
+  int2 resolution;
+  
+  // The index of the reservoir buffer to pull the temporal samples from.
+  uint sourceBufferIndex;
+
+  // Pairwise MIS central weight
+  float pairwiseMISCentralWeight;
+};
+
+int2 ReSTIRGI_GetNeighborPosition(float2 randomNumber, float searchRadius, int2 thisPixel, ReSTIRGI_SpatialResamplingParameters sparams)
+{
+  randomNumber = randomNumber * 2 - 1;
+
+  // round up to the multiple of 4 to slightly improve performance
+  int2 neighborID = ((int2(randomNumber * searchRadius) >> 2) << 2) + (thisPixel ^ (sparams.frameIndex & 0x2));
+
+  // ensure the position is inside the screen
+  uint2 boundary = sparams.resolution - 1;
+  neighborID.x = neighborID.x < 0 ? -neighborID.x : (neighborID.x > boundary.x ? 2 * boundary.x - neighborID.x : neighborID.x);
+  neighborID.y = neighborID.y < 0 ? -neighborID.y : (neighborID.y > boundary.y ? 2 * boundary.y - neighborID.y : neighborID.y);
+  return neighborID;
+}
+
+// ReSTIR GI spatial resampling pass.
+// Operates on the current frame G-buffers and reservoirs.
+// For each pixel, considers a number of its neighbors and, if their surfaces are 
+// similar enough to the current pixel, combines their reservoirs.
+// Optionally, one visibility ray is traced for each neighbor being considered, to reduce bias.
+// For raytraced pairwise mode, the flag RESTIR_GI_FLAG_OCCLUDED_SAMPLE is used to provide visibility information.
+// To set the flag, visibility test is required in a former pass.
+ReSTIRGI_Reservoir ReSTIRGI_SpatialResampling(
+  ReSTIRGI_Reservoir spatialReservoir,
+  uint2 pixelPosition,
+  RAB_Surface surface,
+  inout RAB_RandomSamplerState rtxdiRNG,
+  ReSTIRGI_SpatialResamplingParameters sparams
+  )
+{
+  // Target PDFs:
+  // PcRc: center sample's target PDF on this pixel
+  // PcRf: output sample's target PDF on this pixel
+  int oldM = spatialReservoir.M;
+  float PcRc = RAB_GetGITargetPdfForSurface(spatialReservoir.radiance, spatialReservoir.position, surface);
+  float PcRf = 0.0;
+
+  ReSTIRGI_Reservoir resultReservoir = ReSTIRGI_Reservoir.createEmpty();
+  if (sparams.biasCorrectionMode < RTXDI_BIAS_CORRECTION_PAIRWISE) {
+    float wiTN = spatialReservoir.avgWeight * PcRc * spatialReservoir.M;
+    resultReservoir.update(wiTN, spatialReservoir, 0.5);
+    PcRf = PcRc;
+  }
+
+  // Determine maximum iteration based on current sample count.
+  // If sample count is low, use more iterations to boost sample count.
+  const uint16_t targetHistoryLength = sparams.fastHistoryLength;
+  int maxIteration = oldM < targetHistoryLength ? 4 : 1;
+  const float radiusShrinkRatio = 0.6f;
+  const float minSearchRadius = 10.f;
+  const float radiusExpandRatio = 2.f;
+  const float initialSearchRadius = 
+    oldM < targetHistoryLength ||
+    (sparams.frameIndex + pixelPosition.x / 16 + pixelPosition.y / 8) % 2 == 0 ? 200.f : 85.f;
+  float searchRadius = initialSearchRadius;
+  const float cosViewAngle = max(0.1, dot(RAB_GetViewDirection(surface), RAB_GetTriangleNormal(surface)));
+  int2 tileSize = oldM < targetHistoryLength ? int2(1,1) : int2(4,4);
+  RAB_RandomSamplerState tileRtxdiRNG = RAB_InitRandomSampler(pixelPosition / tileSize, sparams.frameIndex, 4);
+  RAB_RandomSamplerState oldTileRtxdiRNG = tileRtxdiRNG;
+
+  // Pairwise MIS weights:
+  // mc: center sample's weight
+  // mi: a neighbor sample's weight
+  // mSum: total weight
+  float mSum = sparams.pairwiseMISCentralWeight;
+  float mc = mSum;
+
+  // Initialize reuse history.
+  float3 worldPosition = RAB_GetSurfaceWorldPos(surface);
+  float3 worldNormal = RAB_GetSurfaceNormal(surface);
+
+  uint validNeighborMask = 0;
+  int2 selectedID = int2(-1);
+  const float maxWeight = 1e4f;
+
+  // Search and reuse neighbor samples.
+  for (int i = 0; i < maxIteration; i++)
+  {
+    // Get search radius.
+    searchRadius = max(searchRadius * radiusShrinkRatio, minSearchRadius);
+
+    float2 neighborOffset = float2(RAB_GetNextRandom(tileRtxdiRNG), RAB_GetNextRandom(tileRtxdiRNG));
+    int2 neighborID = ReSTIRGI_GetNeighborPosition(neighborOffset, searchRadius, pixelPosition, sparams);
+
+    RAB_Surface neighborSurface = RAB_GetGBufferSurface(neighborID, false);
+    if (!RAB_IsSurfaceValid(neighborSurface) || RAB_GetSurfacePortalSpace(surface) != RAB_GetSurfacePortalSpace(neighborSurface))
+    {
+      continue;
+    }
+
+    float depthThreshold = oldM < targetHistoryLength ? 0.2 : 0.05;
+    depthThreshold = min(depthThreshold / cosViewAngle, 1);
+    if (!RTXDI_IsValidNeighbor(RAB_GetSurfaceNormal(surface), RAB_GetSurfaceNormal(neighborSurface),
+      RAB_GetSurfaceLinearDepth(surface), RAB_GetSurfaceLinearDepth(neighborSurface), 0.5, depthThreshold))
+    {
+      continue;
+    }
+
+    ReSTIRGI_Reservoir neighborReservoir = RAB_LoadGIReservoir(neighborID, sparams.sourceBufferIndex);
+
+    // Discard black samples.
+    if (neighborReservoir.M <= 0)
+    {
+      continue;
+    }
+
+    // Calculate target function.
+    float3 offsetB = neighborReservoir.position - RAB_GetSurfaceWorldPos(neighborSurface);
+    float3 offsetA = neighborReservoir.position - worldPosition;
+    float PcRi = RAB_GetGITargetPdfForSurface(neighborReservoir.radiance, neighborReservoir.position, surface);
+
+    // Discard back-face.
+    if (dot(worldNormal, offsetA) <= 0.f)
+    {
+      PcRi = 0.f;
+    }
+
+    float RB2 = dot(offsetB, offsetB);
+    float RA2 = dot(offsetA, offsetA);
+    offsetB = normalize(offsetB);
+    offsetA = normalize(offsetA);
+    float cosA = dot(worldNormal, offsetA);
+    float cosB = dot(RAB_GetSurfaceNormal(neighborSurface), offsetB);
+    float cosPhiA = -dot(offsetA, neighborReservoir.normal);
+    float cosPhiB = -dot(offsetB, neighborReservoir.normal);
+    if (cosB <= 0.f || cosPhiB <= 0.f)
+    {
+      continue;
+    }
+    if (cosA <= 0.f || cosPhiA <= 0.f || RA2 <= 0.f || RB2 <= 0.f)
+    {
+      PcRi = 0.f;
+    }
+
+    // Calculate Jacobian determinant and weight.
+    const float maxJacobian = 10.f;
+    float jacobian = RA2 * cosPhiB <= 0.f ? 0.f : clamp(RB2 * cosPhiA / (RA2 * cosPhiB), 0.f, maxJacobian);
+
+    float wiTN;
+    if (sparams.biasCorrectionMode >= RTXDI_BIAS_CORRECTION_PAIRWISE)
+    {
+      // Some target PDFs:
+      // PiRi: neighbor sample's target PDF on neighbor pixel
+      // PiRc: center sample's target PDF on neighbor pixel
+      float PiRi = RAB_GetGITargetPdfForSurface(neighborReservoir.radiance, neighborReservoir.position, neighborSurface);
+      float PiRc = RAB_GetGITargetPdfForSurface(spatialReservoir.radiance, spatialReservoir.position, neighborSurface);
+
+      bool isVisible = true;
+      bool isRaytraced = sparams.biasCorrectionMode == RTXDI_BIAS_CORRECTION_PAIRWISE_RAY_TRACED;
+      if (isRaytraced)
+      {
+        isVisible = RAB_TraceGISampleVisibility(surface, neighborSurface, spatialReservoir, sparams.numActiveRayPortals);
+      }
+
+      float mi = isRaytraced && neighborReservoir.getFlag(RESTIR_GI_FLAG_OCCLUDED_SAMPLE) ? 0.0 : (neighborReservoir.M * PiRi / (neighborReservoir.M * PiRi + float(spatialReservoir.M) / maxIteration * PcRi + 1e-10));
+      mc += isVisible ? 1.0 - (neighborReservoir.M * PiRc / (neighborReservoir.M * PiRc + float(spatialReservoir.M) / maxIteration * PcRc + 1e-10)) : 1;
+      wiTN = clamp(PcRi * neighborReservoir.avgWeight * mi * jacobian, 0, maxWeight);
+    }
+    else
+    {
+      wiTN = clamp(neighborReservoir.avgWeight * PcRi * neighborReservoir.M * jacobian, 0.f, maxWeight);
+    }
+
+    // Conditionally update spatial reservoir.
+    bool isUpdated = resultReservoir.update(wiTN, neighborReservoir, RAB_GetNextRandom(rtxdiRNG));
+    if (isUpdated)
+    {
+      selectedID = neighborID;
+      PcRf = PcRi;
+    }
+
+    validNeighborMask |= (0x1 << i);
+    // Expand search radius.
+    searchRadius *= radiusExpandRatio;
+    mSum++;
+  }
+
+  uint biasCorrectionMode = sparams.biasCorrectionMode;
+  if (biasCorrectionMode >= RTXDI_BIAS_CORRECTION_PAIRWISE) {
+    float wc = clamp(PcRc * spatialReservoir.avgWeight * mc, 0, maxWeight);
+    if(resultReservoir.update(wc, spatialReservoir, RAB_GetNextRandom(rtxdiRNG)))
+    {
+      PcRf = PcRc;
+    }
+  }
+
+  if (biasCorrectionMode >= RTXDI_BIAS_CORRECTION_PAIRWISE)
+  {
+    resultReservoir.avgWeight = PcRf > 0 ? resultReservoir.avgWeight / (mSum * PcRf) : 0;
+  }
+  else if (biasCorrectionMode == RTXDI_BIAS_CORRECTION_OFF)
+  {
+    resultReservoir.finalize(PcRf, 1.0, resultReservoir.M);
+  }
+  else
+  {
+    float pi = PcRf;
+    float piSum = PcRf * oldM;
+    searchRadius = initialSearchRadius;
+    for (int i = 0; i < maxIteration; i++)
+    {
+      searchRadius = max(searchRadius * radiusShrinkRatio, minSearchRadius);
+      float2 neighborOffset = float2(RAB_GetNextRandom(oldTileRtxdiRNG), RAB_GetNextRandom(oldTileRtxdiRNG));
+      if ((validNeighborMask & (0x1 << i)) == 0)
+      {
+        continue;
+      }
+      int2 neighborID = ReSTIRGI_GetNeighborPosition(neighborOffset, searchRadius, pixelPosition, sparams);
+
+      RAB_Surface neighborSurface = RAB_GetGBufferSurface(neighborID, false);
+     
+      float3 radiance = resultReservoir.radiance;
+      if (sparams.biasCorrectionMode == RTXDI_BIAS_CORRECTION_RAY_TRACED)
+      {
+        if(!RAB_TraceGISampleVisibility(surface, neighborSurface, resultReservoir, sparams.numActiveRayPortals))
+          radiance = float3(0);
+      }
+
+      float ps = 0;
+      if (any(radiance > float3(0)))
+      {
+        ps = RAB_GetGITargetPdfForSurface(radiance, resultReservoir.position, neighborSurface);
+      }
+
+      if (all(selectedID == neighborID))
+      {
+        pi = ps;
+      }
+
+      // Add to the sums of weights for the (normalization) denominator
+      ReSTIRGI_Reservoir neighborReservoir = RAB_LoadGIReservoir(neighborID, sparams.sourceBufferIndex);
+      piSum += ps * neighborReservoir.M;
+      searchRadius *= radiusExpandRatio;
+    }
+    // Use "MIS-like" normalization
+    resultReservoir.finalize(PcRf, pi, piSum);
+  }
+
+  // Clear visibility flag
+  resultReservoir.clearFlag(RESTIR_GI_FLAG_OCCLUDED_SAMPLE);
+  return resultReservoir;
+}
+
+bool RTXDI_WeightedReservoirSampling(inout RAB_RandomSamplerState rng, float pdf, inout float weightSum)
+{
+  weightSum += pdf;
+  const float random = RAB_GetNextRandom(rng);
+  return (random * weightSum < pdf);
+}
+
+void RTXDI_FindGradientSampleAndBestLight(
+  inout RAB_RandomSamplerState rng,
+  int2 gradientPos,
+  int2 resolution,
+  bool usePreviousIlluminance,
+  out bool usePrevSample,
+  out float selectedIlluminance,
+  out int2 selectedPixelPos,
+  out int2 selectedPrevPixelPos,
+  out int2 bestLightPixelPos)
+{
+  usePrevSample = false;
+
+  // G-buffer position of the gradient surface.
+  // Initialized to the center of the stratum to have some reference pixel for filtering in case we don't select anything.
+  selectedPixelPos = gradientPos * RTXDI_GRAD_FACTOR + 1;
+  // Previous G-buffer position of the gradient surface.
+  selectedPrevPixelPos = -1;
+  selectedIlluminance = 0;
+  float pixelSelectionWeightSum = 0;
+  
+  // Separate accumulator to find the best light in the stratum on the current frame.
+  // The best light will be used in the initial sampling pass on the next frame.
+  bestLightPixelPos = -1;
+  float bestLightIlluminance = 0;
+
+  // Iterate over all the pixels in the stratum, find one that is likely to produce
+  // the brightest gradient, i.e. a pixel with highest illuminance on either current or previous
+  // frame. Give other pixels a chance, too, by using the illuminance as the selection PDF
+  // instead of just picking one pixel with highest illuminance.
+  for (int yy = 0; yy < RTXDI_GRAD_FACTOR; yy++)
+  for (int xx = 0; xx < RTXDI_GRAD_FACTOR; xx++)
+  {
+    // Translate the gradient stratum index (gradientPos) into reservoir and pixel positions.
+    int2 srcPixelPos = gradientPos * RTXDI_GRAD_FACTOR + int2(xx, yy);
+    
+    if (any(srcPixelPos >= int2(resolution)))
+      continue;
+    
+    // Load the current frame sampled lighting luminance.
+    const float currIlluminance = RAB_GetSurfaceIlluminance(srcPixelPos, false);
+
+    // Ignore pixels that the bridge says are invalid for gradient computation
+    if (currIlluminance < 0)
+      continue;
+  
+    // Update the best light accumulator
+    if (currIlluminance > bestLightIlluminance)
+    {
+      bestLightPixelPos = srcPixelPos;
+      bestLightIlluminance = currIlluminance;
+    }
+
+    // Find the matching pixel in the previous frame - that information is produced
+    // by the temporal resampling or fused resampling shaders.
+    int2 temporalPixelPos = RAB_GetTemporalSamplePosition(srcPixelPos);
+    if (temporalPixelPos.x < 0)
+      continue;
+    
+    // Load the previous frame sampled lighting luminance.
+    // For invalid gradients, temporalPixelPos is negative, and prevLuminance will be 0
+    float prevIlluminance = 0;
+    
+    if (usePreviousIlluminance)
+      prevIlluminance = RAB_GetSurfaceIlluminance(temporalPixelPos, true);
+    
+    // Feed the current and previous samples into the gradient pixel selection logic that's using WRS.
+    if (RTXDI_WeightedReservoirSampling(rng, currIlluminance, pixelSelectionWeightSum))
+    {
+      usePrevSample = false;
+      selectedPixelPos = srcPixelPos;
+      selectedPrevPixelPos = temporalPixelPos;
+      selectedIlluminance = currIlluminance;
+    }
+    else if (usePreviousIlluminance && RTXDI_WeightedReservoirSampling(rng, prevIlluminance, pixelSelectionWeightSum))
+    {
+      usePrevSample = true;
+      selectedPixelPos = srcPixelPos;
+      selectedPrevPixelPos = temporalPixelPos;
+      selectedIlluminance = prevIlluminance;
+    }
+  }
+}
+
+// A structure that groups the application-provided settings for Volume ReSTIR.
+struct VolumeReSTIR_Parameters
+{
+  // The total sample count for volume RIS across all light types.
+  uint volumeRISTotalSampleCount;
+  // A flag to enable or disable the Volume RIS initial ray traced visibility test.
+  bool enableVolumeRISInitialVisibility;
+};
+
+// Note: lightSample and inverseSelectionPdf are only guaranteed to be written out when this function returns true.
+bool VolumeReSTIR_GetLightSample(
+  inout VolumeReSTIR_Reservoir volumeReservoir, RAB_VolumeInteraction volumeInteraction,
+  out RAB_LightSample lightSample, out float inverseSelectionPdf)
+{
+  // Check if the volume reservoir is valid
+
+  if (!volumeReservoir.isValid())
+  {
+    return false;
+  }
+
+  // Re-derive the light sample from the reservoir
+
+  lightSample = RAB_GetLightSample(
+    volumeReservoir.lightSample.lightIndex,
+    volumeReservoir.lightSample.lightSampleCoordinates,
+    volumeInteraction,
+    false);
+
+  inverseSelectionPdf = volumeReservoir.weightSum;
+
+  // Check if the light sample has a valid PDF
+
+  if (RAB_GetLightSampleSolidAnglePDF(lightSample) * inverseSelectionPdf <= 0.0f)
+  {
+    return false;
+  }
+
+  return true;
+}
+
+// Note: Corrects for effects specific to sampling a reservoir temporally. Currently this includes remapping light indices
+// as light indices change frame to frame, as well as clamping the sample count from temporal reservoirs. Does not include
+// corrections for the change of position involved in temporal reprojections under motion, for that use spatial correction.
+// Reprojection confidence penalty is a value from [0, 1] describing how "confident" the caller is in the reprojection's
+// accuracy temporally and is applied to the sample count which in turn reduces the "weight" the reservoir will have. This
+// can be used when reprojection is clamped to the fustrum for example as the confidence that those values are correct is
+// diminished, especially with larger camera movements.
+void VolumeReSTIR_TemporalCorrection(
+  inout VolumeReSTIR_Reservoir volumeReservoir, float reprojectionConfidencePenalty, uint maxSampleCount)
+{
+  // Ignore temporal correction for invalid reservoirs
+
+  if (!volumeReservoir.isValid())
+  {
+    return;
+  }
+
+  // Remap the old Volume Reservoir's light sample
+  // Note: This has to be done as the light list is not consistent between frames. Since we overwrite every reservoir
+  // every frame in the froxel grid, this ensures that the light indices stored are always updated over time correctly
+  // as long as the temporal correction is being called on all the reservoirs being written out.
+
+  // Note: This remapping should only be called on valid light samples as otherwise invalid light indices may read outside the light mapping
+  // array. In our current implementation this is handled by making a reservoir invalid initially as well as when light sample
+  // remapping results in an invalid light index.
+  // Note: False used to indicate a previous frame -> current frame light index mapping.
+  volumeReservoir.lightSample.lightIndex = RAB_TranslateLightIndex(volumeReservoir.lightSample.lightIndex, false);
+
+  // Note: Invalidate the reservoir if if the remapped light index was invalidated (due to a light being deleted for example).
+  if (volumeReservoir.lightSample.lightIndex == RTXDI_INVALID_LIGHT_INDEX)
+  {
+    volumeReservoir.invalidate();
+
+    return;
+  }
+
+  // Clamp and adjust the reservoir's sample count
+
+  // Note: Maximum specified here to ensure a previous frame's temporal reservoir will have a finite sample count rather
+  // than incrementing to infinity. Could also be clamped on reservoir output, but doing it here is probably
+  // fine too assuming no other passes read from the outputted reservoir (as it will have a value slightly higher than this max
+  // sample count at times). Additionally the reprojection confidence penalty is worked in here to reduce the sample count on
+  // samples which have a lower confidence in their reprojection.
+  // Note: volumeTemporalReuseMaxSampleCount assumed to be less than or equal to 0xFFFF (which should be implied by the
+  // fact that it is a 16 bit uint).
+  volumeReservoir.sampleCount = min(
+    uint16_t(float(volumeReservoir.sampleCount) * reprojectionConfidencePenalty),
+    maxSampleCount);
+}
+
+// Note: Corrects for effects specific to repositioning a reservoir, be it via temporal reprojection or spatial accumulation.
+// Currently this only includes the recalculation of the target PDF (not accounting for changes in visibility). Should only
+// be called on reserviors which have already undergone temporal correction to ensure the light sample's index is up to date
+// with the current frame.
+void VolumeReSTIR_SpatialCorrection(
+  inout VolumeReSTIR_Reservoir volumeReservoir, RAB_VolumeInteraction volumeInteraction)
+{
+  // Ignore spatial correction for invalid reservoirs
+
+  if (!volumeReservoir.isValid())
+  {
+    return;
+  }
+
+  // Re-derive the light sample from this frame's stored light sample information
+
+  const RAB_LightSample lightSample = RAB_GetLightSample(
+    volumeReservoir.lightSample.lightIndex,
+    volumeReservoir.lightSample.lightSampleCoordinates,
+    volumeInteraction,
+    false);
+
+  // Update the target PDF (weight) for the Reservoir's stored light sample
+
+  volumeReservoir.lightSample.targetPdf = RAB_GetLightSampleTargetPdfForVolume(lightSample, volumeInteraction);
+}
+
+// Note: cachedSelectedLightSample only set if the returned reservoir is valid.
+VolumeReSTIR_Reservoir VolumeReSTIR_SampleLightRIS(
+  inout RAB_RandomSamplerState rng, RAB_VolumeVisibilityContext volumeVisibilityContext, RAB_VolumeInteraction volumeInteraction,
+  out RAB_LightSample cachedSelectedLightSample, VolumeReSTIR_Parameters volumeParameters)
+{
+  VolumeReSTIR_Reservoir newReservoir = VolumeReSTIR_Reservoir::createEmpty();
+
+  // Early out if there are no lights to sample from
+
+  if (RAB_GetLightCount() == 0)
+  {
+    return newReservoir;
+  }
+
+  // Iterate over lights and select one with RIS/WRS
+
+  // Todo: Find some way to deduplicate this RIS logic, copied in a few places now (RTXDI, normal RIS light sampling, here).
+  [unroll]
+  for (uint lightType = 0; lightType < RAB_GetLightTypeCount(); ++lightType)
+  {
+    const RTXDI_LightRange range = RAB_GetLightRange(lightType);
+
+    if (range.count == 0)
+    {
+      continue;
+    }
+
+    // PDF of selecting any light in this range from the overall pool of lights of all types,
+    // taking into account the different sample counts per type.
+    const float rangeInvSourcePdf = float(range.count) * float(volumeParameters.volumeRISTotalSampleCount) / float(range.volumeRISSampleCount);
+
+    // Begin strided sampling by selecting a random starting light
+    float lightIndex = RAB_GetNextRandom(rng) * range.count;
+    const float stride = max(1.0f, float(range.count) / float(range.volumeRISSampleCount));
+
+    for (uint i = 0; i < range.volumeRISSampleCount; i++)
+    {
+      // Sample the light
+
+      const float16_t2 risSampleCoordinates = float16_t2(RAB_GetNextRandom(rng), RAB_GetNextRandom(rng));
+      const uint offsetLightIndex = uint(lightIndex) + range.firstIndex;
+      // Note: lightType comes from the loop and is provided as a hint so that the compiler
+      // can effectively unroll the loop and remove the switch from decodedPolymorphicLightSampleArea called within.
+      const RAB_LightSample lightSample = RAB_GetLightSampleWithTypeHint(offsetLightIndex, risSampleCoordinates, lightType, volumeInteraction);
+
+      // Calculate the target PDF (weight) for the light sample
+
+      const float targetPdf = RAB_GetLightSampleTargetPdfForVolume(lightSample, volumeInteraction);
+
+      // Create a volume candidate light sample from the light
+
+      const VolumeReSTIR_LightSample volumeLightSample =
+        VolumeReSTIR_LightSample::create(offsetLightIndex, risSampleCoordinates, targetPdf);
+      const VolumeReSTIR_LightCandidateSample volumeLightCandidateSample =
+        VolumeReSTIR_LightCandidateSample::create(volumeLightSample, rangeInvSourcePdf);
+
+      // Stream the volume candidate light sample into the reservoir
+
+      const bool updatedSample = newReservoir.streamSample(RAB_GetNextRandom(rng), volumeLightCandidateSample);
+
+      // Note: Should always be true on the first attempt to stream a sample, ensuring the cached light sample
+      // will always be valid if the reservoir is valid.
+      if (updatedSample)
+      {
+        cachedSelectedLightSample = lightSample;
+      }
+
+      // Accumulate and wrap the light index
+
+      lightIndex += stride;
+
+      if (lightIndex >= range.count)
+      {
+        lightIndex -= range.count;
+      }
+    }
+  }
+
+  // Finalize the resampling process and reset the sample count
+
+  newReservoir.finalizeResampling(1.0f, newReservoir.sampleCount);
+  newReservoir.sampleCount = 1;
+
+  // Perform an initial visiblity check
+
+  if (volumeParameters.enableVolumeRISInitialVisibility && newReservoir.isValid())
+  {
+    // Test visibility to the cached light sample for the reservoir
+
+    // Note: Currently set to the invalid Ray Portal index until we support cross-portal lighting here.
+    uint8_t sampledTransportPortalIndex = RTXDI_INVALID_PORTAL_INDEX;
+    float16_t3 attenuation = float16_t3(0.0f);
+    const bool visible = RAB_VolumeReSTIR_TraceNEEVisibility(
+      cachedSelectedLightSample, sampledTransportPortalIndex,
+      volumeVisibilityContext, volumeInteraction, attenuation);
+
+    // Invalidate the reservoir if the visibility test fails
+
+    if (!visible || all(attenuation == float16_t3(0.0f)))
+    {
+      newReservoir.invalidate();
+    }
+  }
+
+  return newReservoir;
+}

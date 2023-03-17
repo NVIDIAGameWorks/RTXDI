@@ -650,7 +650,11 @@ public:
         {
             m_RTXGI = std::make_shared<RtxgiIntegration>(GetDevice(), m_RootFs, m_DescriptorTableManager);
 
-            m_RTXGI->InitializePasses(*m_ShaderFactory, m_LightingPasses->GetBindingLayout(), m_BindlessLayout, m_RtxdiContext->GetParameters(), m_ui.useRayQuery);
+            const bool useRayQuery = GetDevice()->getGraphicsAPI() == nvrhi::GraphicsAPI::D3D12
+                ? false // Workaround for an issue with DXC not producing correct code for RayQuery in the probe tracing pass
+                : m_ui.useRayQuery;
+
+            m_RTXGI->InitializePasses(*m_ShaderFactory, m_LightingPasses->GetBindingLayout(), m_BindlessLayout, m_RtxdiContext->GetParameters(), useRayQuery);
 
             for (auto& volumeDesc : m_Scene->GetRtxgiVolumes())
             {

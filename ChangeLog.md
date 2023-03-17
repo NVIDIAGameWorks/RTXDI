@@ -1,5 +1,31 @@
 # RTXDI SDK Change Log
 
+## 2.0.0
+
+**Release highlights:**
+
+- Added ReSTIR GI resampling functions and their integration in the sample application.
+- Added debug visualization for intermediate render targets.
+- Added the `sdk-only` branch to make using RTXDI as a submodule easier.
+
+**Breaking changes:**
+
+- Added a required bridge function `RAB_ClampSamplePositionIntoView`.
+- Changed the PDF texture requirements to include a full mip chain up to 1x1 pixels.
+
+**Fixed issues:**
+
+- Fixed bias that could be observed when using BRDF MIS rays.
+- Fixed the checkerboard rendering mode when the ReLAX denoiser is used.
+- Fixed a compile error when Vulkan is not enabled in CMake configuration.
+- Fixed the fused spatio-temporal direct light resampling path on DX12.
+
+**Misc improvements:**
+
+- Updated [RTXGI](https://developer.nvidia.com/rtxgi) to v1.2.12 and switched to using an SDK-only branch of RTXDI.
+- Updated [NRD](https://github.com/NVIDIAGameWorks/RayTracingDenoiser) to version 3.3.1.
+
+
 ## 1.3.0
 
 **Release highlights:**

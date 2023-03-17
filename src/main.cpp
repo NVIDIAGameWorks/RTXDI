@@ -1561,8 +1561,10 @@ int main(int argc, char** argv)
     
     log::SetErrorMessageCaption(windowTitle.c_str());
 
+#ifdef _WIN32
     // Disable Window scaling.
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+#endif
 
     if (!deviceManager->CreateWindowDeviceAndSwapChain(deviceParams, windowTitle.c_str()))
     {

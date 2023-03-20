@@ -263,6 +263,7 @@ static bool ConvertLight(const donut::engine::Light& light, PolymorphicLightInfo
         polymorphic.colorTypeAndFlags = (uint32_t)PolymorphicLightType::kEnvironment << kPolymorphicLightTypeShift;
         packLightColor(env.radianceScale, polymorphic);
         polymorphic.direction1 = (uint32_t)env.textureIndex;
+        polymorphic.direction2 = env.textureSize.x | (env.textureSize.y << 16);
         polymorphic.scalars = fp32ToFp16(env.rotation);
         if (enableImportanceSampledEnvironmentLight)
             polymorphic.scalars |= (1 << 16);

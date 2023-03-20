@@ -35,6 +35,7 @@ public:
     dm::float3 radianceScale = 1.f;
     int textureIndex = -1;
     float rotation = 0.f;
+    dm::uint2 textureSize = 0u;
 
     [[nodiscard]] int GetLightType() const override { return LightType_Environment; }
     [[nodiscard]] std::shared_ptr<SceneGraphLeaf> Clone() override;

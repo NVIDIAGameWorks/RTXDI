@@ -1046,9 +1046,18 @@ public:
         
         if (m_ui.environmentMapIndex >= 0)
         {
-            m_EnvironmentLight->textureIndex = m_EnvironmentMap 
-                ? m_EnvironmentMap->bindlessDescriptor.Get()
-                : m_RenderEnvironmentMapPass->GetTextureIndex();
+            if (m_EnvironmentMap)
+            {
+                m_EnvironmentLight->textureIndex = m_EnvironmentMap->bindlessDescriptor.Get();
+                const auto& textureDesc = m_EnvironmentMap->texture->getDesc();
+                m_EnvironmentLight->textureSize = uint2(textureDesc.width, textureDesc.height);
+            }
+            else
+            {
+                m_EnvironmentLight->textureIndex = m_RenderEnvironmentMapPass->GetTextureIndex();
+                const auto& textureDesc = m_RenderEnvironmentMapPass->GetTexture()->getDesc();
+                m_EnvironmentLight->textureSize = uint2(textureDesc.width, textureDesc.height);
+            }
             m_EnvironmentLight->radianceScale = ::exp2f(m_ui.environmentIntensityBias);
             m_EnvironmentLight->rotation = m_ui.environmentRotation / 360.f;  //  +/- 0.5
             m_SunLight->irradiance = (m_ui.environmentMapIndex > 0) ? 0.f : 1.f;

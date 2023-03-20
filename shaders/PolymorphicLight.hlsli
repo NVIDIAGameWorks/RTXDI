@@ -741,6 +741,7 @@ struct EnvironmentLight
     bool importanceSampled;
     float3 radianceScale;
     float rotation;
+    uint2 textureSize;
 
     // Interface methods
 
@@ -758,7 +759,8 @@ struct EnvironmentLight
             float cosElevation;
             sampleDirection = equirectUVToDirection(directionUV, cosElevation);
 
-            lightSample.solidAnglePdf = 1.0 / (2 * c_pi * c_pi * cosElevation);
+            // Inverse of the solid angle of one texel of the environment map using the equirectangular projection.
+            lightSample.solidAnglePdf = (textureSize.x * textureSize.y) / (2 * c_pi * c_pi * cosElevation);
             textureUV = random;
         }
         else
@@ -798,6 +800,8 @@ struct EnvironmentLight
         envLight.rotation = f16tof32(lightInfo.scalars);
         envLight.importanceSampled = ((lightInfo.scalars >> 16) != 0);
         envLight.radianceScale = unpackLightColor(lightInfo);
+        envLight.textureSize.x = lightInfo.direction2 & 0xffff;
+        envLight.textureSize.y = lightInfo.direction2 >> 16;
 
         return envLight;
     }

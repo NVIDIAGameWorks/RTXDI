@@ -523,32 +523,31 @@ float RAB_EvaluateEnvironmentMapSamplingPdf(float3 L)
     uint2 texelPosition = uint2(pdfTextureSize * uv);
     float texelValue = t_EnvironmentPdfTexture[texelPosition].r;
     
-    int lastMipLevel = max(0, int(floor(log2(max(pdfTextureSize.x, pdfTextureSize.y)))) - 1);
-    float averageValue = 0.5 * (
-        t_EnvironmentPdfTexture.mips[lastMipLevel][uint2(0, 0)].x +
-        t_EnvironmentPdfTexture.mips[lastMipLevel][uint2(1, 0)].x);
+    int lastMipLevel = max(0, int(floor(log2(max(pdfTextureSize.x, pdfTextureSize.y)))));
+    float averageValue = t_EnvironmentPdfTexture.mips[lastMipLevel][uint2(0, 0)].x;
+    
+    // The single texel in the last mip level is effectively the average of all texels in mip 0,
+    // padded to a square shape with zeros. So, in case the PDF texture has a 2:1 aspect ratio,
+    // that texel's value is only half of the true average of the rectangular input texture.
+    // Compensate for that by assuming that the input texture is square.
+    float sum = averageValue * square(1u << lastMipLevel);
 
-    // the selection probability is multiplied by numTexels in RTXDI during presampling
-    // so actually numTexels cancels out in this case
-    //
-    // uint numTexels = pdfTextureSize.x * pdfTextureSize.y;
-    // float totalSum = averageValue * numTexels;
-    // return texelValue * numTexels / totalSum;
-    return texelValue / averageValue;
+    return texelValue / sum;
 }
 
 // Evaluates pdf for a particular light
 float RAB_EvaluateLocalLightSourcePdf(RTXDI_ResamplingRuntimeParameters params, uint lightIndex)
 {
     uint2 pdfTextureSize = g_Const.localLightPdfTextureSize.xy;
-    // verify
     uint2 texelPosition = RTXDI_LinearIndexToZCurve(lightIndex);
     float texelValue = t_LocalLightPdfTexture[texelPosition].r;
 
     int lastMipLevel = max(0, int(floor(log2(max(pdfTextureSize.x, pdfTextureSize.y)))));
     float averageValue = t_LocalLightPdfTexture.mips[lastMipLevel][uint2(0, 0)].x;
 
-    float sum = averageValue * pdfTextureSize.x * pdfTextureSize.y;
+    // See the comment at 'sum' in RAB_EvaluateEnvironmentMapSamplingPdf.
+    // The same texture shape considerations apply to local lights.
+    float sum = averageValue * square(1u << lastMipLevel);
 
     return texelValue / sum;
 }

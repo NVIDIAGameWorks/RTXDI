@@ -132,7 +132,7 @@ RtxdiResources::RtxdiResources(
     nvrhi::TextureDesc environmentPdfDesc;
     environmentPdfDesc.width = environmentMapWidth;
     environmentPdfDesc.height = environmentMapHeight;
-    environmentPdfDesc.mipLevels = uint32_t(ceilf(::log2f(float(std::max(environmentPdfDesc.width, environmentPdfDesc.height))))); // Stop at 2x1 or 2x2
+    environmentPdfDesc.mipLevels = uint32_t(ceilf(::log2f(float(std::max(environmentPdfDesc.width, environmentPdfDesc.height)))) + 1); // full mip chain up to 1x1
     environmentPdfDesc.isUAV = true;
     environmentPdfDesc.debugName = "EnvironmentPdf";
     environmentPdfDesc.initialState = nvrhi::ResourceStates::ShaderResource;

@@ -425,7 +425,6 @@ void RTXDI_PresampleEnvironmentMap(
     uint packedUv = uint(saturate(uv.x) * 0xffff) | (uint(saturate(uv.y) * 0xffff) << 16);
 
     // Compute the inverse PDF if we found something
-    pdf *= pdfTextureSize.x * pdfTextureSize.y;
     float invSourcePdf = (pdf > 0) ? (1.0 / pdf) : 0;
 
     // Store the result

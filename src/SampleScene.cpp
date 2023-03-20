@@ -58,6 +58,7 @@ std::shared_ptr<engine::SceneGraphLeaf> EnvironmentLight::Clone()
     copy->radianceScale = radianceScale;
     copy->textureIndex = textureIndex;
     copy->rotation = rotation;
+    copy->textureSize = textureSize;
     return std::static_pointer_cast<SceneGraphLeaf>(copy);
 }
 

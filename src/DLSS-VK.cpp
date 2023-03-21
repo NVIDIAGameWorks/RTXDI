@@ -244,6 +244,10 @@ void DLSS::GetRequiredVulkanExtensions(std::vector<std::string>& instanceExtensi
 
     for (unsigned int i = 0; i < deviceExtCount; i++)
     {
+        // VK_EXT_buffer_device_address is incompatible with Vulkan 1.2 and causes a validation error
+        if (!strcmp(pDeviceExtensions[i], VK_EXT_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME))
+            continue;
+
         deviceExtensions.push_back(pDeviceExtensions[i]);
     }
 }

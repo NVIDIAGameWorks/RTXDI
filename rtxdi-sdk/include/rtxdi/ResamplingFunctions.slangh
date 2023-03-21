@@ -679,7 +679,10 @@ RTXDI_Reservoir RTXDI_SpatialResampling(
 struct ReSTIRGI_TemporalResamplingParameters
 {
   // Expected position of the same surface on the previous frame.
-  int2 prevPixelCenter;
+  float2 prevPixelCenter;
+
+  // Backup reprojected position when reprojection fails for prevPixelCenter, use -1 when there is no such position.
+  float2 prevBackupPixelCenter;
 
   // Expected hit distance of the same surface on the previous frame.
   float expectedPrevHitDistance;
@@ -698,15 +701,17 @@ struct ReSTIRGI_TemporalResamplingParameters
   bool enableBiasCorrection;
 
   // Surface depth similarity threshold for temporal reuse.
+  // x component is for prevPixelCenter, y component is for prevBackupPixelCenter.
   // If the previous frame surface's depth is within this threshold from the current frame surface's depth,
   // the surfaces are considered similar. The threshold is relative, i.e. 0.1 means 10% of the current depth.
   // Otherwise, the pixel is not reused, and the resampling shader will look for a different one.
-  float depthThreshold;
+  float2 depthThreshold;
 
   // Surface normal similarity threshold for temporal reuse.
+  // x component is for prevPixelCenter, y component is for prevBackupPixelCenter.
   // If the dot product of two surfaces' normals is higher than this threshold, the surfaces are considered similar.
   // Otherwise, the pixel is not reused, and the resampling shader will look for a different one.
-  float normalThreshold;
+  float2 normalThreshold;
 
   // Enables permuting the pixels sampled from the previous frame in order to add temporal
   // variation to the output signal and make it more denoiser friendly.
@@ -747,19 +752,19 @@ ReSTIRGI_Reservoir ReSTIRGI_TemporalResampling(
 {
   // Load previous gbuffer
   isGBufferSimilar = false;
-  int2 prevPixelID = tparams.prevPixelCenter;
+  int2 prevPixelID = int2(tparams.prevPixelCenter);
   float16_t3 prevNormal;
-  for (int i = 0; i < 9; i++)
+  for (int i = 0; i < 10; i++)
   {
     const float radius = 2;
     int2 offset = int2(0);
-    if (i > 0)
+    if (i > 0 && i < 8)
     {
       offset.x = int((RAB_GetNextRandom(rng) - 0.5) * radius);
       offset.y = int((RAB_GetNextRandom(rng) - 0.5) * radius);
     }
 
-    int2 idx = tparams.prevPixelCenter + offset;
+    int2 idx = i < 9 ? tparams.prevPixelCenter + offset : tparams.prevBackupPixelCenter;
 
     if (i == 0 && tparams.enablePermutationSampling)
     {
@@ -774,8 +779,10 @@ ReSTIRGI_Reservoir ReSTIRGI_TemporalResampling(
       continue;
     if (!RAB_IsSurfaceValid(prevSurface))
       continue;
+    float normalThreshold = i < 9 ? tparams.normalThreshold.x : tparams.normalThreshold.y;
+    float depthThreshold = i < 9 ? tparams.depthThreshold.x : tparams.depthThreshold.y;
     if (!RTXDI_IsValidNeighbor(RAB_GetSurfaceNormal(surface), RAB_GetSurfaceNormal(prevSurface), tparams.expectedPrevHitDistance, 
-      RAB_GetSurfaceLinearDepth(prevSurface), tparams.normalThreshold, tparams.depthThreshold))
+      RAB_GetSurfaceLinearDepth(prevSurface), normalThreshold, depthThreshold))
       continue;
 
     isGBufferSimilar = true;
@@ -794,8 +801,7 @@ ReSTIRGI_Reservoir ReSTIRGI_TemporalResampling(
 
   // Load last frame reservoir
   ReSTIRGI_Reservoir temporalReservoir = RAB_LoadGIReservoir(prevPixelID, tparams.sourceBufferIndex);
-  int temporalMaxSamples = tparams.temporalHistoryLength;
-  temporalReservoir.M = clamp(temporalReservoir.M, 0, temporalMaxSamples);
+  temporalReservoir.M = clamp(temporalReservoir.M, 0, tparams.temporalHistoryLength);
 
   // Compute temporal Jacobian determinant, which corrects bias introduced by inaccurate temporal reprojection.
   float jacobian = 1.0;
@@ -835,7 +841,7 @@ ReSTIRGI_Reservoir ReSTIRGI_TemporalResampling(
   int oldM = temporalReservoir.M;
   float wiT = max(0.f, temporalReservoir.avgWeight) * temporalReservoir.M * jacobian * RAB_GetGITargetPdfForSurface(temporalReservoir.radiance, temporalReservoir.position, surface);
   
-  ReSTIRGI_Reservoir resultReservoir = ReSTIRGI_Reservoir.createEmpty();  
+  ReSTIRGI_Reservoir resultReservoir = ReSTIRGI_Reservoir.createEmpty();
   resultReservoir.update(wiT, temporalReservoir, 0.5);
 
   float wi = 0;

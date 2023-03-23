@@ -15,7 +15,7 @@
 #include <donut/core/vfs/VFS.h>
 #include <donut/core/log.h>
 
-#include <nvrhi/common/shader-blob.h>
+#include <ShaderMake/ShaderBlob.h>
 #include <nvrhi/utils.h>
 
 #include "../shaders/RTXGI/DDGIShaderConfig.h"
@@ -36,17 +36,17 @@ using namespace donut;
 constexpr uint32_t c_MaxVolumes = 8;
 
 bool RtxgiVolume::LoadShader(rtxgi::ShaderBytecode& dest, const std::shared_ptr<vfs::IFileSystem>& fs, const char* shaderName,
-    std::vector<nvrhi::ShaderConstant> defines, std::vector<std::shared_ptr<vfs::IBlob>>& blobs)
+    std::vector<ShaderMake::ShaderConstant> defines, std::vector<std::shared_ptr<vfs::IBlob>>& blobs)
 {
     auto data = fs->readFile(shaderName);
     if (!data)
         return false;
 
-    if (!nvrhi::findPermutationInBlob(data->data(), data->size(),
+    if (!ShaderMake::FindPermutationInBlob(data->data(), data->size(),
         defines.empty() ? nullptr : defines.data(), uint32_t(defines.size()),
         &dest.pData, &dest.size))
     {
-        auto errorMessage = nvrhi::formatShaderNotFoundMessage(data->data(), data->size(),
+        auto errorMessage = ShaderMake::FormatShaderNotFoundMessage(data->data(), data->size(),
             defines.empty() ? nullptr : defines.data(), uint32_t(defines.size()));
 
         log::error("%s", errorMessage.c_str());

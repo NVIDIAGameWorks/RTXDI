@@ -12,37 +12,49 @@ add_custom_target(${shaders_target}
 
 set (OUTPUT_PATH_BASE "${CMAKE_BINARY_DIR}/bin/shaders/minimal-sample")
 
+ if (WIN32)
+     set (USE_API_OPTION --useAPI)
+ else()
+     set (USE_API_OPTION "")
+ endif()
+ 
 if (DONUT_WITH_DX12)
    set(DX12_COMPILER_OPTIONS 
-      --parallel
-      --platform dxil
+      --platform DXIL
+      --shaderModel 6_5
+      --blob
+      --outputExt .bin
       -I ${DONUT_SHADER_INCLUDE_DIR}
       -I ${CMAKE_CURRENT_SOURCE_DIR}/../../rtxdi-sdk/include
-      --ignore "../Types.h"
-      --cflags "$<IF:$<CONFIG:Debug>,-Zi -Qembed_debug,-Qstrip_debug -Qstrip_reflect> -O3 -WX -Zpr"
+      ${USE_API_OPTION}
+      --relaxedInclude "../Types.h"
       --compiler ${DXC_DXIL_EXECUTABLE})
 
    add_custom_command(TARGET ${shaders_target} PRE_BUILD
-                     COMMAND shaderCompiler
-                              --infile ${CMAKE_CURRENT_SOURCE_DIR}/Shaders.cfg
+                     COMMAND ShaderMake
+                              --config ${CMAKE_CURRENT_SOURCE_DIR}/Shaders.cfg
                               --out ${OUTPUT_PATH_BASE}/dxil
                               ${DX12_COMPILER_OPTIONS})
 endif()
 
 if (DONUT_WITH_VULKAN)
    set(VULKAN_COMPILER_OPTIONS
-      --parallel
-      --platform spirv
+      --platform SPIRV
+      --shaderModel 6_5
+      --vulkanVersion 1.2
+      --blob
+      --outputExt .bin
       -I ${DONUT_SHADER_INCLUDE_DIR}
       -I ${CMAKE_CURRENT_SOURCE_DIR}/../../rtxdi-sdk/include
-      --ignore "../Types.h"
-      --cflags "$<IF:$<CONFIG:Debug>,-Zi,> -fspv-target-env=vulkan1.2 -O3 -WX -Zpr"
+      ${USE_API_OPTION}
+      --relaxedInclude "../Types.h"
       -D SPIRV
+      ${NVRHI_DEFAULT_VK_REGISTER_OFFSETS}
       --compiler ${DXC_SPIRV_EXECUTABLE})
 
    add_custom_command(TARGET ${shaders_target} PRE_BUILD
-                     COMMAND shaderCompiler
-                              --infile ${CMAKE_CURRENT_SOURCE_DIR}/Shaders.cfg
+                     COMMAND ShaderMake
+                              --config ${CMAKE_CURRENT_SOURCE_DIR}/Shaders.cfg
                               --out ${OUTPUT_PATH_BASE}/spirv
                               ${VULKAN_COMPILER_OPTIONS})
 endif()

@@ -43,7 +43,7 @@ namespace rtxgi
     struct ShaderBytecode;
 }
 
-namespace nvrhi
+namespace ShaderMake
 {
     struct ShaderConstant;
 }
@@ -72,7 +72,7 @@ protected:
     bool m_ResourceIndicesUpdated = false;
     
     static bool LoadShader(rtxgi::ShaderBytecode& dest, const std::shared_ptr<donut::vfs::IFileSystem>& fs, const char* shaderName,
-        std::vector<nvrhi::ShaderConstant> defines, std::vector<std::shared_ptr<donut::vfs::IBlob>>& blobs);
+        std::vector<ShaderMake::ShaderConstant> defines, std::vector<std::shared_ptr<donut::vfs::IBlob>>& blobs);
 
 public:
     static std::shared_ptr<RtxgiVolume> CreateDX12(

@@ -33,7 +33,6 @@ elseif (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
 
 endif()
 
-option(DONUT_USE_DXIL_ON_DX12 "" ON)
 option(DONUT_WITH_DX11 "" OFF)
 option(DONUT_WITH_VULKAN "" ON)
 option(DONUT_WITH_LZ4 "" OFF)
@@ -56,15 +55,15 @@ if (EXISTS "${PACKMAN_DXC}")
 	endif()
 endif()
 
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
 set(DONUT_SHADERS_OUTPUT_DIR "${CMAKE_BINARY_DIR}/bin/shaders/framework")
 
-if (EXISTS "${CMAKE_CURRENT_LIST_DIR}/donut")
-	add_subdirectory(donut)
-	set(DONUT_PATH "${CMAKE_CURRENT_LIST_DIR}/donut")
-else()
-	add_subdirectory(donut-snapshot)
-	set(DONUT_PATH "${CMAKE_CURRENT_LIST_DIR}/donut-snapshot")
-endif()
+add_subdirectory(donut)
+set(DONUT_PATH "${CMAKE_CURRENT_LIST_DIR}/donut")
 
 include(NRD.cmake)
 include(DLSS.cmake)
@@ -86,6 +85,14 @@ if (EXISTS "${CMAKE_CURRENT_LIST_DIR}/RTXGI/CMakeLists.txt")
 endif()
 
 set(GLSLANG_EXECUTABLE "" CACHE STRING "Path to glslangValidator for GLSL header verification (optional)")
+
+# Temporarily use cxxopts from NVRHI
+if (NOT TARGET cxxopts)
+	option(CXXOPTS_BUILD_EXAMPLES OFF)
+	option(CXXOPTS_BUILD_TESTS OFF)
+	option(CXXOPTS_ENABLE_INSTALL OFF)
+	add_subdirectory(donut/nvrhi/thirdparty/cxxopts)
+endif()
 
 add_subdirectory(rtxdi-sdk)
 add_subdirectory(shaders)

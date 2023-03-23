@@ -13,7 +13,7 @@
 #include "RtxgiIntegration.h"
 #include <donut/core/vfs/VFS.h>
 
-#include <nvrhi/common/shader-blob.h>
+#include <ShaderMake/ShaderBlob.h>
 #include <nvrhi/common/misc.h>
 #include <nvrhi/vulkan.h>
 
@@ -56,26 +56,26 @@ public:
         
         std::vector<std::shared_ptr<vfs::IBlob>> blobs;
 
-        std::vector<nvrhi::ShaderConstant> defines;
+        std::vector<ShaderMake::ShaderConstant> defines;
         defines.push_back({ "RTXGI_DDGI_USE_SHADER_CONFIG_FILE", "1" });
         defines.push_back({ "HLSL", "1" });
         defines.push_back({ "RTXGI_DDGI_BLEND_RADIANCE", "1" });
         defines.push_back({ "RTXGI_DDGI_BLEND_SCROLL_SHARED_MEMORY", "1" });
-        LoadShader(volumeResources.managed.probeBlendingIrradianceCS, fs, "/shaders/app/RTXGI/DDGIProbeBlendingCS.bin", defines, blobs);
+        LoadShader(volumeResources.managed.probeBlendingIrradianceCS, fs, "/shaders/app/RTXGI/ProbeBlendingCS_DDGIProbeBlendingCS.bin", defines, blobs);
         defines.pop_back();
-        LoadShader(volumeResources.managed.probeBorderRowUpdateIrradianceCS, fs, "/shaders/app/RTXGI/DDGIProbeBorderRowUpdateCS.bin", defines, blobs);
-        LoadShader(volumeResources.managed.probeBorderColumnUpdateIrradianceCS, fs, "/shaders/app/RTXGI/DDGIProbeBorderColumnUpdateCS.bin", defines, blobs);
+        LoadShader(volumeResources.managed.probeBorderRowUpdateIrradianceCS, fs, "/shaders/app/RTXGI/ProbeBorderUpdateCS_DDGIProbeBorderRowUpdateCS.bin", defines, blobs);
+        LoadShader(volumeResources.managed.probeBorderColumnUpdateIrradianceCS, fs, "/shaders/app/RTXGI/ProbeBorderUpdateCS_DDGIProbeBorderColumnUpdateCS.bin", defines, blobs);
         defines[2].value = "0"; // RTXGI_DDGI_BLEND_RADIANCE
         defines.push_back({ "RTXGI_DDGI_BLEND_SCROLL_SHARED_MEMORY", "1" });
-        LoadShader(volumeResources.managed.probeBlendingDistanceCS, fs, "/shaders/app/RTXGI/DDGIProbeBlendingCS.bin", defines, blobs);
+        LoadShader(volumeResources.managed.probeBlendingDistanceCS, fs, "/shaders/app/RTXGI/ProbeBlendingCS_DDGIProbeBlendingCS.bin", defines, blobs);
         defines.pop_back();
-        LoadShader(volumeResources.managed.probeBorderRowUpdateDistanceCS, fs, "/shaders/app/RTXGI/DDGIProbeBorderRowUpdateCS.bin", defines, blobs);
-        LoadShader(volumeResources.managed.probeBorderColumnUpdateDistanceCS, fs, "/shaders/app/RTXGI/DDGIProbeBorderColumnUpdateCS.bin", defines, blobs);
+        LoadShader(volumeResources.managed.probeBorderRowUpdateDistanceCS, fs, "/shaders/app/RTXGI/ProbeBorderUpdateCS_DDGIProbeBorderRowUpdateCS.bin", defines, blobs);
+        LoadShader(volumeResources.managed.probeBorderColumnUpdateDistanceCS, fs, "/shaders/app/RTXGI/ProbeBorderUpdateCS_DDGIProbeBorderColumnUpdateCS.bin", defines, blobs);
         defines.pop_back(); // RTXGI_DDGI_BLEND_RADIANCE
-        LoadShader(volumeResources.managed.probeClassification.updateCS, fs, "/shaders/app/RTXGI/DDGIProbeClassificationCS.bin", defines, blobs);
-        LoadShader(volumeResources.managed.probeClassification.resetCS, fs, "/shaders/app/RTXGI/DDGIProbeClassificationResetCS.bin", defines, blobs);
-        LoadShader(volumeResources.managed.probeRelocation.updateCS, fs, "/shaders/app/RTXGI/DDGIProbeRelocationCS.bin", defines, blobs);
-        LoadShader(volumeResources.managed.probeRelocation.resetCS, fs, "/shaders/app/RTXGI/DDGIProbeRelocationResetCS.bin", defines, blobs);
+        LoadShader(volumeResources.managed.probeClassification.updateCS, fs, "/shaders/app/RTXGI/ProbeClassificationCS_DDGIProbeClassificationCS.bin", defines, blobs);
+        LoadShader(volumeResources.managed.probeClassification.resetCS, fs, "/shaders/app/RTXGI/ProbeClassificationCS_DDGIProbeClassificationResetCS.bin", defines, blobs);
+        LoadShader(volumeResources.managed.probeRelocation.updateCS, fs, "/shaders/app/RTXGI/ProbeRelocationCS_DDGIProbeRelocationCS.bin", defines, blobs);
+        LoadShader(volumeResources.managed.probeRelocation.resetCS, fs, "/shaders/app/RTXGI/ProbeRelocationCS_DDGIProbeRelocationResetCS.bin", defines, blobs);
 
         volumeResources.managed.enabled = true;
         volumeResources.managed.device = vkDevice;

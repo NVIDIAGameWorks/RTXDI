@@ -761,6 +761,33 @@ void UserInterface::PostProcessSettings()
             ImGui::TextDisabled("// %d frame(s)", m_ui.numAccumulatedFrames);
         }
 
+        // Reference image UI
+        {
+            ImGui::Separator();
+            ImGui::TextUnformatted("Reference Image:");
+            ShowHelpMarker(
+                "Allows you to store the current rendering output into a texture, "
+                "and later show this texture side-by-side with new rendering output "
+                "or toggle between the two for comparison. Most useful with the "
+                "Accumulation mode above."
+            );
+            if (ImGui::Button("Store"))
+                m_ui.storeReferenceImage = true;
+            if (m_ui.referenceImageCaptured)
+            {
+                ImGui::SameLine();
+                if (ImGui::Button("Toggle"))
+                {
+                    if (m_ui.referenceImageSplit == 0.f)
+                        m_ui.referenceImageSplit = 1.f;
+                    else
+                        m_ui.referenceImageSplit = 0.f;
+                }
+                ImGui::SameLine(160.f);
+                ImGui::SliderFloat("Split Display", &m_ui.referenceImageSplit, 0.f, 1.f, "%.2f");
+            }
+            ImGui::Separator();
+        }
 
 #ifdef WITH_DLSS
         if (m_ui.dlssAvailable)
@@ -772,11 +799,12 @@ void UserInterface::PostProcessSettings()
         m_ui.resetAccumulation |= ImGui::Checkbox("Apply Textures in Compositing", (bool*)&m_ui.enableTextures);
         
         ImGui::Checkbox("Tone mapping", (bool*)&m_ui.enableToneMapping);
-        ImGui::SameLine();
+        ImGui::SameLine(160.f);
         ImGui::SliderFloat("Exposure bias", &m_ui.exposureBias, -4.f, 2.f);
 
         ImGui::Checkbox("Bloom", (bool*)&m_ui.enableBloom);
 
+        ImGui::Separator();
         ImGui::PushItemWidth(150.f);
         ImGui::Combo("Visualization", (int*)&m_ui.visualizationMode,
             "None\0"

@@ -194,6 +194,9 @@ struct UIData
     uint32_t visualizationMode = 0; // See the VIS_MODE_XXX constants in ShaderParameters.h
     uint32_t debugRenderOutputBuffer = 0; // See DebugRenderOutput enum above
 
+    bool storeReferenceImage = false;
+    bool referenceImageCaptured = false;
+    float referenceImageSplit = 0.f;
 
     GBufferSettings gbufferSettings;
     LightingPasses::RenderSettings lightingSettings;

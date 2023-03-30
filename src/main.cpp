@@ -1353,6 +1353,37 @@ public:
             m_BloomPass->Render(m_CommandList, m_RenderTargets->ResolvedFramebuffer, m_UpscaledView, bloomSource, 32.f, 0.005f);
         }
 
+        // Reference image functionality:
+        {
+            // When the camera is moved, discard the previously stored image, if any, and disable its display.
+            if (!cameraIsStatic)
+            {
+                m_ui.referenceImageCaptured = false;
+                m_ui.referenceImageSplit = 0.f;
+            }
+
+            // When the user clicks the "Store" button, copy the ResolvedColor texture into ReferenceColor.
+            if (m_ui.storeReferenceImage)
+            {
+                m_CommandList->copyTexture(m_RenderTargets->ReferenceColor, nvrhi::TextureSlice(), m_RenderTargets->ResolvedColor, nvrhi::TextureSlice());
+                m_ui.storeReferenceImage = false;
+                m_ui.referenceImageCaptured = true;
+            }
+
+            // When the "Split Display" parameter is nonzero, show a portion of the previously stored
+            // ReferenceColor texture on the left side of the screen by copying it into the ResolvedColor texture.
+            if (m_ui.referenceImageSplit > 0.f)
+            {
+                engine::BlitParameters blitParams;
+                blitParams.sourceTexture = m_RenderTargets->ReferenceColor;
+                blitParams.sourceBox.m_maxs = float2(m_ui.referenceImageSplit, 1.f);
+                blitParams.targetFramebuffer = m_RenderTargets->ResolvedFramebuffer->GetFramebuffer(nvrhi::AllSubresources);
+                blitParams.targetBox = blitParams.sourceBox;
+                blitParams.sampler = engine::BlitSampler::Point;
+                m_CommonPasses->BlitTexture(m_CommandList, blitParams, &m_BindingCache);
+            }
+        }
+
         if(m_ui.enableToneMapping)
         { // Tone mapping
             render::ToneMappingParameters ToneMappingParams;

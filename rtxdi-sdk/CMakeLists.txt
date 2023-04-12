@@ -20,7 +20,7 @@ if (DONUT_WITH_DX12)
 		OUTPUT ${output_file}
 		MAIN_DEPENDENCY ${source_file}
 		DEPENDS ${shader_dependencies}
-		COMMAND ${DXC_DXIL_EXECUTABLE} -nologo -WX -Tcs_6_5 ${source_file} -Fo ${output_file} -I${CMAKE_CURRENT_SOURCE_DIR}/include
+		COMMAND ${DXC_PATH} -nologo -WX -Tcs_6_5 ${source_file} -Fo ${output_file} -I${CMAKE_CURRENT_SOURCE_DIR}/include
 	)
 
 	target_sources(rtxdi-sdk PRIVATE ${output_file})
@@ -39,7 +39,7 @@ if (DONUT_WITH_VULKAN)
 		OUTPUT ${output_file}
 		MAIN_DEPENDENCY ${source_file}
 		DEPENDS ${shader_dependencies}
-		COMMAND ${DXC_SPIRV_EXECUTABLE} -nologo -WX -Tcs_6_5 -fspv-target-env=vulkan1.2 ${source_file} -Fo ${output_file} -I${CMAKE_CURRENT_SOURCE_DIR}/include
+		COMMAND ${DXC_SPIRV_PATH} -nologo -WX -Tcs_6_5 -fspv-target-env=vulkan1.2 ${source_file} -Fo ${output_file} -I${CMAKE_CURRENT_SOURCE_DIR}/include
 	)
 
 	target_sources(rtxdi-sdk PRIVATE ${output_file})
@@ -49,8 +49,8 @@ endif()
 
 # ResamplingCompileTest.glsl - optional
 
-if (NOT ${GLSLANG_EXECUTABLE} STREQUAL "")
-	if (EXISTS ${GLSLANG_EXECUTABLE})	
+if (NOT ${GLSLANG_PATH} STREQUAL "")
+	if (EXISTS ${GLSLANG_PATH})	
 
 		set(source_file "${CMAKE_CURRENT_SOURCE_DIR}/shaders/ResamplingCompileTest.glsl")
 		set(output_file "${CMAKE_CURRENT_BINARY_DIR}/ResamplingCompileTest.glsl.spv")
@@ -59,12 +59,12 @@ if (NOT ${GLSLANG_EXECUTABLE} STREQUAL "")
 			OUTPUT ${output_file}
 			MAIN_DEPENDENCY ${source_file}
 			DEPENDS ${shader_dependencies}
-			COMMAND ${GLSLANG_EXECUTABLE} --target-env vulkan1.2 --quiet -S comp ${source_file} -o ${output_file} -I${CMAKE_CURRENT_SOURCE_DIR}/include
+			COMMAND ${GLSLANG_PATH} --target-env vulkan1.2 --quiet -S comp ${source_file} -o ${output_file} -I${CMAKE_CURRENT_SOURCE_DIR}/include
 		)
 
 		target_sources(rtxdi-sdk PRIVATE ${output_file})
 
 	else()
-		message(WARNING "The GLSLANG_EXECUTABLE variable points to a non-existent file: ${GLSLANG_EXECUTABLE}")
+		message(WARNING "The GLSLANG_PATH variable points to a non-existent file: ${GLSLANG_PATH}")
 	endif()
 endif()

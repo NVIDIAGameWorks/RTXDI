@@ -86,7 +86,7 @@ if (EXISTS "${CMAKE_CURRENT_LIST_DIR}/RTXGI/CMakeLists.txt")
 	endif()
 endif()
 
-set(GLSLANG_EXECUTABLE "" CACHE STRING "Path to glslangValidator for GLSL header verification (optional)")
+set(GLSLANG_PATH "" CACHE STRING "Path to glslangValidator for GLSL header verification (optional)")
 
 # Temporarily use cxxopts from NVRHI
 if (NOT TARGET cxxopts)

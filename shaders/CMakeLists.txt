@@ -7,7 +7,7 @@ set(folder "RTXDI SDK")
 set(shaders_target rtxdi-sample-shaders)
 
 add_custom_target(${shaders_target}
-    DEPENDS shaderCompiler
+    DEPENDS ShaderMake
     SOURCES ${shaders} Shaders.cfg)
 
 if(TARGET NRD)
@@ -72,7 +72,7 @@ if (DONUT_WITH_VULKAN)
       ${USE_API_OPTION}
       ${NVRHI_DEFAULT_VK_REGISTER_OFFSETS}
       -D SPIRV
-      --compiler ${DXC_SPIRV_EXECUTABLE})
+      --compiler ${DXC_SPIRV_PATH})
 
    add_custom_command(TARGET ${shaders_target} PRE_BUILD
                      COMMAND ShaderMake

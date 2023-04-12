@@ -7,7 +7,7 @@ set(folder "RTXDI SDK")
 set(shaders_target minimal-sample-shaders)
 
 add_custom_target(${shaders_target}
-	DEPENDS shaderCompiler
+	DEPENDS ShaderMake
 	SOURCES ${shaders} Shaders.cfg)
 
 set (OUTPUT_PATH_BASE "${CMAKE_BINARY_DIR}/bin/shaders/minimal-sample")
@@ -28,7 +28,7 @@ if (DONUT_WITH_DX12)
       -I ${CMAKE_CURRENT_SOURCE_DIR}/../../rtxdi-sdk/include
       ${USE_API_OPTION}
       --relaxedInclude "../Types.h"
-      --compiler ${DXC_DXIL_EXECUTABLE})
+      --compiler ${DXC_PATH})
 
    add_custom_command(TARGET ${shaders_target} PRE_BUILD
                      COMMAND ShaderMake
@@ -50,7 +50,7 @@ if (DONUT_WITH_VULKAN)
       --relaxedInclude "../Types.h"
       -D SPIRV
       ${NVRHI_DEFAULT_VK_REGISTER_OFFSETS}
-      --compiler ${DXC_SPIRV_EXECUTABLE})
+      --compiler ${DXC_SPIRV_PATH})
 
    add_custom_command(TARGET ${shaders_target} PRE_BUILD
                      COMMAND ShaderMake

@@ -25,8 +25,6 @@
 
 #include <utility>
 
-#include "RtxgiIntegration.h"
-
 #if WITH_NRD
 #include <NRD.h>
 #endif
@@ -105,24 +103,13 @@ LightingPasses::LightingPasses(
     m_BindingLayout = m_Device->createBindingLayout(globalBindingLayoutDesc);
 
     m_ConstantBuffer = m_Device->createBuffer(nvrhi::utils::CreateVolatileConstantBufferDesc(sizeof(ResamplingConstants), "ResamplingConstants", 16));
-
-#ifdef WITH_RTXGI
-    auto rtxgiBindingLayoutDesc = nvrhi::BindingLayoutDesc()
-        .setVisibility(nvrhi::ShaderType::Compute | nvrhi::ShaderType::AllRayTracing)
-        .addItem(nvrhi::BindingLayoutItem::StructuredBuffer_SRV(40))
-        .addItem(nvrhi::BindingLayoutItem::StructuredBuffer_SRV(41))
-        .addItem(nvrhi::BindingLayoutItem::Sampler(40));
-
-    m_RtxgiBindingLayout = m_Device->createBindingLayout(rtxgiBindingLayoutDesc);
-#endif
 }
 
 void LightingPasses::CreateBindingSet(
     nvrhi::rt::IAccelStruct* topLevelAS,
     nvrhi::rt::IAccelStruct* prevTopLevelAS,
     const RenderTargets& renderTargets,
-    const RtxdiResources& resources,
-    const RtxgiIntegration* rtxgi)
+    const RtxdiResources& resources)
 {
     assert(&renderTargets);
     assert(&resources);
@@ -187,17 +174,6 @@ void LightingPasses::CreateBindingSet(
             m_PrevBindingSet = bindingSet;
     }
 
-#ifdef WITH_RTXGI
-    assert(rtxgi);
-
-    auto rtxgiBindingSetDesc = nvrhi::BindingSetDesc()
-        .addItem(nvrhi::BindingSetItem::StructuredBuffer_SRV(40, rtxgi->GetConstantBuffer()))
-        .addItem(nvrhi::BindingSetItem::StructuredBuffer_SRV(41, rtxgi->GetVolumeResourceIndicesBuffer()))
-        .addItem(nvrhi::BindingSetItem::Sampler(40, rtxgi->GetProbeSampler()));
-
-    m_RtxgiBindingSet = m_Device->createBindingSet(rtxgiBindingSetDesc, m_RtxgiBindingLayout);
-#endif
-    
     const auto& environmentPdfDesc = resources.EnvironmentPdfTexture->getDesc();
     m_EnvironmentPdfTextureSize.x = environmentPdfDesc.width;
     m_EnvironmentPdfTextureSize.y = environmentPdfDesc.height;
@@ -296,7 +272,7 @@ void LightingPasses::CreatePipelines(const rtxdi::ContextParameters& contextPara
     m_SpatialResamplingPass.Init(m_Device, *m_ShaderFactory, "app/LightingPasses/SpatialResampling.hlsl", {}, useRayQuery, RTXDI_SCREEN_SPACE_GROUP_SIZE, m_BindingLayout, nullptr, m_BindlessLayout);
     m_ShadeSamplesPass.Init(m_Device, *m_ShaderFactory, "app/LightingPasses/ShadeSamples.hlsl", regirMacros, useRayQuery, RTXDI_SCREEN_SPACE_GROUP_SIZE, m_BindingLayout, nullptr, m_BindlessLayout);
     m_BrdfRayTracingPass.Init(m_Device, *m_ShaderFactory, "app/LightingPasses/BrdfRayTracing.hlsl", {}, useRayQuery, RTXDI_SCREEN_SPACE_GROUP_SIZE, m_BindingLayout, nullptr, m_BindlessLayout);
-    m_ShadeSecondarySurfacesPass.Init(m_Device, *m_ShaderFactory, "app/LightingPasses/ShadeSecondarySurfaces.hlsl", regirMacros, useRayQuery, RTXDI_SCREEN_SPACE_GROUP_SIZE, m_BindingLayout, m_RtxgiBindingLayout, m_BindlessLayout);
+    m_ShadeSecondarySurfacesPass.Init(m_Device, *m_ShaderFactory, "app/LightingPasses/ShadeSecondarySurfaces.hlsl", regirMacros, useRayQuery, RTXDI_SCREEN_SPACE_GROUP_SIZE, m_BindingLayout, nullptr, m_BindlessLayout);
     m_FusedResamplingPass.Init(m_Device, *m_ShaderFactory, "app/LightingPasses/FusedResampling.hlsl", regirMacros, useRayQuery, RTXDI_SCREEN_SPACE_GROUP_SIZE, m_BindingLayout, nullptr, m_BindlessLayout);
     m_GradientsPass.Init(m_Device, *m_ShaderFactory, "app/LightingPasses/ComputeGradients.hlsl", {}, useRayQuery, RTXDI_SCREEN_SPACE_GROUP_SIZE, m_BindingLayout, nullptr, m_BindlessLayout);
     m_GITemporalResamplingPass.Init(m_Device, *m_ShaderFactory, "app/LightingPasses/GITemporalResampling.hlsl", {}, useRayQuery, RTXDI_SCREEN_SPACE_GROUP_SIZE, m_BindingLayout, nullptr, m_BindlessLayout);
@@ -412,25 +388,6 @@ void LightingPasses::FillResamplingConstants(
     }
 
     m_CurrentFrameOutputReservoir = constants.shadeInputBufferIndex;
-}
-
-void LightingPasses::FillConstantBufferForProbeTracing(
-    nvrhi::ICommandList* commandList,
-    rtxdi::Context& context,
-    const RenderSettings& localSettings,
-    const rtxdi::FrameParameters& frameParameters)
-{
-    ResamplingConstants constants = {};
-    constants.frameIndex = frameParameters.frameIndex;
-    context.FillRuntimeParameters(constants.runtimeParams, frameParameters);
-    FillResamplingConstants(constants, localSettings, frameParameters);
-
-    constants.numIndirectRegirSamples = localSettings.enableReGIR ? localSettings.numRtxgiRegirSamples : 0;
-    constants.numIndirectLocalLightSamples = localSettings.numRtxgiLocalLightSamples;
-    constants.numIndirectInfiniteLightSamples = localSettings.numRtxgiInfiniteLightSamples;
-    constants.numIndirectEnvironmentSamples = frameParameters.environmentLightPresent ? localSettings.numRtxgiEnvironmentSamples : 0;
-
-    commandList->writeBuffer(m_ConstantBuffer, &constants, sizeof(constants));
 }
 
 void LightingPasses::PrepareForLightSampling(
@@ -555,7 +512,6 @@ void LightingPasses::RenderBrdfRays(
     bool enableIndirect,
     bool enableAdditiveBlend,
     bool enableEmissiveSurfaces,
-    uint32_t numRtxgiVolumes,
     bool enableAccumulation,
     bool enableReStirGI
     )
@@ -569,7 +525,6 @@ void LightingPasses::RenderBrdfRays(
     constants.enableBrdfIndirect = enableIndirect;
     constants.enableBrdfAdditiveBlend = enableAdditiveBlend;
     constants.enableIndirectEmissiveSurfaces = enableEmissiveSurfaces;
-    constants.numRtxgiVolumes = numRtxgiVolumes;
     constants.enableEnvironmentMap = (environmentLight.textureIndex >= 0);
     constants.enableAccumulation = enableAccumulation;
     constants.environmentMapTextureIndex = (environmentLight.textureIndex >= 0) ? environmentLight.textureIndex : 0;
@@ -666,7 +621,7 @@ void LightingPasses::RenderBrdfRays(
         // Place an explicit UAV barrier between the passes. See the note on barriers in RenderDirectLighting(...)
         nvrhi::utils::BufferUavBarrier(commandList, m_SecondarySurfaceBuffer);
 
-        ExecuteRayTracingPass(commandList, m_ShadeSecondarySurfacesPass, localSettings.enableRayCounts, "ShadeSecondarySurfaces", dispatchSize, ProfilerSection::ShadeSecondary, m_RtxgiBindingSet);
+        ExecuteRayTracingPass(commandList, m_ShadeSecondarySurfacesPass, localSettings.enableRayCounts, "ShadeSecondarySurfaces", dispatchSize, ProfilerSection::ShadeSecondary, nullptr);
         
         if (enableReStirGI)
         {

@@ -41,7 +41,6 @@ class RtxdiResources;
 class Profiler;
 class EnvironmentLight;
 struct ResamplingConstants;
-class RtxgiIntegration;
 struct GBufferSettings;
 
 namespace nrd
@@ -109,10 +108,8 @@ private:
     RayTracingPass m_GIFinalShadingPass;
     nvrhi::BindingLayoutHandle m_BindingLayout;
     nvrhi::BindingLayoutHandle m_BindlessLayout;
-    nvrhi::BindingLayoutHandle m_RtxgiBindingLayout;
     nvrhi::BindingSetHandle m_BindingSet;
     nvrhi::BindingSetHandle m_PrevBindingSet;
-    nvrhi::BindingSetHandle m_RtxgiBindingSet;
     nvrhi::BufferHandle m_ConstantBuffer;
     nvrhi::BufferHandle m_LightReservoirBuffer;
     nvrhi::BufferHandle m_SecondarySurfaceBuffer;
@@ -160,10 +157,6 @@ public:
         uint32_t numIndirectLocalLightSamples = 2;
         uint32_t numIndirectInfiniteLightSamples = 1;
         uint32_t numIndirectEnvironmentSamples = 1;
-        uint32_t numRtxgiRegirSamples = 8;
-        uint32_t numRtxgiLocalLightSamples = 8;
-        uint32_t numRtxgiInfiniteLightSamples = 1;
-        uint32_t numRtxgiEnvironmentSamples = 1;
         
         float temporalNormalThreshold = 0.5f;
         float temporalDepthThreshold = 0.1f;
@@ -230,8 +223,7 @@ public:
         nvrhi::rt::IAccelStruct* topLevelAS,
         nvrhi::rt::IAccelStruct* prevTopLevelAS,
         const RenderTargets& renderTargets,
-        const RtxdiResources& resources,
-        const RtxgiIntegration* rtxgi);
+        const RtxdiResources& resources);
 
     void PrepareForLightSampling(
         nvrhi::ICommandList* commandList,
@@ -260,7 +252,6 @@ public:
         bool enableIndirect,
         bool enableAdditiveBlend,
         bool enableEmissiveSurfaces,
-        uint32_t numRtxgiVolumes,
         bool enableAccumulation,
         bool enableReStirGI
     );
@@ -271,12 +262,6 @@ public:
     [[nodiscard]] nvrhi::IBindingSet* GetCurrentBindingSet() const { return m_BindingSet; }
     [[nodiscard]] uint32_t GetOutputReservoirBufferIndex() const { return m_CurrentFrameOutputReservoir; }
     [[nodiscard]] uint32_t GetGIOutputReservoirBufferIndex() const { return m_CurrentFrameGIOutputReservoir; }
-
-    void FillConstantBufferForProbeTracing(
-        nvrhi::ICommandList* commandList,
-        rtxdi::Context& context,
-        const RenderSettings& localSettings,
-        const rtxdi::FrameParameters& frameParameters);
 
     static donut::engine::ShaderMacro GetRegirMacro(const rtxdi::ContextParameters& contextParameters);
 

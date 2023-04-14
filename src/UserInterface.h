@@ -60,20 +60,6 @@ enum class QualityPreset : uint32_t
     Reference = 5
 };
 
-struct RtxgiParameters
-{
-    ibool enabled = true;
-    ibool showProbes = false;
-    int selectedVolumeIndex = 0;
-    float hysteresis = 0.99f;
-    float irradianceThreshold = 0.25f;
-    float brightnessThreshold = 0.1f;
-    float minFrontFaceDistanceFraction = 0.1f;
-    bool probeRelocation = true;
-    bool probeClassification = true;
-    bool resetRelocation = false;
-};
-
 enum class AntiAliasingMode : uint32_t
 {
     None,
@@ -155,8 +141,6 @@ struct UIData
     bool enableLocalLightImportanceSampling = true;
     float environmentIntensityBias = 0.f;
     float environmentRotation = 0.f;
-    
-    RtxgiParameters rtxgi;
     
     bool enableDenoiser = true;
 #ifdef WITH_NRD

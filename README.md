@@ -32,8 +32,6 @@ For more information about RTXDI, see the [NVIDIA Developer Page](https://develo
 
 [`DLSS`](DLSS) is a submodule with the [Deep Learning Super-Sampling SDK](https://github.com/NVIDIA/DLSS).
 
-[`RTXGI`](RTXGI) is a submodule with the [RTX Global Illumination SDK](https://github.com/NVIDIAGameWorks/RTXGI).
-
 Additional contents delivered through packman:
 
 `dxc` is a recent version of DirectX Shader Compiler;

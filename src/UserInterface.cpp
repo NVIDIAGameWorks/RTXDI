@@ -376,7 +376,7 @@ void UserInterface::SamplingSettings()
             break;
         case DirectLightingMode::ReStir:
             ShowHelpMarker(
-                "Sample the direct lighting using ReSTIR. Optionally, apply indirect diffuse lighting from RTXGI.");
+                "Sample the direct lighting using ReSTIR.");
             break;
         }
 
@@ -560,12 +560,12 @@ void UserInterface::SamplingSettings()
         case IndirectLightingMode::Brdf:
             ShowHelpMarker(
                 "Trace BRDF rays from primary surfaces. "
-                "Shade the surfaces found with BRDF rays using direct light sampling and optionally RTXGI.");
+                "Shade the surfaces found with BRDF rays using direct light sampling.");
             break;
         case IndirectLightingMode::ReStirGI:
             ShowHelpMarker(
                 "Trace diffuse and specular BRDF rays and resample results with ReSTIR GI. "
-                "Shade the surfaces found with BRDF rays using direct light sampling and optionally RTXGI.");
+                "Shade the surfaces found with BRDF rays using direct light sampling.");
             break;
         default:;
         }
@@ -667,68 +667,6 @@ void UserInterface::SamplingSettings()
     }
 
     ImGui::Separator();
-
-#if WITH_RTXGI
-    if (ImGui_ColoredTreeNode("RTXGI", c_ColorRegularHeader))
-    {
-        ImGui::Checkbox("Enable", (bool*)&m_ui.rtxgi.enabled);
-
-        ImGui::SliderFloat("Hysteresis", &m_ui.rtxgi.hysteresis, 0.9f, 1.0f);
-        ImGui::SliderFloat("Irradiance Threshold", &m_ui.rtxgi.irradianceThreshold, 0.f, 1.0f);
-        ImGui::SliderFloat("Brightness Threshold", &m_ui.rtxgi.brightnessThreshold, 0.f, 1.0f);
-        ImGui::SliderFloat("Min Front Face Distance / Spacing", &m_ui.rtxgi.minFrontFaceDistanceFraction, 0.f, 0.5f);
-        ImGui::Checkbox("Probe Relocation", &m_ui.rtxgi.probeRelocation);
-        ImGui::SameLine();
-        if (ImGui::Button("Reset"))
-            m_ui.rtxgi.resetRelocation = true;
-        ImGui::Checkbox("Probe Classification", &m_ui.rtxgi.probeClassification);
-        ImGui::Separator();
-
-        ImGui::SliderInt("ReGIR Samples", (int*)&m_ui.lightingSettings.numRtxgiRegirSamples, 0, 32);
-        ImGui::SliderInt("Local Light Samples", (int*)&m_ui.lightingSettings.numRtxgiLocalLightSamples, 0, 32);
-        ImGui::SliderInt("Infinite Light Samples", (int*)&m_ui.lightingSettings.numRtxgiInfiniteLightSamples, 0, 32);
-        ImGui::SliderInt("Environment Samples", (int*)&m_ui.lightingSettings.numRtxgiEnvironmentSamples, 0, 32);
-        ImGui::Separator();
-
-        auto& volumes = m_ui.resources->scene->GetRtxgiVolumes();
-        auto* selectedVolume = m_ui.rtxgi.selectedVolumeIndex >= 0 && m_ui.rtxgi.selectedVolumeIndex < int(volumes.size())
-            ? &volumes[m_ui.rtxgi.selectedVolumeIndex] : nullptr;
-
-        if (ImGui::BeginCombo("Volume", selectedVolume ? selectedVolume->name.c_str() : "(None)"))
-        {
-            for (int index = 0; index < int(volumes.size()); index++)
-            {
-                bool selected = m_ui.rtxgi.selectedVolumeIndex == index;
-                ImGui::Selectable(volumes[index].name.c_str(), &selected);
-                if (selected)
-                {
-                    ImGui::SetItemDefaultFocus();
-                    m_ui.rtxgi.selectedVolumeIndex = index;
-                    selectedVolume = &volumes[index];
-                }
-            }
-            ImGui::EndCombo();
-        }
-        ImGui::SameLine();
-        ImGui::Checkbox("Show Probes", (bool*)&m_ui.rtxgi.showProbes);
-
-        if (selectedVolume)
-        {
-            ImGui::SliderFloat("Probe Spacing", &selectedVolume->probeSpacing, 0.1f, 4.0f);
-            if (!selectedVolume->scrolling)
-            {
-                ImGui::PushItemWidth(200.f);
-                ImGui::DragFloat3("Origin", &selectedVolume->origin.x, 0.01f);
-                ImGui::DragFloat3("Rotation", &selectedVolume->eulerAngles.x, 1.f, -180.f, 180.f);
-                ImGui::PopItemWidth();
-            }
-        }
-        
-        ImGui::TreePop();
-    }
-
-    ImGui::Separator();
-#endif
 }
 
 void UserInterface::PostProcessSettings()

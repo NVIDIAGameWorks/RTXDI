@@ -61,10 +61,6 @@
 #include "DLSS.h"
 #endif
 
-#if WITH_RTXGI
-#include "RtxgiIntegration.h"
-#endif
-
 #ifndef _WIN32
 #include <unistd.h>
 #else
@@ -134,10 +130,6 @@ private:
 
 #ifdef WITH_DLSS
     std::unique_ptr<DLSS> m_DLSS;
-#endif
-
-#if WITH_RTXGI
-    std::shared_ptr<RtxgiIntegration> m_RTXGI;
 #endif
 
     UIData& m_ui;
@@ -496,12 +488,6 @@ public:
 #if WITH_NRD
         m_NRD = nullptr;
 #endif
-#if WITH_RTXGI
-        if (m_RTXGI)
-        {
-            m_RTXGI->InvalidateRenderTargets();
-        }
-#endif
     }
 
     void LoadEnvironmentMap()
@@ -597,9 +583,6 @@ public:
             m_LocalLightPdfMipmapPass = nullptr;
             m_VisualizationPass = nullptr;
             m_DebugVizPasses = nullptr;
-#if WITH_RTXGI
-            m_RTXGI = nullptr;
-#endif
             m_ui.environmentMapDirty = 1;
 
             LoadShaders();
@@ -645,24 +628,6 @@ public:
             m_ui.regirLightSlotCount = m_RtxdiContext->GetReGIRLightSlotCount();
         }
 
-#if WITH_RTXGI
-        if (!m_RTXGI)
-        {
-            m_RTXGI = std::make_shared<RtxgiIntegration>(GetDevice(), m_RootFs, m_DescriptorTableManager);
-
-            const bool useRayQuery = GetDevice()->getGraphicsAPI() == nvrhi::GraphicsAPI::D3D12
-                ? false // Workaround for an issue with DXC not producing correct code for RayQuery in the probe tracing pass
-                : m_ui.useRayQuery;
-
-            m_RTXGI->InitializePasses(*m_ShaderFactory, m_LightingPasses->GetBindingLayout(), m_BindlessLayout, m_RtxdiContext->GetParameters(), useRayQuery);
-
-            for (auto& volumeDesc : m_Scene->GetRtxgiVolumes())
-            {
-                m_RTXGI->CreateVolume(volumeDesc);
-            }
-        }
-#endif
-
         if (!m_RenderTargets)
         {
             m_RenderTargets = std::make_shared<RenderTargets>(GetDevice(), int2((int)renderWidth, (int)renderHeight));
@@ -683,11 +648,7 @@ public:
 
             m_RasterizedGBufferPass->CreatePipeline(*m_RenderTargets);
 
-#if WITH_RTXGI
-            m_CompositingPass->CreateBindingSet(*m_RenderTargets, m_RTXGI.get());
-#else
-            m_CompositingPass->CreateBindingSet(*m_RenderTargets, nullptr);
-#endif
+            m_CompositingPass->CreateBindingSet(*m_RenderTargets);
 
             m_VisualizationPass = nullptr;
             m_DebugVizPasses = nullptr;
@@ -743,12 +704,7 @@ public:
                 m_Scene->GetTopLevelAS(),
                 m_Scene->GetPrevTopLevelAS(),
                 *m_RenderTargets,
-                *m_RtxdiResources,
-#if WITH_RTXGI
-                m_RTXGI.get());
-#else
-                nullptr);
-#endif
+                *m_RtxdiResources);
         }
 
         if (rtxdiResourcesCreated || m_ui.reloadShaders)
@@ -958,10 +914,6 @@ public:
 
             m_RtxdiContext = nullptr;
             m_RtxdiResources = nullptr;
-#if WITH_RTXGI
-            // The RTXGI probe tracing pass depends on the RTXDI context parameters
-            m_RTXGI = nullptr;
-#endif
             m_ui.resetRtxdiContext = false;
         }
 
@@ -998,9 +950,6 @@ public:
         m_RenderTargets->NextFrame();
         m_GlassPass->NextFrame();
         m_Scene->NextFrame();
-#if WITH_RTXGI
-        m_RTXGI->NextFrame();
-#endif
         m_DebugVizPasses->NextFrame();
         
         // Advance the TAA jitter offset at half frame rate if accumulation is used with
@@ -1183,39 +1132,6 @@ public:
         if (lightingSettings.denoiserMode == DENOISER_MODE_OFF)
             lightingSettings.enableGradients = false;
 
-#if WITH_RTXGI
-        if (m_ui.rtxgi.enabled)
-        {
-            m_LightingPasses->FillConstantBufferForProbeTracing(m_CommandList, *m_RtxdiContext, lightingSettings, frameParameters);
-
-            assert(m_RTXGI->GetNumVolumes() == int(m_Scene->GetRtxgiVolumes().size()));
-
-            for (int volumeIndex = 0; volumeIndex < m_RTXGI->GetNumVolumes(); volumeIndex++)
-            {
-                auto volume = m_RTXGI->GetVolume(volumeIndex);
-                assert(volume);
-
-                const auto& params = m_Scene->GetRtxgiVolumes()[volumeIndex];
-                volume->SetParameters(m_ui.rtxgi);
-                volume->SetVolumeParameters(params);
-                if (params.scrolling)
-                    volume->SetOrigin(m_Camera.GetPosition());
-            }
-
-            m_RTXGI->UpdateAllVolumes(
-                m_CommandList,
-                m_LightingPasses->GetCurrentBindingSet(),
-                m_DescriptorTableManager->GetDescriptorTable(),
-                *m_Profiler);
-
-            m_ui.rtxgi.resetRelocation = false;
-        }
-
-        const uint32_t numRtxgiVolumes = m_RTXGI && m_ui.rtxgi.enabled ? m_RTXGI->GetNumVolumes() : 0;
-#else
-        const uint32_t numRtxgiVolumes = 0;
-#endif
-
         const bool checkerboard = m_RtxdiContext->GetParameters().CheckerboardSamplingMode != rtxdi::CheckerboardMode::Off;
 
         bool enableDirectReStirPass = m_ui.directLightingMode == DirectLightingMode::ReStir;
@@ -1279,7 +1195,6 @@ public:
                 /* enableIndirect = */ enableIndirect,
                 /* enableAdditiveBlend = */ enableDirectReStirPass,
                 /* enableEmissiveSurfaces = */ m_ui.directLightingMode == DirectLightingMode::Brdf,
-                numRtxgiVolumes,
                 /* enableAccumulation = */ m_ui.aaMode == AntiAliasingMode::Accumulation,
                 enableReStirGI
                 );
@@ -1314,7 +1229,6 @@ public:
             m_View,
             m_ViewPrevious,
             denoiserMode,
-            /* numRtxgiVolumes = */ (! enableIndirect) ? numRtxgiVolumes : 0,
             checkerboard,
             m_ui,
             *m_EnvironmentLight);
@@ -1329,13 +1243,6 @@ public:
                 m_ui.gbufferSettings.enableMaterialReadback,
                 m_ui.gbufferSettings.materialReadbackPosition);
         }
-
-#if WITH_RTXGI
-        if (m_ui.rtxgi.enabled && m_ui.rtxgi.showProbes)
-        {
-            m_RTXGI->RenderDebug(m_CommandList, m_DescriptorTableManager->GetDescriptorTable(), *m_RenderTargets, m_ui.rtxgi.selectedVolumeIndex, m_View);
-        }
-#endif
 
         Resolve(m_CommandList, accumulationWeight);
 

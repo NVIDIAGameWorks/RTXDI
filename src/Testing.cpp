@@ -186,12 +186,6 @@ void ProcessCommandLine(int argc, char** argv, donut::app::DeviceCreationParamet
     ;
 #endif
 
-#if WITH_RTXGI
-    options.add_options()
-        ("rtxgi", "RTXGI toggle", value(ui.rtxgi.enabled))
-    ;
-#endif
-
     try
     {
         options.parse(argc, argv);

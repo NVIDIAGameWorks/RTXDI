@@ -144,7 +144,6 @@ struct CompositingConstants
 
     float noiseClampHigh;
     uint checkerboard;
-    uint numRtxgiVolumes;
 };
 
 struct AccumulationConstants
@@ -154,22 +153,6 @@ struct AccumulationConstants
     float2 inputTextureSizeInv;
     float2 pixelOffset;
     float blendFactor;
-};
-
-struct ProbeDebugConstants
-{
-    PlanarViewConstants view;
-    uint blasDeviceAddressLow;
-    uint blasDeviceAddressHigh;
-    uint volumeIndex;
-};
-
-struct DDGIVolumeResourceIndices
-{
-    uint irradianceTextureSRV;
-    uint distanceTextureSRV;
-    uint probeDataTextureSRV;
-    uint rayDataTextureUAV;
 };
 
 struct FilterGradientsConstants
@@ -216,7 +199,7 @@ struct ResamplingConstants
     uint frameIndex;
     uint enablePreviousTLAS;
     uint denoiserMode;
-    uint numRtxgiVolumes;
+    uint pad;
     
     uint enableBrdfIndirect;
     uint enableBrdfAdditiveBlend;
@@ -303,7 +286,6 @@ struct ResamplingConstants
 struct PerPassConstants
 {
     int rayCountBufferIndex;
-    uint rtxgiVolumeIndex;
 };
 
 struct SecondaryGBufferData

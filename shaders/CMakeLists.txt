@@ -1,6 +1,6 @@
 
 include("${DONUT_PATH}/compileshaders.cmake")
-file(GLOB shaders "*.h*" "LightingPasses/*.h*" "RTXGI/*.h*" "DebugViz/*.h*" "../rtxdi-sdk/shaders/*.hlsl" "../rtxdi-sdk/include/*.hlsli")
+file(GLOB shaders "*.h*" "LightingPasses/*.h*" "DebugViz/*.h*" "../rtxdi-sdk/shaders/*.hlsl" "../rtxdi-sdk/include/*.hlsli")
 
 set(project rtxdi-sample)
 set(folder "RTXDI SDK")
@@ -14,12 +14,6 @@ if(TARGET NRD)
    set(NRD_OPTIONS -I "${CMAKE_CURRENT_SOURCE_DIR}/../NRD/Shaders/Include" -D WITH_NRD -D NRD_USE_OCT_NORMAL_ENCODING=0 -D NRD_USE_MATERIAL_ID=0)
 else()
    set(NRD_OPTIONS --relaxedInclude NRD.hlsli)
-endif()
-
-if (TARGET RTXGI-D3D12 OR TARGET RTXGI-VK)
-   set(RTXGI_OPTIONS -D WITH_RTXGI)
-else()
-   set(RTXGI_OPTIONS --relaxedInclude "ddgi/Irradiance.hlsl")
 endif()
 
 set (OUTPUT_PATH_BASE "${CMAKE_BINARY_DIR}/bin/shaders/rtxdi-sample")
@@ -38,12 +32,8 @@ if (DONUT_WITH_DX12)
       --outputExt .bin
       -I ${DONUT_SHADER_INCLUDE_DIR}
       -I ${CMAKE_CURRENT_SOURCE_DIR}/../rtxdi-sdk/include
-      -I ${CMAKE_CURRENT_SOURCE_DIR}/../RTXGI/shaders
-      -I ${CMAKE_CURRENT_SOURCE_DIR}/RTXGI
       --relaxedInclude "../Types.h"
-      --relaxedInclude "rtxgi\\Types.h"
       ${NRD_OPTIONS}
-      ${RTXGI_OPTIONS}
       ${USE_API_OPTION}
       --compiler ${DXC_PATH})
 
@@ -63,12 +53,8 @@ if (DONUT_WITH_VULKAN)
       --outputExt .bin
       -I ${DONUT_SHADER_INCLUDE_DIR}
       -I ${CMAKE_CURRENT_SOURCE_DIR}/../rtxdi-sdk/include
-      -I ${CMAKE_CURRENT_SOURCE_DIR}/../RTXGI/shaders
-      -I ${CMAKE_CURRENT_SOURCE_DIR}/RTXGI
       --relaxedInclude "../Types.h"
-      --relaxedInclude "rtxgi\\Types.h"
       ${NRD_OPTIONS}
-      ${RTXGI_OPTIONS}
       ${USE_API_OPTION}
       ${NVRHI_DEFAULT_VK_REGISTER_OFFSETS}
       -D SPIRV

@@ -26,13 +26,6 @@
 
 #include "ShadingHelpers.hlsli"
 
-#ifdef WITH_RTXGI
-#include "RtxgiHelpers.hlsli"
-StructuredBuffer<DDGIVolumeDescGPUPacked> t_DDGIVolumes : register(t40 VK_DESCRIPTOR_SET(2));
-StructuredBuffer<DDGIVolumeResourceIndices> t_DDGIVolumeResourceIndices : register(t41 VK_DESCRIPTOR_SET(2));
-SamplerState s_ProbeSampler : register(s40 VK_DESCRIPTOR_SET(2));
-#endif
-
 static const float c_MaxIndirectRadiance = 10;
 
 #if USE_RAY_QUERY
@@ -140,22 +133,6 @@ void RayGen()
         float indirectLuminance = calcLuminance(radiance);
         if (indirectLuminance > c_MaxIndirectRadiance)
             radiance *= c_MaxIndirectRadiance / indirectLuminance;
-
-#ifdef WITH_RTXGI
-        if (g_Const.numRtxgiVolumes)
-        {
-            float3 indirectIrradiance = GetIrradianceFromDDGI(
-                secondarySurface.worldPos,
-                secondarySurface.normal,
-                primarySurface.worldPos,
-                g_Const.numRtxgiVolumes,
-                t_DDGIVolumes,
-                t_DDGIVolumeResourceIndices,
-                s_ProbeSampler);
-
-            radiance += indirectIrradiance * secondarySurface.diffuseAlbedo;
-        }
-#endif
     }
 
     bool outputShadingResult = true;

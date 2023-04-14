@@ -7,8 +7,6 @@ variables:
   TEST_REPO_BRANCH: main
 
 # Variables that should be specified from the project settings:
-# - GITHUB_USERNAME     : username for the private dependencies on GitHub
-# - GITHUB_ACCESS_TOKEN : access token for the private dependencies on GitHub
 # - TEST_REPO_URL       : URL of the repository with tests, including the username and token parts if necessary
 # - ENABLE_JOBS         : list of jobs to run, such as "build-linux,test-linux"
 
@@ -18,19 +16,6 @@ variables:
 # - CMake 3.10+
 # - Ninja build system
 # - Python 3.8+ and scikit-image
-
-
-# Add the GitHub credentials for the submodules
-.checkout-submodules: &checkout-submodules
-  - git submodule set-url RTXGI https://${GITHUB_USERNAME}:${GITHUB_ACCESS_TOKEN}@github.com/NVIDIAGameWorks/RTXGI.git
-  - git submodule set-url NRD https://${GITHUB_USERNAME}:${GITHUB_ACCESS_TOKEN}@github.com/NVIDIAGameWorks/RayTracingDenoiser.git
-  - git submodule update --init --recursive
-
-
-# Remove the credentials to avoid storing them in the runner working tree
-.cleanup-submodules: &cleanup-submodules
-  - git submodule set-url RTXGI https://github.com/NVIDIAGameWorks/RTXGI.git
-  - git submodule set-url NRD https://github.com/NVIDIAGameWorks/RayTracingDenoiser.git
 
 
 # Clone the tests repository
@@ -45,14 +30,11 @@ build-linux:
   rules:
     - if: '$ENABLE_JOBS =~ /build-linux/'
   before_script:
-    - *checkout-submodules
     - ./update_dependencies.sh
   script:
     - mkdir build && cd build
     - cmake .. -GNinja
     - ninja
-  after_script:
-    - *cleanup-submodules
   artifacts:
     name: "rtxdi-linux-${CI_COMMIT_SHORT_SHA}"
     paths:
@@ -65,7 +47,6 @@ build-windows:
   rules:
     - if: '$ENABLE_JOBS =~ /build-windows/'
   before_script:
-    - *checkout-submodules
     - ./update_dependencies.bat
   script:
     - ./set_vs_vars.ps1
@@ -73,8 +54,6 @@ build-windows:
     - cd build
     - cmake .. -GNinja -DRTXDI_CONSOLE_APP=ON
     - cmake --build .
-  after_script:
-    - *cleanup-submodules
   artifacts:
     name: "rtxdi-windows-${CI_COMMIT_SHORT_SHA}"
     paths:

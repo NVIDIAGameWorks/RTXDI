@@ -148,10 +148,10 @@ void StoreShadingOutput(
         else
         {
             float diffNormDist = REBLUR_FrontEnd_GetNormHitDist(diffuseHitT, viewDepth, g_Const.reblurDiffHitDistParams);
-            u_DiffuseLighting[lightingTexturePos] = REBLUR_FrontEnd_PackRadianceAndHitDist(diffuse, diffNormDist);
+            u_DiffuseLighting[lightingTexturePos] = REBLUR_FrontEnd_PackRadianceAndNormHitDist(diffuse, diffNormDist);
             
             float specNormDist = REBLUR_FrontEnd_GetNormHitDist(specularHitT, viewDepth, g_Const.reblurSpecHitDistParams, roughness);
-            u_SpecularLighting[lightingTexturePos] = REBLUR_FrontEnd_PackRadianceAndHitDist(specular, specNormDist);
+            u_SpecularLighting[lightingTexturePos] = REBLUR_FrontEnd_PackRadianceAndNormHitDist(specular, specNormDist);
         }
     }
     else

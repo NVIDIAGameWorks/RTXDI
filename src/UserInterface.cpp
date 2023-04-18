@@ -212,7 +212,6 @@ void UIData::SetDefaultDenoiserSettings()
     reblurSettings.antilagIntensitySettings.thresholdMax = 0.14f;
     reblurSettings.antilagIntensitySettings.sensitivityToDarkness = 0.25f;
     reblurSettings.antilagIntensitySettings.enable = true;
-    reblurSettings.enableAdvancedPrepass = false;
     reblurSettings.enableAntiFirefly = true;
     
     relaxSettings = nrd::RelaxDiffuseSpecularSettings();
@@ -220,8 +219,6 @@ void UIData::SetDefaultDenoiserSettings()
     relaxSettings.diffuseMaxFastAccumulatedFrameNum = 1;
     relaxSettings.specularMaxFastAccumulatedFrameNum = 1;
     relaxSettings.diffusePhiLuminance = 1.0f;
-    relaxSettings.disocclusionFixEdgeStoppingNormalPower = 1.0f;
-    relaxSettings.disocclusionFixNumFramesToFix = 1;
     relaxSettings.spatialVarianceEstimationHistoryThreshold = 1;
     relaxSettings.enableAntiFirefly = true;
 }
@@ -1011,8 +1008,6 @@ void UserInterface::DenoiserSettings()
                     ImGui::SameLine();
                     ImGui::Checkbox("Roughness edge stopping", &m_ui.relaxSettings.enableRoughnessEdgeStopping);
                     ImGui::Checkbox("Pre-pass", &m_ui.usePrePass);
-                    ImGui::SameLine();
-                    ImGui::Checkbox("Virtual history clamping", &m_ui.relaxSettings.enableSpecularVirtualHistoryClamping);
 
                     ImGui::Text("Reprojection:");
                     ImGui::SliderFloat("Spec variance boost", &m_ui.relaxSettings.specularVarianceBoost, 0.0f, 8.0f, "%.2f");
@@ -1028,12 +1023,7 @@ void UserInterface::DenoiserSettings()
                     ImGui::SliderFloat("Spec lobe angle slack", &m_ui.relaxSettings.specularLobeAngleSlack, 0.0f, 89.0f, "%.3f", ImGuiSliderFlags_Logarithmic);
                     ImGui::SliderFloat2("Diff-Spec min luma weight", &m_ui.relaxSettings.diffuseMinLuminanceWeight, 0.0f, 1.0f, "%.2f");
                     ImGui::SliderFloat("Depth threshold", &m_ui.relaxSettings.depthThreshold, 0.0f, 1.0f, "%.3f", ImGuiSliderFlags_Logarithmic);
-
-                    ImGui::Text("History fix:");
-                    ImGui::SliderFloat("Edge-stop normal power", &m_ui.relaxSettings.disocclusionFixEdgeStoppingNormalPower, 0.0f, 128.0f, "%.1f");
-                    ImGui::SliderFloat("Max radius", &m_ui.relaxSettings.disocclusionFixMaxRadius, 0.0f, 100.0f, "%.1f");
-                    ImGui::SliderInt("Frames to fix", (int32_t*)&m_ui.relaxSettings.disocclusionFixNumFramesToFix, 0, 10);
-
+                    
                     ImGui::Text("Spatial variance estimation:");
                     ImGui::SliderInt("History threshold", (int32_t*)&m_ui.relaxSettings.spatialVarianceEstimationHistoryThreshold, 0, 10);
 
@@ -1051,14 +1041,10 @@ void UserInterface::DenoiserSettings()
                     ImGui::Checkbox("Reference accum", &m_ui.reblurSettings.enableReferenceAccumulation);
 
                     ImGui::Text("Spatial filering:");
-                    ImGui::SliderFloat("Input mix", &m_ui.reblurSettings.inputMix, 0.0f, 1.0f, "%.3f");
                     ImGui::SliderFloat("Blur base radius (px)", &m_ui.reblurSettings.blurRadius, 0.0f, 60.0f, "%.1f");
-                    ImGui::SliderFloat("Min radius scale", &m_ui.reblurSettings.minConvergedStateBaseRadiusScale, 0.0f, 1.0f, "%.2f");
-                    ImGui::SliderFloat("Max radius scale", &m_ui.reblurSettings.maxAdaptiveRadiusScale, 0.0f, 10.0f, "%.2f");
                     ImGui::SliderFloat("Lobe fraction", &m_ui.reblurSettings.lobeAngleFraction, 0.0f, 1.0f, "%.2f");
                     ImGui::SliderFloat("Roughness fraction", &m_ui.reblurSettings.roughnessFraction, 0.0f, 1.0f, "%.2f");
                     ImGui::SliderFloat("Stabilization strength", &m_ui.reblurSettings.stabilizationStrength, 0.0f, 1.0f, "%.2f");
-                    ImGui::SliderFloat("History fix strength", &m_ui.reblurSettings.historyFixStrength, 0.0f, 1.0f, "%.2f");
                     ImGui::SetNextItemWidth( ImGui::CalcItemWidth() * 0.6f );
                     ImGui::SliderFloat("Responsive accum roughness threshold", &m_ui.reblurSettings.responsiveAccumulationRoughnessThreshold, 0.0f, 1.0f, "%.2f");
 

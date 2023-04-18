@@ -105,7 +105,7 @@ bool NrdIntegration::Initialize(uint32_t width, uint32_t height)
     denoiserCreationDesc.memoryAllocatorInterface.Allocate = NrdAllocate;
     denoiserCreationDesc.memoryAllocatorInterface.Reallocate = NrdReallocate;
     denoiserCreationDesc.memoryAllocatorInterface.Free = NrdFree;
-    denoiserCreationDesc.requestedMethodNum = dim(methods);
+    denoiserCreationDesc.requestedMethodsNum = dim(methods);
     denoiserCreationDesc.requestedMethods = methods;
 
     nrd::Result res = nrd::CreateDenoiser(denoiserCreationDesc, m_Denoiser);
@@ -117,16 +117,16 @@ bool NrdIntegration::Initialize(uint32_t width, uint32_t height)
 
 
     const nvrhi::BufferDesc constantBufferDesc = nvrhi::utils::CreateVolatileConstantBufferDesc(
-        denoiserDesc.constantBufferDesc.maxDataSize, 
+        denoiserDesc.constantBufferMaxDataSize, 
         "NrdConstantBuffer", 
-        denoiserDesc.descriptorSetDesc.constantBufferMaxNum * 4);
+        denoiserDesc.descriptorPoolDesc.constantBuffersMaxNum * 4);
 
     m_ConstantBuffer = m_Device->createBuffer(constantBufferDesc);
 
 
-    for (uint32_t samplerIndex = 0; samplerIndex < denoiserDesc.staticSamplerNum; samplerIndex++)
+    for (uint32_t samplerIndex = 0; samplerIndex < denoiserDesc.samplersNum; samplerIndex++)
     {
-        const nrd::Sampler& samplerMode = denoiserDesc.staticSamplers[samplerIndex].sampler;
+        const nrd::Sampler& samplerMode = denoiserDesc.samplers[samplerIndex];
 
         nvrhi::SamplerAddressMode addressMode = nvrhi::SamplerAddressMode::Wrap;
         bool filter = false;
@@ -175,10 +175,10 @@ bool NrdIntegration::Initialize(uint32_t width, uint32_t height)
     bindingOffsets.constantBuffer = libraryDesc.spirvBindingOffsets.constantBufferOffset;
     bindingOffsets.unorderedAccess = libraryDesc.spirvBindingOffsets.storageTextureAndBufferOffset;
 
-    for (uint32_t pipelineIndex = 0; pipelineIndex < denoiserDesc.pipelineNum; pipelineIndex++)
+    for (uint32_t pipelineIndex = 0; pipelineIndex < denoiserDesc.pipelinesNum; pipelineIndex++)
     {
         const nrd::PipelineDesc& nrdPipelineDesc = denoiserDesc.pipelines[pipelineIndex];
-        const nrd::ComputeShader& nrdComputeShader = isVulkan ? nrdPipelineDesc.computeShaderSPIRV : nrdPipelineDesc.computeShaderDXIL;
+        const nrd::ComputeShaderDesc& nrdComputeShader = isVulkan ? nrdPipelineDesc.computeShaderSPIRV : nrdPipelineDesc.computeShaderDXIL;
 
         NrdPipeline pipeline;
         pipeline.Shader = m_Device->createShader(nvrhi::ShaderDesc(nvrhi::ShaderType::Compute), nrdComputeShader.bytecode, nrdComputeShader.size);
@@ -192,28 +192,29 @@ bool NrdIntegration::Initialize(uint32_t width, uint32_t height)
         nvrhi::BindingLayoutDesc layoutDesc;
         layoutDesc.visibility = nvrhi::ShaderType::Compute;
         layoutDesc.bindingOffsets = bindingOffsets;
+        layoutDesc.registerSpace = denoiserDesc.constantBufferSpaceIndex;
+        assert(layoutDesc.registerSpace == denoiserDesc.samplersSpaceIndex);
+        assert(layoutDesc.registerSpace == denoiserDesc.resourcesSpaceIndex);
 
         nvrhi::BindingLayoutItem constantBufferItem = {};
         constantBufferItem.type = nvrhi::ResourceType::VolatileConstantBuffer;
-        constantBufferItem.slot = denoiserDesc.constantBufferDesc.registerIndex;
+        constantBufferItem.slot = denoiserDesc.constantBufferRegisterIndex;
         layoutDesc.bindings.push_back(constantBufferItem);
 
-        for (uint32_t samplerIndex = 0; samplerIndex < denoiserDesc.staticSamplerNum; samplerIndex++)
+        for (uint32_t samplerIndex = 0; samplerIndex < denoiserDesc.samplersNum; samplerIndex++)
         {
-            const nrd::StaticSamplerDesc& nrdStaticSampler = denoiserDesc.staticSamplers[samplerIndex];
-
             nvrhi::BindingLayoutItem samplerItem = {};
             samplerItem.type = nvrhi::ResourceType::Sampler;
-            samplerItem.slot = nrdStaticSampler.registerIndex;
+            samplerItem.slot = denoiserDesc.samplersBaseRegisterIndex + samplerIndex;
             layoutDesc.bindings.push_back(samplerItem);
         }
 
-        for (uint32_t descriptorRangeIndex = 0; descriptorRangeIndex < nrdPipelineDesc.descriptorRangeNum; descriptorRangeIndex++)
+        for (uint32_t resourceRangeIndex = 0; resourceRangeIndex < nrdPipelineDesc.resourceRangesNum; resourceRangeIndex++)
         {
-            const nrd::DescriptorRangeDesc& nrdDescriptorRange = nrdPipelineDesc.descriptorRanges[descriptorRangeIndex];
+            const nrd::ResourceRangeDesc& nrdResourceRange = nrdPipelineDesc.resourceRanges[resourceRangeIndex];
 
             nvrhi::BindingLayoutItem resourceItem = {};
-            switch (nrdDescriptorRange.descriptorType)
+            switch (nrdResourceRange.descriptorType)
             {
             case nrd::DescriptorType::TEXTURE:
                 resourceItem.type = nvrhi::ResourceType::Texture_SRV;
@@ -226,9 +227,9 @@ bool NrdIntegration::Initialize(uint32_t width, uint32_t height)
                 break;
             }
 
-            for (uint32_t descriptorOffset = 0; descriptorOffset < nrdDescriptorRange.descriptorNum; descriptorOffset++)
+            for (uint32_t descriptorOffset = 0; descriptorOffset < nrdResourceRange.descriptorsNum; descriptorOffset++)
             {
-                resourceItem.slot = nrdDescriptorRange.baseRegisterIndex + descriptorOffset;
+                resourceItem.slot = nrdResourceRange.baseRegisterIndex + descriptorOffset;
                 layoutDesc.bindings.push_back(resourceItem);
             }
         }
@@ -357,18 +358,12 @@ void NrdIntegration::RunDenoiserPasses(
     commonSettings.cameraJitter[1] = pixelOffset.y;
     commonSettings.frameIndex = frameIndex;
     commonSettings.isMotionVectorInWorldSpace = false;
-    commonSettings.isHistoryConfidenceInputsAvailable = enableConfidenceInputs;
+    commonSettings.isHistoryConfidenceAvailable = enableConfidenceInputs;
     commonSettings.debug = debug;
 
     const nrd::DispatchDesc* dispatchDescs = nullptr;
     uint32_t dispatchDescNum = 0;
-    nrd::Result result = nrd::GetComputeDispatches(*m_Denoiser, commonSettings, dispatchDescs, dispatchDescNum);
-
-    if (result != nrd::Result::SUCCESS)
-    {
-        assert(!"nrd::GetComputeDispatches failed");
-        return;
-    }
+    nrd::GetComputeDispatches(*m_Denoiser, commonSettings, dispatchDescs, dispatchDescNum);
 
     const nrd::DenoiserDesc& denoiserDesc = nrd::GetDenoiserDesc(*m_Denoiser);
 
@@ -385,27 +380,25 @@ void NrdIntegration::RunDenoiserPasses(
         commandList->writeBuffer(m_ConstantBuffer, dispatchDesc.constantBufferData, dispatchDesc.constantBufferDataSize);
 
         nvrhi::BindingSetDesc setDesc;
-        setDesc.bindings.push_back(nvrhi::BindingSetItem::ConstantBuffer(denoiserDesc.constantBufferDesc.registerIndex, m_ConstantBuffer));
+        setDesc.bindings.push_back(nvrhi::BindingSetItem::ConstantBuffer(denoiserDesc.constantBufferRegisterIndex, m_ConstantBuffer));
 
-        for (uint32_t samplerIndex = 0; samplerIndex < denoiserDesc.staticSamplerNum; samplerIndex++)
+        for (uint32_t samplerIndex = 0; samplerIndex < denoiserDesc.samplersNum; samplerIndex++)
         {
-            const nrd::StaticSamplerDesc& nrdStaticSampler = denoiserDesc.staticSamplers[samplerIndex];
-
             assert(m_Samplers[samplerIndex]);
-            setDesc.bindings.push_back(nvrhi::BindingSetItem::Sampler(nrdStaticSampler.registerIndex, m_Samplers[samplerIndex]));
+            setDesc.bindings.push_back(nvrhi::BindingSetItem::Sampler(denoiserDesc.samplersBaseRegisterIndex + samplerIndex, m_Samplers[samplerIndex]));
         }
 
         const nrd::PipelineDesc& nrdPipelineDesc = denoiserDesc.pipelines[dispatchDesc.pipelineIndex];
         uint32_t resourceIndex = 0;
 
-        for (uint32_t descriptorRangeIndex = 0; descriptorRangeIndex < nrdPipelineDesc.descriptorRangeNum; descriptorRangeIndex++)
+        for (uint32_t resourceRangeIndex = 0; resourceRangeIndex < nrdPipelineDesc.resourceRangesNum; resourceRangeIndex++)
         {
-            const nrd::DescriptorRangeDesc& nrdDescriptorRange = nrdPipelineDesc.descriptorRanges[descriptorRangeIndex];
+            const nrd::ResourceRangeDesc& nrdDescriptorRange = nrdPipelineDesc.resourceRanges[resourceRangeIndex];
 
-            for (uint32_t descriptorOffset = 0; descriptorOffset < nrdDescriptorRange.descriptorNum; descriptorOffset++)
+            for (uint32_t descriptorOffset = 0; descriptorOffset < nrdDescriptorRange.descriptorsNum; descriptorOffset++)
             {
                 assert(resourceIndex < dispatchDesc.resourceNum);
-                const nrd::Resource& resource = dispatchDesc.resources[resourceIndex];
+                const nrd::ResourceDesc& resource = dispatchDesc.resources[resourceIndex];
 
                 assert(resource.stateNeeded == nrdDescriptorRange.descriptorType);
 

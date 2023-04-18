@@ -16,6 +16,7 @@
 
 #ifdef WITH_NRD
 #define NRD_HEADER_ONLY
+#include <NRDEncoding.hlsli>
 #include <NRD.hlsli>
 #endif
 
@@ -65,6 +66,15 @@ void main(uint2 globalIdx : SV_DispatchThreadID)
         {
             float4 denoised_diffuse = t_DenoisedDiffuse[globalIdx].rgba;
             float4 denoised_specular = t_DenoisedSpecular[globalIdx].rgba;
+
+            if (g_Const.denoiserMode == DENOISER_MODE_REBLUR)
+            {
+                denoised_diffuse = REBLUR_BackEnd_UnpackRadianceAndNormHitDist(denoised_diffuse);
+                denoised_specular = REBLUR_BackEnd_UnpackRadianceAndNormHitDist(denoised_specular);
+                
+                diffuse_illumination = REBLUR_BackEnd_UnpackRadianceAndNormHitDist(diffuse_illumination);
+                specular_illumination = REBLUR_BackEnd_UnpackRadianceAndNormHitDist(specular_illumination);
+            }
 
             diffuse_illumination.rgb = lerp(denoised_diffuse.rgb,
                 clamp(diffuse_illumination.rgb, denoised_diffuse.rgb * g_Const.noiseClampLow, denoised_diffuse.rgb * g_Const.noiseClampHigh),

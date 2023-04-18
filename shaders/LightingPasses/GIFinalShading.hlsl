@@ -16,6 +16,7 @@
 
 #ifdef WITH_NRD
 #define NRD_HEADER_ONLY
+#include <NRDEncoding.hlsli>
 #include <NRD.hlsli>
 #endif
 

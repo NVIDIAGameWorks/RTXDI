@@ -22,6 +22,9 @@ set_target_properties(${project} PROPERTIES FOLDER ${folder})
 if (TARGET NRD)
 	target_compile_definitions(${project} PRIVATE WITH_NRD=1)
 	target_link_libraries(${project} NRD)
+	
+	# NRD doesn't add a public include path at this time, work around that
+	target_include_directories(${project} PRIVATE "${CMAKE_SOURCE_DIR}/NRD/Include")
 endif()
 
 if (TARGET DLSS)

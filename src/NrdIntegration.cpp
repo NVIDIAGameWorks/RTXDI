@@ -397,7 +397,7 @@ void NrdIntegration::RunDenoiserPasses(
 
             for (uint32_t descriptorOffset = 0; descriptorOffset < nrdDescriptorRange.descriptorsNum; descriptorOffset++)
             {
-                assert(resourceIndex < dispatchDesc.resourceNum);
+                assert(resourceIndex < dispatchDesc.resourcesNum);
                 const nrd::ResourceDesc& resource = dispatchDesc.resources[resourceIndex];
 
                 assert(resource.stateNeeded == nrdDescriptorRange.descriptorType);
@@ -463,7 +463,7 @@ void NrdIntegration::RunDenoiserPasses(
             }
         }
 
-        assert(resourceIndex == dispatchDesc.resourceNum);
+        assert(resourceIndex == dispatchDesc.resourcesNum);
 
         const NrdPipeline& pipeline = m_Pipelines[dispatchDesc.pipelineIndex];
 

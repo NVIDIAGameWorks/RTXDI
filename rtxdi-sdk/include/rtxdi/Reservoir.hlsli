@@ -236,4 +236,107 @@ float RTXDI_GetReservoirInvPdf(const RTXDI_Reservoir reservoir)
     return reservoir.weightSum;
 }
 
+// Adds a new, non-reservoir light sample into the reservoir, returns true if this sample was selected.
+// Algorithm (3) from the ReSTIR paper, Streaming RIS using weighted reservoir sampling.
+bool RTXDI_StreamSample(
+    inout RTXDI_Reservoir reservoir,
+    uint lightIndex,
+    float2 uv,
+    float random,
+    float targetPdf,
+    float invSourcePdf)
+{
+    // What's the current weight
+    float risWeight = targetPdf * invSourcePdf;
+
+    // Add one sample to the counter
+    reservoir.M += 1;
+
+    // Update the weight sum
+    reservoir.weightSum += risWeight;
+
+    // Decide if we will randomly pick this sample
+    bool selectSample = (random * reservoir.weightSum < risWeight);
+
+    // If we did select this sample, update the relevant data.
+    // New samples don't have visibility or age information, we can skip that.
+    if (selectSample)
+    {
+        reservoir.lightData = lightIndex | RTXDI_Reservoir_LightValidBit;
+        reservoir.uvData = uint(saturate(uv.x) * 0xffff) | (uint(saturate(uv.y) * 0xffff) << 16);
+        reservoir.targetPdf = targetPdf;
+    }
+
+    return selectSample;
+}
+
+// Adds `newReservoir` into `reservoir`, returns true if the new reservoir's sample was selected.
+// This is a very general form, allowing input parameters to specfiy normalization and targetPdf
+// rather than computing them from `newReservoir`.  Named "internal" since these parameters take
+// different meanings (e.g., in RTXDI_CombineReservoirs() or RTXDI_StreamNeighborWithPairwiseMIS())
+bool RTXDI_InternalSimpleResample(
+    inout RTXDI_Reservoir reservoir,
+    const RTXDI_Reservoir newReservoir,
+    float random,
+    float targetPdf RTXDI_DEFAULT(1.0f),            // Usually closely related to the sample normalization, 
+    float sampleNormalization RTXDI_DEFAULT(1.0f),  //     typically off by some multiplicative factor 
+    float sampleM RTXDI_DEFAULT(1.0f)               // In its most basic form, should be newReservoir.M
+)
+{
+    // What's the current weight (times any prior-step RIS normalization factor)
+    float risWeight = targetPdf * sampleNormalization;
+
+    // Our *effective* candidate pool is the sum of our candidates plus those of our neighbors
+    reservoir.M += sampleM;
+
+    // Update the weight sum
+    reservoir.weightSum += risWeight;
+
+    // Decide if we will randomly pick this sample
+    bool selectSample = (random * reservoir.weightSum < risWeight);
+
+    // If we did select this sample, update the relevant data
+    if (selectSample)
+    {
+        reservoir.lightData = newReservoir.lightData;
+        reservoir.uvData = newReservoir.uvData;
+        reservoir.targetPdf = targetPdf;
+        reservoir.packedVisibility = newReservoir.packedVisibility;
+        reservoir.spatialDistance = newReservoir.spatialDistance;
+        reservoir.age = newReservoir.age;
+    }
+
+    return selectSample;
+}
+
+// Adds `newReservoir` into `reservoir`, returns true if the new reservoir's sample was selected.
+// Algorithm (4) from the ReSTIR paper, Combining the streams of multiple reservoirs.
+// Normalization - Equation (6) - is postponed until all reservoirs are combined.
+bool RTXDI_CombineReservoirs(
+    inout RTXDI_Reservoir reservoir,
+    const RTXDI_Reservoir newReservoir,
+    float random,
+    float targetPdf)
+{
+    return RTXDI_InternalSimpleResample(
+        reservoir,
+        newReservoir,
+        random,
+        targetPdf,
+        newReservoir.weightSum * newReservoir.M,
+        newReservoir.M
+    );
+}
+
+// Performs normalization of the reservoir after streaming. Equation (6) from the ReSTIR paper.
+void RTXDI_FinalizeResampling(
+    inout RTXDI_Reservoir reservoir,
+    float normalizationNumerator,
+    float normalizationDenominator)
+{
+    float denominator = reservoir.targetPdf * normalizationDenominator;
+
+    reservoir.weightSum = (denominator == 0.0) ? 0.0 : (reservoir.weightSum * normalizationNumerator) / denominator;
+}
+
 #endif // RESERVOIR_HLSLI

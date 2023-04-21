@@ -164,7 +164,7 @@ namespace rtxdi
         uint32_t GetReGIRLightSlotCount() const;
 
         void FillRuntimeParameters(
-            RTXDI_ResamplingRuntimeParameters& runtimeParams,
+            RTXDI_RuntimeParameters& runtimeParams,
             const FrameParameters& frame) const;
 
         void FillNeighborOffsetBuffer(uint8_t* buffer) const;

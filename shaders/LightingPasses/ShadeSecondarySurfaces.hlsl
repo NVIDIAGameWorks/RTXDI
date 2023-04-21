@@ -16,6 +16,7 @@
 
 #include "RtxdiApplicationBridge.hlsli"
 
+#include <rtxdi/InitialSamplingFunctions.hlsli>
 #include <rtxdi/ResamplingFunctions.hlsli>
 #include <rtxdi/GIResamplingFunctions.hlsli>
 
@@ -39,7 +40,7 @@ void RayGen()
 #if !USE_RAY_QUERY
     uint2 GlobalIndex = DispatchRaysIndex().xy;
 #endif
-    uint2 pixelPosition = RTXDI_ReservoirPosToPixelPos(GlobalIndex, g_Const.runtimeParams);
+    uint2 pixelPosition = RTXDI_ReservoirPosToPixelPos(GlobalIndex, g_Const.runtimeParams.resamplingParams);
 
     if (any(pixelPosition > int2(g_Const.view.viewportSize)))
         return;
@@ -47,8 +48,8 @@ void RayGen()
     RAB_RandomSamplerState rng = RAB_InitRandomSampler(GlobalIndex, 6);
     RAB_RandomSamplerState tileRng = RAB_InitRandomSampler(GlobalIndex / RTXDI_TILE_SIZE_IN_PIXELS, 1);
 
-    const RTXDI_ResamplingRuntimeParameters params = g_Const.runtimeParams;
-    const uint gbufferIndex = RTXDI_ReservoirPositionToPointer(params, GlobalIndex, 0);
+    const RTXDI_RuntimeParameters params = g_Const.runtimeParams;
+    const uint gbufferIndex = RTXDI_ReservoirPositionToPointer(params.resamplingParams, GlobalIndex, 0);
 
     RAB_Surface primarySurface = RAB_GetGBufferSurface(pixelPosition, false);
 
@@ -117,7 +118,7 @@ void RayGen()
                 sparams.enableMaterialSimilarityTest = false;
 
                 reservoir = RTXDI_SpatialResampling(secondaryPixelPos, secondarySurface, reservoir,
-                    rng, sparams, params, lightSample);
+                    rng, sparams, params.resamplingParams, lightSample);
             }
         }
 
@@ -150,8 +151,8 @@ void RayGen()
             reservoir = RTXDI_MakeGIReservoir(secondarySurface.worldPos,
                 secondarySurface.normal, radiance, secondaryGBufferData.pdf);
         }
-        uint2 reservoirPosition = RTXDI_PixelPosToReservoirPos(pixelPosition, g_Const.runtimeParams);
-        RTXDI_StoreGIReservoir(reservoir, g_Const.runtimeParams, reservoirPosition, g_Const.initialOutputBufferIndex);
+        uint2 reservoirPosition = RTXDI_PixelPosToReservoirPos(pixelPosition, g_Const.runtimeParams.resamplingParams);
+        RTXDI_StoreGIReservoir(reservoir, g_Const.runtimeParams.resamplingParams, reservoirPosition, g_Const.initialOutputBufferIndex);
 
         // Save the initial sample radiance for MIS in the final shading pass
         secondaryGBufferData.emission = outputShadingResult ? 0 : radiance;

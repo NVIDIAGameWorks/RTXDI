@@ -177,7 +177,7 @@ struct ConfidenceConstants
 
 struct VisualizationConstants
 {
-    RTXDI_ResamplingRuntimeParameters runtimeParams;
+    RTXDI_RuntimeParameters runtimeParams;
 
     int2 outputSize;
     float2 resolutionScale;
@@ -191,7 +191,7 @@ struct ResamplingConstants
 {
     PlanarViewConstants view;
     PlanarViewConstants prevView;
-    RTXDI_ResamplingRuntimeParameters runtimeParams;
+    RTXDI_RuntimeParameters runtimeParams;
     
     float4 reblurDiffHitDistParams;
     float4 reblurSpecHitDistParams;

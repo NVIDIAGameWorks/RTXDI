@@ -12,7 +12,7 @@
 
 #include "RtxdiApplicationBridge.hlsli"
 
-#include <rtxdi/ResamplingFunctions.hlsli>
+#include <rtxdi/InitialSamplingFunctions.hlsli>
 
 #if USE_RAY_QUERY
 [numthreads(RTXDI_SCREEN_SPACE_GROUP_SIZE, RTXDI_SCREEN_SPACE_GROUP_SIZE, 1)]
@@ -26,9 +26,9 @@ void RayGen()
     uint2 GlobalIndex = DispatchRaysIndex().xy;
 #endif
 
-    const RTXDI_ResamplingRuntimeParameters params = g_Const.runtimeParams;
+    const RTXDI_RuntimeParameters params = g_Const.runtimeParams;
 
-    uint2 pixelPosition = RTXDI_ReservoirPosToPixelPos(GlobalIndex, params);
+    uint2 pixelPosition = RTXDI_ReservoirPosToPixelPos(GlobalIndex, params.resamplingParams);
 
     RAB_RandomSamplerState rng = RAB_InitRandomSampler(pixelPosition, 1);
     RAB_RandomSamplerState tileRng = RAB_InitRandomSampler(pixelPosition / RTXDI_TILE_SIZE_IN_PIXELS, 1);
@@ -56,5 +56,5 @@ void RayGen()
         }
     }
 
-    RTXDI_StoreReservoir(reservoir, params, GlobalIndex, g_Const.initialOutputBufferIndex);
+    RTXDI_StoreReservoir(reservoir, params.resamplingParams, GlobalIndex, g_Const.initialOutputBufferIndex);
 }

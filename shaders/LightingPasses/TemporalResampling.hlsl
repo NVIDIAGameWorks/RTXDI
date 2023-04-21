@@ -32,7 +32,7 @@ void RayGen()
     uint2 GlobalIndex = DispatchRaysIndex().xy;
 #endif
 
-    const RTXDI_ResamplingRuntimeParameters params = g_Const.runtimeParams;
+    const RTXDI_ResamplingRuntimeParameters params = g_Const.runtimeParams.resamplingParams;
 
     uint2 pixelPosition = RTXDI_ReservoirPosToPixelPos(GlobalIndex, params);
 
@@ -77,7 +77,7 @@ void RayGen()
 #ifdef RTXDI_ENABLE_BOILING_FILTER
     if (g_Const.boilingFilterStrength > 0)
     {
-        RTXDI_BoilingFilter(LocalIndex, g_Const.boilingFilterStrength, params, temporalResult);
+        RTXDI_BoilingFilter(LocalIndex, g_Const.boilingFilterStrength, temporalResult);
     }
 #endif
 

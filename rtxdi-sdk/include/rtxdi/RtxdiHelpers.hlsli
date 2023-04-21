@@ -82,12 +82,12 @@ uint RTXDI_ReservoirPositionToPointer(
 
 #if RTXDI_REGIR_MODE == RTXDI_REGIR_GRID
 
-float RTXDI_ReGIR_GetJitterScale(RTXDI_ResamplingRuntimeParameters params, float3 worldPos)
+float RTXDI_ReGIR_GetJitterScale(RTXDI_RuntimeParameters params, float3 worldPos)
 {
     return params.regirCommon.samplingJitter * params.regirCommon.cellSize;
 }
 
-int RTXDI_ReGIR_WorldPosToCellIndex(RTXDI_ResamplingRuntimeParameters params, float3 worldPos)
+int RTXDI_ReGIR_WorldPosToCellIndex(RTXDI_RuntimeParameters params, float3 worldPos)
 {
     const float3 gridCenter = float3(params.regirCommon.centerX, params.regirCommon.centerY, params.regirCommon.centerZ);
     const int3 gridCellCount = int3(params.regirGrid.cellsX, params.regirGrid.cellsY, params.regirGrid.cellsZ);
@@ -102,7 +102,7 @@ int RTXDI_ReGIR_WorldPosToCellIndex(RTXDI_ResamplingRuntimeParameters params, fl
     return gridCell.x + (gridCell.y + (gridCell.z * gridCellCount.y)) * gridCellCount.x;
 }
 
-bool RTXDI_ReGIR_CellIndexToWorldPos(RTXDI_ResamplingRuntimeParameters params, int cellIndex, out float3 cellCenter, out float cellRadius)
+bool RTXDI_ReGIR_CellIndexToWorldPos(RTXDI_RuntimeParameters params, int cellIndex, out float3 cellCenter, out float cellRadius)
 {
     const float3 gridCenter = float3(params.regirCommon.centerX, params.regirCommon.centerY, params.regirCommon.centerZ);
     const int3 gridCellCount = int3(params.regirGrid.cellsX, params.regirGrid.cellsY, params.regirGrid.cellsZ);
@@ -126,7 +126,7 @@ bool RTXDI_ReGIR_CellIndexToWorldPos(RTXDI_ResamplingRuntimeParameters params, i
 
 #elif RTXDI_REGIR_MODE == RTXDI_REGIR_ONION
 
-float RTXDI_ReGIR_GetJitterScale(RTXDI_ResamplingRuntimeParameters params, float3 worldPos)
+float RTXDI_ReGIR_GetJitterScale(RTXDI_RuntimeParameters params, float3 worldPos)
 {
     const float3 onionCenter = float3(params.regirCommon.centerX, params.regirCommon.centerY, params.regirCommon.centerZ);
     const float3 translatedPos = worldPos - onionCenter;
@@ -140,7 +140,7 @@ float RTXDI_ReGIR_GetJitterScale(RTXDI_ResamplingRuntimeParameters params, float
     return jitterScale * params.regirCommon.samplingJitter * params.regirCommon.cellSize;
 }
 
-int RTXDI_ReGIR_WorldPosToCellIndex(RTXDI_ResamplingRuntimeParameters params, float3 worldPos)
+int RTXDI_ReGIR_WorldPosToCellIndex(RTXDI_RuntimeParameters params, float3 worldPos)
 {
     const float3 onionCenter = float3(params.regirCommon.centerX, params.regirCommon.centerY, params.regirCommon.centerZ);
     const float3 translatedPos = worldPos - onionCenter;
@@ -189,7 +189,7 @@ int RTXDI_ReGIR_WorldPosToCellIndex(RTXDI_ResamplingRuntimeParameters params, fl
     return int(cellIndex + ringCellOffset + layerIndex * layerGroup.cellsPerLayer + layerGroup.layerCellOffset);
 }
 
-bool RTXDI_ReGIR_CellIndexToWorldPos(RTXDI_ResamplingRuntimeParameters params, int cellIndex, out float3 cellCenter, out float cellRadius)
+bool RTXDI_ReGIR_CellIndexToWorldPos(RTXDI_RuntimeParameters params, int cellIndex, out float3 cellCenter, out float cellRadius)
 {
     const float3 onionCenter = float3(params.regirCommon.centerX, params.regirCommon.centerY, params.regirCommon.centerZ);
 
@@ -281,7 +281,7 @@ bool RTXDI_ReGIR_CellIndexToWorldPos(RTXDI_ResamplingRuntimeParameters params, i
 
 #if RTXDI_REGIR_MODE != RTXDI_REGIR_DISABLED
 
-float3 RTXDI_VisualizeReGIRCells(RTXDI_ResamplingRuntimeParameters params, float3 worldPos)
+float3 RTXDI_VisualizeReGIRCells(RTXDI_RuntimeParameters params, float3 worldPos)
 {
     int cellIndex = RTXDI_ReGIR_WorldPosToCellIndex(params, worldPos);
     
@@ -312,7 +312,6 @@ groupshared uint s_count[(RTXDI_BOILING_FILTER_GROUP_SIZE * RTXDI_BOILING_FILTER
 bool RTXDI_BoilingFilterInternal(
     uint2 LocalIndex,
     float filterStrength, // (0..1]
-    RTXDI_ResamplingRuntimeParameters params,
     float reservoirWeight)
 {
     // Boiling happens when some highly unlikely light is discovered and it is relevant

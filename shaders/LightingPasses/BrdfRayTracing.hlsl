@@ -34,7 +34,7 @@ void RayGen()
 #if !USE_RAY_QUERY
     uint2 GlobalIndex = DispatchRaysIndex().xy;
 #endif
-    uint2 pixelPosition = RTXDI_ReservoirPosToPixelPos(GlobalIndex, g_Const.runtimeParams);
+    uint2 pixelPosition = RTXDI_ReservoirPosToPixelPos(GlobalIndex, g_Const.runtimeParams.resamplingParams);
 
     RAB_Surface surface = RAB_GetGBufferSurface(pixelPosition, false);
 
@@ -172,8 +172,7 @@ void RayGen()
         InterlockedAdd(u_RayCountBuffer[RAY_COUNT_TRACED(g_PerPassConstants.rayCountBufferIndex)], 1);
     }
 
-    const RTXDI_ResamplingRuntimeParameters params = g_Const.runtimeParams;
-    uint gbufferIndex = RTXDI_ReservoirPositionToPointer(params, GlobalIndex, 0);
+    uint gbufferIndex = RTXDI_ReservoirPositionToPointer(g_Const.runtimeParams.resamplingParams, GlobalIndex, 0);
     
     struct 
     {

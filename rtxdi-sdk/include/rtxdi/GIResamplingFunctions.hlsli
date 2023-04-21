@@ -876,12 +876,11 @@ RTXDI_GIReservoir RTXDI_GISpatioTemporalResampling(
 void RTXDI_GIBoilingFilter(
     uint2 LocalIndex,
     float filterStrength, // (0..1]
-    RTXDI_ResamplingRuntimeParameters params,
     inout RTXDI_GIReservoir reservoir)
 {
     float weight = RTXDI_Luminance(reservoir.radiance) * reservoir.weightSum;
 
-    if (RTXDI_BoilingFilterInternal(LocalIndex, filterStrength, params, weight))
+    if (RTXDI_BoilingFilterInternal(LocalIndex, filterStrength, weight))
         reservoir = RTXDI_EmptyGIReservoir();
 }
 

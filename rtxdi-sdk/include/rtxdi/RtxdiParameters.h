@@ -34,6 +34,10 @@
 // Use MIS-like normalization with visibility rays. Unbiased.
 #define RTXDI_BIAS_CORRECTION_RAY_TRACED 3
 
+// This macro enables the functions that deal with the RIS buffer and presampling.
+#ifndef RTXDI_ENABLE_PRESAMPLING
+#define RTXDI_ENABLE_PRESAMPLING 1
+#endif
 
 #define RTXDI_ONION_MAX_LAYER_GROUPS 8
 #define RTXDI_ONION_MAX_RINGS 52
@@ -116,6 +120,12 @@ struct RTXDI_LocalLightRuntimeParameters
     uint32_t numLocalLights;
     uint32_t enableLocalLightImportanceSampling;
     uint32_t pad1;
+
+    // Presampling parameters
+    uint32_t localRisBufferOffset;
+    uint32_t localRisTileSize;
+    uint32_t localRisTileCount;
+    uint32_t pad2;
 };
 
 struct RTXDI_InfiniteLightRuntimeParameters
@@ -130,39 +140,36 @@ struct RTXDI_EnvironmentLightRuntimeParameters
 {
     uint32_t environmentLightPresent;
     uint32_t environmentLightIndex;
+    uint32_t pad1;
+    uint32_t pad2;
+
+    // Presampling parameters
     uint32_t environmentRisBufferOffset;
-    uint32_t environmentTileSize;
-
-    uint32_t environmentTileCount;
-    uint32_t pad1;
-    uint32_t pad2;
+    uint32_t environmentRisTileSize;
+    uint32_t environmentRisTileCount;
     uint32_t pad3;
-};
-
-struct RTXDI_RISBufferRuntimeParameters
-{
-    uint32_t tileSize;
-    uint32_t tileCount;
-    uint32_t pad1;
-    uint32_t pad2;
 };
 
 struct RTXDI_ResamplingRuntimeParameters
 {
-    RTXDI_LocalLightRuntimeParameters localLightParams;
-    RTXDI_InfiniteLightRuntimeParameters infiniteLightParams;
-    RTXDI_EnvironmentLightRuntimeParameters environmentLightParams;
-    RTXDI_RISBufferRuntimeParameters risBufferParams;
-
     uint32_t neighborOffsetMask;
     uint32_t uniformRandomNumber;
     uint32_t activeCheckerboardField; // 0 - no checkerboard, 1 - odd pixels, 2 - even pixels
     uint32_t reservoirBlockRowPitch;
-    
+
     uint32_t reservoirArrayPitch;
     uint32_t pad1;
     uint32_t pad2;
     uint32_t pad3;
+};
+
+struct RTXDI_RuntimeParameters
+{
+    RTXDI_LocalLightRuntimeParameters localLightParams;
+    RTXDI_InfiniteLightRuntimeParameters infiniteLightParams;
+    RTXDI_EnvironmentLightRuntimeParameters environmentLightParams;
+
+    RTXDI_ResamplingRuntimeParameters resamplingParams;
 
     RTXDI_ReGIRCommonParameters regirCommon;
     RTXDI_ReGIRGridParameters regirGrid;

@@ -154,7 +154,7 @@ int RAB_TranslateLightIndex(uint lightIndex, bool currentToPrevious)
     return -1;
 }
 
-float RAB_EvaluateLocalLightSourcePdf(RTXDI_ResamplingRuntimeParameters params, uint lightIndex)
+float RAB_EvaluateLocalLightSourcePdf(RTXDI_RuntimeParameters params, uint lightIndex)
 {
     return 0.0;
 }
@@ -234,6 +234,8 @@ layout(set = 0, binding = 3) buffer GI_RESERVOIR_BUFFER {
 #define RTXDI_NEIGHBOR_OFFSETS_BUFFER t_NeighborOffsets
 #define RTXDI_GI_RESERVOIR_BUFFER u_GIReservoirs
 
+#include "rtxdi/PresamplingFunctions.hlsli"
+#include "rtxdi/InitialSamplingFunctions.hlsli"
 #include "rtxdi/ResamplingFunctions.hlsli"
 
 layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;

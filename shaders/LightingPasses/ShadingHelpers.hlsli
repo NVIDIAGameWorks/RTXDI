@@ -114,10 +114,10 @@ void StoreShadingOutput(
         specular += priorSpecular.rgb;
     }
 
-    if (g_Const.denoiserMode == DENOISER_MODE_OFF && g_Const.runtimeParams.activeCheckerboardField != 0 && isLastPass)
+    if (g_Const.denoiserMode == DENOISER_MODE_OFF && g_Const.runtimeParams.resamplingParams.activeCheckerboardField != 0 && isLastPass)
     {
         int2 otherFieldPixelPosition = pixelPosition;
-        otherFieldPixelPosition.x += (g_Const.runtimeParams.activeCheckerboardField == 1) == ((pixelPosition.y & 1) != 0)
+        otherFieldPixelPosition.x += (g_Const.runtimeParams.resamplingParams.activeCheckerboardField == 1) == ((pixelPosition.y & 1) != 0)
             ? 1 : -1;
 
         if (g_Const.denoiserMode == DENOISER_MODE_RELAX || g_Const.enableAccumulation)

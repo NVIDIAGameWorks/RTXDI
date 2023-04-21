@@ -255,7 +255,7 @@ static uint32_t JenkinsHash(uint32_t a)
 }
 
 void rtxdi::Context::FillRuntimeParameters(
-    RTXDI_ResamplingRuntimeParameters& runtimeParams,
+    RTXDI_RuntimeParameters& runtimeParams,
     const FrameParameters& frame) const
 {
     runtimeParams.localLightParams.firstLocalLight = frame.firstLocalLight;
@@ -264,15 +264,16 @@ void rtxdi::Context::FillRuntimeParameters(
     runtimeParams.infiniteLightParams.numInfiniteLights = frame.numInfiniteLights;
     runtimeParams.environmentLightParams.environmentLightPresent = frame.environmentLightPresent;
     runtimeParams.environmentLightParams.environmentLightIndex = frame.environmentLightIndex;
-    runtimeParams.neighborOffsetMask = m_Params.NeighborOffsetCount - 1;
-    runtimeParams.risBufferParams.tileSize = m_Params.TileSize;
-    runtimeParams.risBufferParams.tileCount = m_Params.TileCount;
+    runtimeParams.resamplingParams.neighborOffsetMask = m_Params.NeighborOffsetCount - 1;
+    runtimeParams.localLightParams.localRisBufferOffset = 0;
+    runtimeParams.localLightParams.localRisTileSize = m_Params.TileSize;
+    runtimeParams.localLightParams.localRisTileCount = m_Params.TileCount;
     runtimeParams.localLightParams.enableLocalLightImportanceSampling = frame.enableLocalLightImportanceSampling;
-    runtimeParams.reservoirBlockRowPitch = m_ReservoirBlockRowPitch;
-    runtimeParams.reservoirArrayPitch = m_ReservoirArrayPitch;
+    runtimeParams.resamplingParams.reservoirBlockRowPitch = m_ReservoirBlockRowPitch;
+    runtimeParams.resamplingParams.reservoirArrayPitch = m_ReservoirArrayPitch;
     runtimeParams.environmentLightParams.environmentRisBufferOffset = m_RegirCellOffset + GetReGIRLightSlotCount();
-    runtimeParams.environmentLightParams.environmentTileCount = m_Params.EnvironmentTileCount;
-    runtimeParams.environmentLightParams.environmentTileSize = m_Params.EnvironmentTileSize;
+    runtimeParams.environmentLightParams.environmentRisTileCount = m_Params.EnvironmentTileCount;
+    runtimeParams.environmentLightParams.environmentRisTileSize = m_Params.EnvironmentTileSize;
     runtimeParams.regirGrid.cellsX = m_Params.ReGIR.GridSize.x;
     runtimeParams.regirGrid.cellsY = m_Params.ReGIR.GridSize.y;
     runtimeParams.regirGrid.cellsZ = m_Params.ReGIR.GridSize.z;
@@ -289,18 +290,18 @@ void rtxdi::Context::FillRuntimeParameters(
     runtimeParams.regirOnion.cubicRootFactor = m_OnionCubicRootFactor;
     runtimeParams.regirOnion.linearFactor = m_OnionLinearFactor;
     runtimeParams.regirOnion.numLayerGroups = uint32_t(m_OnionLayers.size());
-    runtimeParams.uniformRandomNumber = JenkinsHash(frame.frameIndex);
+    runtimeParams.resamplingParams.uniformRandomNumber = JenkinsHash(frame.frameIndex);
 
     switch (m_Params.CheckerboardSamplingMode)
     {
     case CheckerboardMode::Black:
-        runtimeParams.activeCheckerboardField = (frame.frameIndex & 1) ? 1 : 2;
+        runtimeParams.resamplingParams.activeCheckerboardField = (frame.frameIndex & 1) ? 1 : 2;
         break;
     case CheckerboardMode::White:
-        runtimeParams.activeCheckerboardField = (frame.frameIndex & 1) ? 2 : 1;
+        runtimeParams.resamplingParams.activeCheckerboardField = (frame.frameIndex & 1) ? 2 : 1;
         break;
     default:
-        runtimeParams.activeCheckerboardField = 0;
+        runtimeParams.resamplingParams.activeCheckerboardField = 0;
     }
 
     assert(m_OnionLayers.size() <= RTXDI_ONION_MAX_LAYER_GROUPS);

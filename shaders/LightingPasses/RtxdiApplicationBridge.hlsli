@@ -536,7 +536,7 @@ float RAB_EvaluateEnvironmentMapSamplingPdf(float3 L)
 }
 
 // Evaluates pdf for a particular light
-float RAB_EvaluateLocalLightSourcePdf(RTXDI_ResamplingRuntimeParameters params, uint lightIndex)
+float RAB_EvaluateLocalLightSourcePdf(RTXDI_RuntimeParameters params, uint lightIndex)
 {
     uint2 pdfTextureSize = g_Const.localLightPdfTextureSize.xy;
     uint2 texelPosition = RTXDI_LinearIndexToZCurve(lightIndex);

@@ -10,9 +10,10 @@
 
 #pragma pack_matrix(row_major)
 
+#define RTXDI_ENABLE_PRESAMPLING 0
 #include "RtxdiApplicationBridge.hlsli"
 
-#define RTXDI_ENABLE_PRESAMPLING 0
+#include <rtxdi/InitialSamplingFunctions.hlsli>
 #include <rtxdi/ResamplingFunctions.hlsli>
 
 #include "PrimaryRays.hlsli"
@@ -20,7 +21,7 @@
 [numthreads(RTXDI_SCREEN_SPACE_GROUP_SIZE, RTXDI_SCREEN_SPACE_GROUP_SIZE, 1)]
 void main(uint2 pixelPosition : SV_DispatchThreadID)
 {
-    const RTXDI_ResamplingRuntimeParameters params = g_Const.runtimeParams;
+    const RTXDI_RuntimeParameters params = g_Const.runtimeParams;
 
     // Trace the primary ray
     PrimarySurfaceOutput primary = TracePrimaryRay(pixelPosition);
@@ -101,7 +102,7 @@ void main(uint2 pixelPosition : SV_DispatchThreadID)
 
             // Call the resampling function, update the reservoir and lightSample variables
             reservoir = RTXDI_SpatioTemporalResampling(pixelPosition, primary.surface, reservoir,
-                    rng, stparams, params, temporalSamplePixelPos, lightSample);
+                    rng, stparams, params.resamplingParams, temporalSamplePixelPos, lightSample);
         }
 
         float3 shadingOutput = 0;
@@ -136,5 +137,5 @@ void main(uint2 pixelPosition : SV_DispatchThreadID)
         u_ShadingOutput[pixelPosition] = 0;
     }
 
-    RTXDI_StoreReservoir(reservoir, params, pixelPosition, g_Const.outputBufferIndex);
+    RTXDI_StoreReservoir(reservoir, params.resamplingParams, pixelPosition, g_Const.outputBufferIndex);
 }

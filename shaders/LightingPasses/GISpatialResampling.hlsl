@@ -26,7 +26,7 @@ void RayGen()
 #if !USE_RAY_QUERY
     uint2 GlobalIndex = DispatchRaysIndex().xy;
 #endif
-    uint2 pixelPosition = RTXDI_ReservoirPosToPixelPos(GlobalIndex, g_Const.runtimeParams);
+    uint2 pixelPosition = RTXDI_ReservoirPosToPixelPos(GlobalIndex, g_Const.runtimeParams.resamplingParams);
 
     if (any(pixelPosition > int2(g_Const.view.viewportSize)))
         return;
@@ -35,8 +35,8 @@ void RayGen()
     
     const RAB_Surface primarySurface = RAB_GetGBufferSurface(pixelPosition, false);
     
-    const uint2 reservoirPosition = RTXDI_PixelPosToReservoirPos(pixelPosition, g_Const.runtimeParams);
-    RTXDI_GIReservoir reservoir = RTXDI_LoadGIReservoir(g_Const.runtimeParams, reservoirPosition, g_Const.spatialInputBufferIndex);
+    const uint2 reservoirPosition = RTXDI_PixelPosToReservoirPos(pixelPosition, g_Const.runtimeParams.resamplingParams);
+    RTXDI_GIReservoir reservoir = RTXDI_LoadGIReservoir(g_Const.runtimeParams.resamplingParams, reservoirPosition, g_Const.spatialInputBufferIndex);
 
     if (RAB_IsSurfaceValid(primarySurface)) {
         RTXDI_GISpatialResamplingParameters sparams;
@@ -49,8 +49,8 @@ void RayGen()
         sparams.samplingRadius = g_Const.spatialSamplingRadius;
 
         // Execute resampling.
-        reservoir = RTXDI_GISpatialResampling(pixelPosition, primarySurface, reservoir, rng, sparams, g_Const.runtimeParams);
+        reservoir = RTXDI_GISpatialResampling(pixelPosition, primarySurface, reservoir, rng, sparams, g_Const.runtimeParams.resamplingParams);
     }
 
-    RTXDI_StoreGIReservoir(reservoir, g_Const.runtimeParams, reservoirPosition, g_Const.spatialOutputBufferIndex);
+    RTXDI_StoreGIReservoir(reservoir, g_Const.runtimeParams.resamplingParams, reservoirPosition, g_Const.spatialOutputBufferIndex);
 }

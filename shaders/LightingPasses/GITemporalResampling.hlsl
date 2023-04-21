@@ -30,14 +30,14 @@ void RayGen()
 #if !USE_RAY_QUERY
     uint2 GlobalIndex = DispatchRaysIndex().xy;
 #endif
-    uint2 pixelPosition = RTXDI_ReservoirPosToPixelPos(GlobalIndex, g_Const.runtimeParams);
+    uint2 pixelPosition = RTXDI_ReservoirPosToPixelPos(GlobalIndex, g_Const.runtimeParams.resamplingParams);
 
     RAB_RandomSamplerState rng = RAB_InitRandomSampler(GlobalIndex, 7);
     
     const RAB_Surface primarySurface = RAB_GetGBufferSurface(pixelPosition, false);
     
-    const uint2 reservoirPosition = RTXDI_PixelPosToReservoirPos(pixelPosition, g_Const.runtimeParams);
-    RTXDI_GIReservoir reservoir = RTXDI_LoadGIReservoir(g_Const.runtimeParams, reservoirPosition, g_Const.initialOutputBufferIndex);
+    const uint2 reservoirPosition = RTXDI_PixelPosToReservoirPos(pixelPosition, g_Const.runtimeParams.resamplingParams);
+    RTXDI_GIReservoir reservoir = RTXDI_LoadGIReservoir(g_Const.runtimeParams.resamplingParams, reservoirPosition, g_Const.initialOutputBufferIndex);
 
     float3 motionVector = t_MotionVectors[pixelPosition].xyz;
     motionVector = convertMotionVectorToPixelSpace(g_Const.view, g_Const.prevView, pixelPosition, motionVector);
@@ -59,15 +59,15 @@ void RayGen()
         tParams.maxReservoirAge = g_Const.giReservoirMaxAge * (0.5 + RAB_GetNextRandom(rng) * 0.5);
 
         // Execute resampling.
-        reservoir = RTXDI_GITemporalResampling(pixelPosition, primarySurface, reservoir, rng, tParams, g_Const.runtimeParams);
+        reservoir = RTXDI_GITemporalResampling(pixelPosition, primarySurface, reservoir, rng, tParams, g_Const.runtimeParams.resamplingParams);
     }
 
 #ifdef RTXDI_ENABLE_BOILING_FILTER
     if (g_Const.boilingFilterStrength > 0)
     {
-        RTXDI_GIBoilingFilter(LocalIndex, g_Const.boilingFilterStrength, g_Const.runtimeParams, reservoir);
+        RTXDI_GIBoilingFilter(LocalIndex, g_Const.boilingFilterStrength, reservoir);
     }
 #endif
 
-    RTXDI_StoreGIReservoir(reservoir, g_Const.runtimeParams, reservoirPosition, g_Const.temporalOutputBufferIndex);
+    RTXDI_StoreGIReservoir(reservoir, g_Const.runtimeParams.resamplingParams, reservoirPosition, g_Const.temporalOutputBufferIndex);
 }

@@ -26,7 +26,7 @@ void RayGen()
     uint2 GlobalIndex = DispatchRaysIndex().xy;
 #endif
 
-    const RTXDI_ResamplingRuntimeParameters params = g_Const.runtimeParams;
+    const RTXDI_ResamplingRuntimeParameters params = g_Const.runtimeParams.resamplingParams;
 
     uint2 pixelPosition = RTXDI_ReservoirPosToPixelPos(GlobalIndex, params);
 

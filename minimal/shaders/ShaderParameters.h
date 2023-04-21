@@ -42,7 +42,7 @@ struct ResamplingConstants
 {
     PlanarViewConstants view;
     PlanarViewConstants prevView;
-    RTXDI_ResamplingRuntimeParameters runtimeParams;
+    RTXDI_RuntimeParameters runtimeParams;
     
     uint frameIndex;
     uint numInitialSamples;

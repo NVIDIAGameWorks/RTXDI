@@ -63,7 +63,7 @@ private:
     engine::PlanarView m_ViewPrevious;
     engine::BindingCache m_BindingCache;
 
-    std::unique_ptr<rtxdi::Context> m_RtxdiContext;
+    std::unique_ptr<rtxdi::RTXDIContext> m_RtxdiContext;
     std::unique_ptr<PrepareLightsPass> m_PrepareLightsPass;
     std::unique_ptr<RenderPass> m_RenderPass;
     std::unique_ptr<RtxdiResources> m_RtxdiResources;
@@ -274,11 +274,11 @@ public:
         
         if (!m_RtxdiContext)
         {
-            rtxdi::ContextParameters contextParams;
+            rtxdi::RTXDIStaticParameters contextParams;
             contextParams.RenderWidth = fbinfo.width;
             contextParams.RenderHeight = fbinfo.height;
 
-            m_RtxdiContext = std::make_unique<rtxdi::Context>(contextParams);
+            m_RtxdiContext = std::make_unique<rtxdi::RTXDIContext>(contextParams);
         }
 
         if (!m_RenderTargets)
@@ -337,20 +337,19 @@ public:
         // Write the neighbor offset buffer data (only happens once)
         m_RtxdiResources->InitializeNeighborOffsets(m_CommandList, *m_RtxdiContext);
         
-        rtxdi::FrameParameters frameParameters;
         // The light indexing members of frameParameters are written by PrepareLightsPass below
-        frameParameters.frameIndex = GetFrameIndex();
+        m_RtxdiContext->setFrameIndex(GetFrameIndex());
 
         // When the lights are static, there is no need to update them on every frame,
         // but it's simpler to do so.
-        m_PrepareLightsPass->Process(m_CommandList, frameParameters);
+        rtxdi::LightBufferParameters lightBufferParams = m_PrepareLightsPass->Process(m_CommandList);
+        m_RtxdiContext->setLightBufferParameters(lightBufferParams);
 
         // Call the rendering pass - this includes primary rays, fused resampling, and shading
         m_RenderPass->Render(m_CommandList,
             *m_RtxdiContext,
             m_View, m_ViewPrevious,
-            m_ui.lightingSettings,
-            frameParameters);
+            m_ui.lightingSettings);
 
         // Copy the render pass output to the swap chain
         m_CommonPasses->BlitTexture(m_CommandList, framebuffer, m_RenderTargets->HdrColor, &m_BindingCache);

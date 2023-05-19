@@ -12,6 +12,7 @@
 #include <cassert>
 #include <algorithm>
 #include <vector>
+#include <memory>
 #include <numeric>
 #include <math.h>
 
@@ -24,18 +25,22 @@
 
 using namespace rtxdi;
 
-constexpr float c_pi = 3.1415926535f;
 
 static bool IsNonzeroPowerOf2(uint32_t i)
 {
     return ((i & (i - 1)) == 0) && (i > 0);
 }
 
-rtxdi::Context::Context(const ContextParameters& params)
-    : m_Params(params)
+namespace rtxdi
 {
-    assert(IsNonzeroPowerOf2(params.TileSize));
-    assert(IsNonzeroPowerOf2(params.TileCount));
+
+RTXDIContext::RTXDIContext(const RTXDIStaticParameters& params) :
+    m_frameIndex(0),
+    m_lightBufferParams({}),
+    m_staticParams(params)
+{
+    assert(IsNonzeroPowerOf2(params.localLightPowerRISBufferSegmentParams.tileSize));
+    assert(IsNonzeroPowerOf2(params.localLightPowerRISBufferSegmentParams.tileCount));
     assert(params.RenderWidth > 0);
     assert(params.RenderHeight > 0);
 
@@ -47,196 +52,52 @@ rtxdi::Context::Context(const ContextParameters& params)
     m_ReservoirBlockRowPitch = renderWidthBlocks * (RTXDI_RESERVOIR_BLOCK_SIZE * RTXDI_RESERVOIR_BLOCK_SIZE);
     m_ReservoirArrayPitch = m_ReservoirBlockRowPitch * renderHeightBlocks;
 
-    m_RegirCellOffset = m_Params.TileCount * m_Params.TileSize;
+    m_regirContext = std::make_unique<rtxdi::ReGIRContext>(params.ReGIR);
 
-    InitializeOnion();
-    ComputeOnionJitterCurve();
+    m_regirContext->setReGIRCellOffset(m_staticParams.localLightPowerRISBufferSegmentParams.tileCount * m_staticParams.localLightPowerRISBufferSegmentParams.tileSize);
 }
 
-void Context::InitializeOnion()
+InitialSamplingSettings RTXDIContext::getInitialSamplingSettings() const
 {
-    int numLayerGroups = std::max(1, std::min(RTXDI_ONION_MAX_LAYER_GROUPS, int(m_Params.ReGIR.OnionDetailLayers)));
-
-    float innerRadius = 1.f;
-
-    int totalLayers = 0;
-    int totalCells = 1;
-
-    for (int layerGroupIndex = 0; layerGroupIndex < numLayerGroups; layerGroupIndex++)
-    {
-        const int partitions = layerGroupIndex * 4 + 8;
-        const int layerCount = (layerGroupIndex < numLayerGroups - 1) ? 1 : int(m_Params.ReGIR.OnionCoverageLayers) + 1;
-        
-        const float radiusRatio = (float(partitions) + c_pi) / (float(partitions) - c_pi);
-        const float outerRadius = innerRadius * powf(radiusRatio, float(layerCount));
-        const float equatorialAngle = 2 * c_pi / float(partitions);
-
-        RTXDI_OnionLayerGroup layerGroup{};
-        layerGroup.ringOffset = int(m_OnionRings.size());
-        layerGroup.innerRadius = innerRadius;
-        layerGroup.outerRadius = outerRadius;
-        layerGroup.invLogLayerScale = 1.f / logf(radiusRatio);
-        layerGroup.invEquatorialCellAngle = 1.f / equatorialAngle;
-        layerGroup.equatorialCellAngle = equatorialAngle;
-        layerGroup.ringCount = partitions / 4 + 1;
-        layerGroup.layerScale = radiusRatio;
-        layerGroup.layerCellOffset = totalCells;
-
-        RTXDI_OnionRing ring{};
-        ring.cellCount = partitions;
-        ring.cellOffset = 0;
-        ring.invCellAngle = float(partitions) / (2 * c_pi);
-        ring.cellAngle = 1.f / ring.invCellAngle;
-        m_OnionRings.push_back(ring);
-
-        int cellsPerLayer = partitions;
-        for (int ringIndex = 1; ringIndex < layerGroup.ringCount; ringIndex++)
-        {
-            ring.cellCount = std::max(1, int(floorf(float(partitions) * cosf(float(ringIndex) * equatorialAngle))));
-            ring.cellOffset = cellsPerLayer;
-            ring.invCellAngle = float(ring.cellCount) / (2 * c_pi);
-            ring.cellAngle = 1.f / ring.invCellAngle;
-            m_OnionRings.push_back(ring);
-
-            cellsPerLayer += ring.cellCount * 2;
-        }
-
-        layerGroup.cellsPerLayer = cellsPerLayer;
-        layerGroup.layerCount = layerCount;
-        m_OnionLayers.push_back(layerGroup);
-
-        innerRadius = outerRadius;
-        
-        totalCells += cellsPerLayer * layerCount;
-        totalLayers += layerCount;
-    }
-
-    m_OnionCells = totalCells;
+    return m_initialSamplingSettings;
 }
 
-static float3 SphericalToCartesian(const float radius, const float azimuth, const float elevation)
+TemporalResamplingSettings RTXDIContext::getTemporalResamplingSettings() const
 {
-    return float3{
-        radius * cosf(azimuth) * cosf(elevation),
-        radius * sinf(elevation),
-        radius * sinf(azimuth) * cosf(elevation)
-    };
+    return m_temporalResamplingSettings;
 }
 
-static float Distance(const float3& a, const float3& b)
+BoilingFilterSettings RTXDIContext::getBoilingFilterSettings() const
 {
-    float3 d{ a.x - b.x, a.y - b.y, a.z - b.z };
-    return sqrtf(d.x * d.x + d.y * d.y + d.z * d.z);
+    return m_boilingFilterSettings;
 }
 
-void Context::ComputeOnionJitterCurve()
+SpatialResamplingSettings RTXDIContext::getSpatialResamplingSettings() const
 {
-    std::vector<float> cubicRootFactors;
-    std::vector<float> linearFactors;
-
-    int layerGroupIndex = 0;
-    for (const auto& layerGroup : m_OnionLayers)
-    {
-        for (int layerIndex = 0; layerIndex < layerGroup.layerCount; layerIndex++)
-        {
-            const float innerRadius = layerGroup.innerRadius * powf(layerGroup.layerScale, float(layerIndex));
-            const float outerRadius = innerRadius * layerGroup.layerScale;
-            const float middleRadius = (innerRadius + outerRadius) * 0.5f;
-            float maxCellRadius = 0.f;
-
-            for (int ringIndex = 0; ringIndex < layerGroup.ringCount; ringIndex++)
-            {
-                const auto& ring = m_OnionRings[layerGroup.ringOffset + ringIndex];
-
-                const float middleElevation = layerGroup.equatorialCellAngle * float(ringIndex);
-                const float vertexElevation = (ringIndex == 0)
-                    ? layerGroup.equatorialCellAngle * 0.5f
-                    : middleElevation - layerGroup.equatorialCellAngle * 0.5f;
-
-                const float middleAzimuth = 0.f;
-                const float vertexAzimuth = ring.cellAngle;
-
-                const float3 middlePoint = SphericalToCartesian(middleRadius, middleAzimuth, middleElevation);
-                const float3 vertexPoint = SphericalToCartesian(outerRadius, vertexAzimuth, vertexElevation);
-
-                const float cellRadius = Distance(middlePoint, vertexPoint);
-
-                maxCellRadius = std::max(maxCellRadius, cellRadius);
-            }
-
-#if PRINT_JITTER_CURVE
-            char buf[256];
-            sprintf_s(buf, "%.3f,%.3f\n", middleRadius, maxCellRadius);
-            OutputDebugStringA(buf);
-#endif
-
-            if (layerGroupIndex < int(m_OnionLayers.size()) - 1)
-            {
-                float cubicRootFactor = maxCellRadius * powf(middleRadius, -1.f / 3.f);
-                cubicRootFactors.push_back(cubicRootFactor);
-            }
-            else
-            {
-                float linearFactor = maxCellRadius / middleRadius;
-                linearFactors.push_back(linearFactor);
-            }
-        }
-
-        layerGroupIndex++;
-    }
-
-    // Compute the median of the cubic root factors, there are some outliers in the curve
-    if (!cubicRootFactors.empty())
-    {
-        std::sort(cubicRootFactors.begin(), cubicRootFactors.end());
-        m_OnionCubicRootFactor = cubicRootFactors[cubicRootFactors.size() / 2];
-    }
-    else
-    {
-        m_OnionCubicRootFactor = 0.f;
-    }
-
-    // Compute the average of the linear factors, they're all the same anyway
-    float sumOfLinearFactors = std::accumulate(linearFactors.begin(), linearFactors.end(), 0.f);
-    m_OnionLinearFactor = sumOfLinearFactors / std::max(float(linearFactors.size()), 1.f);
+    return m_spatialResamplingSettings;
 }
 
-const rtxdi::ContextParameters& rtxdi::Context::GetParameters() const
+ShadingSettings RTXDIContext::getShadingSettings() const
 {
-    return m_Params;
+    return m_shadingSettings;
 }
 
-uint32_t rtxdi::Context::GetRisBufferElementCount() const
+const RTXDIStaticParameters& RTXDIContext::getStaticParameters() const
+{
+    return m_staticParams;
+}
+
+uint32_t RTXDIContext::GetRisBufferElementCount() const
 {
     uint32_t size = 0;
-    size += m_Params.TileCount * m_Params.TileSize;
-    size += m_Params.EnvironmentTileCount * m_Params.EnvironmentTileSize;
-    size += GetReGIRLightSlotCount();
+    size += m_staticParams.localLightPowerRISBufferSegmentParams.tileCount * m_staticParams.localLightPowerRISBufferSegmentParams.tileSize;
+    size += m_staticParams.environmentLightRISBufferSegmentParams.tileCount * m_staticParams.environmentLightRISBufferSegmentParams.tileSize;
+    size += m_regirContext->getReGIRLightSlotCount();
 
     return size;
 }
 
-uint32_t rtxdi::Context::GetReGIRLightSlotCount() const
-{
-    switch (m_Params.ReGIR.Mode)
-    {
-    case ReGIRMode::Disabled:
-        return 0;
-
-    case ReGIRMode::Grid:
-        return m_Params.ReGIR.GridSize.x
-            * m_Params.ReGIR.GridSize.y
-            * m_Params.ReGIR.GridSize.z
-            * m_Params.ReGIR.LightsPerCell;
-
-    case ReGIRMode::Onion:
-        return m_OnionCells * m_Params.ReGIR.LightsPerCell;
-    }
-
-    return 0;
-}
-
-uint32_t rtxdi::Context::GetReservoirBufferElementCount() const
+uint32_t RTXDIContext::GetReservoirBufferElementCount() const
 {
     return m_ReservoirArrayPitch;
 }
@@ -254,72 +115,73 @@ static uint32_t JenkinsHash(uint32_t a)
     return a;
 }
 
-void rtxdi::Context::FillRuntimeParameters(
-    RTXDI_RuntimeParameters& runtimeParams,
-    const FrameParameters& frame) const
+void RTXDIContext::FillRuntimeParameters(RTXDI_RuntimeParameters& runtimeParams) const
 {
-    runtimeParams.localLightParams.firstLocalLight = frame.firstLocalLight;
-    runtimeParams.localLightParams.numLocalLights = frame.numLocalLights;
-    runtimeParams.infiniteLightParams.firstInfiniteLight = frame.firstInfiniteLight;
-    runtimeParams.infiniteLightParams.numInfiniteLights = frame.numInfiniteLights;
-    runtimeParams.environmentLightParams.environmentLightPresent = frame.environmentLightPresent;
-    runtimeParams.environmentLightParams.environmentLightIndex = frame.environmentLightIndex;
-    runtimeParams.resamplingParams.neighborOffsetMask = m_Params.NeighborOffsetCount - 1;
-    runtimeParams.localLightParams.localRisBufferOffset = 0;
-    runtimeParams.localLightParams.localRisTileSize = m_Params.TileSize;
-    runtimeParams.localLightParams.localRisTileCount = m_Params.TileCount;
-    runtimeParams.localLightParams.enableLocalLightImportanceSampling = frame.enableLocalLightImportanceSampling;
+    runtimeParams.localLightParams.localLightsBufferRegion.firstLightIndex = m_lightBufferParams.firstLocalLight;
+    runtimeParams.localLightParams.localLightsBufferRegion.numLights = m_lightBufferParams.numLocalLights;
+    runtimeParams.localLightParams.localLightSamplingMode = static_cast<uint32_t>(m_initialSamplingSettings.localLightInitialSamplingMode);
+    runtimeParams.localLightParams.risBufferParams.bufferOffset = 0;
+    runtimeParams.localLightParams.risBufferParams.tileSize = m_staticParams.localLightPowerRISBufferSegmentParams.tileSize;
+    runtimeParams.localLightParams.risBufferParams.tileCount = m_staticParams.localLightPowerRISBufferSegmentParams.tileCount;
+    runtimeParams.infiniteLightParams.infiniteLightsBufferRegion.firstLightIndex = m_lightBufferParams.firstInfiniteLight;
+    runtimeParams.infiniteLightParams.infiniteLightsBufferRegion.numLights = m_lightBufferParams.numInfiniteLights;
+    runtimeParams.environmentLightParams.environmentLightPresent = m_lightBufferParams.environmentLightPresent;
+    runtimeParams.environmentLightParams.environmentLightIndex = m_lightBufferParams.environmentLightIndex;
+    runtimeParams.environmentLightParams.risBufferParams.bufferOffset = m_regirContext->getReGIRCellOffset() + m_regirContext->getReGIRLightSlotCount();
+    runtimeParams.environmentLightParams.risBufferParams.tileCount = m_staticParams.environmentLightRISBufferSegmentParams.tileCount;
+    runtimeParams.environmentLightParams.risBufferParams.tileSize = m_staticParams.environmentLightRISBufferSegmentParams.tileSize;
+    runtimeParams.resamplingParams.neighborOffsetMask = m_staticParams.NeighborOffsetCount - 1;
     runtimeParams.resamplingParams.reservoirBlockRowPitch = m_ReservoirBlockRowPitch;
     runtimeParams.resamplingParams.reservoirArrayPitch = m_ReservoirArrayPitch;
-    runtimeParams.environmentLightParams.environmentRisBufferOffset = m_RegirCellOffset + GetReGIRLightSlotCount();
-    runtimeParams.environmentLightParams.environmentRisTileCount = m_Params.EnvironmentTileCount;
-    runtimeParams.environmentLightParams.environmentRisTileSize = m_Params.EnvironmentTileSize;
-    runtimeParams.regirGrid.cellsX = m_Params.ReGIR.GridSize.x;
-    runtimeParams.regirGrid.cellsY = m_Params.ReGIR.GridSize.y;
-    runtimeParams.regirGrid.cellsZ = m_Params.ReGIR.GridSize.z;
-    runtimeParams.regirCommon.risBufferOffset = m_RegirCellOffset;
-    runtimeParams.regirCommon.lightsPerCell = m_Params.ReGIR.LightsPerCell;
-    runtimeParams.regirCommon.centerX = frame.regirCenter.x;
-    runtimeParams.regirCommon.centerY = frame.regirCenter.y;
-    runtimeParams.regirCommon.centerZ = frame.regirCenter.z;
-    runtimeParams.regirCommon.cellSize = (m_Params.ReGIR.Mode == ReGIRMode::Onion)
-        ? frame.regirCellSize * 0.5f // Onion operates with radii, while "size" feels more like diameter
-        : frame.regirCellSize;
-    runtimeParams.regirCommon.enable = m_Params.ReGIR.Mode != ReGIRMode::Disabled;
-    runtimeParams.regirCommon.samplingJitter = std::max(0.f, frame.regirSamplingJitter * 2.f);
-    runtimeParams.regirOnion.cubicRootFactor = m_OnionCubicRootFactor;
-    runtimeParams.regirOnion.linearFactor = m_OnionLinearFactor;
-    runtimeParams.regirOnion.numLayerGroups = uint32_t(m_OnionLayers.size());
-    runtimeParams.resamplingParams.uniformRandomNumber = JenkinsHash(frame.frameIndex);
+    runtimeParams.resamplingParams.uniformRandomNumber = JenkinsHash(m_frameIndex);
 
-    switch (m_Params.CheckerboardSamplingMode)
+    switch (m_staticParams.CheckerboardSamplingMode)
     {
     case CheckerboardMode::Black:
-        runtimeParams.resamplingParams.activeCheckerboardField = (frame.frameIndex & 1) ? 1 : 2;
+        runtimeParams.resamplingParams.activeCheckerboardField = (m_frameIndex & 1) ? 1 : 2;
         break;
     case CheckerboardMode::White:
-        runtimeParams.resamplingParams.activeCheckerboardField = (frame.frameIndex & 1) ? 2 : 1;
+        runtimeParams.resamplingParams.activeCheckerboardField = (m_frameIndex & 1) ? 2 : 1;
         break;
     default:
         runtimeParams.resamplingParams.activeCheckerboardField = 0;
     }
 
-    assert(m_OnionLayers.size() <= RTXDI_ONION_MAX_LAYER_GROUPS);
-    for(int group = 0; group < int(m_OnionLayers.size()); group++)
-    {
-        runtimeParams.regirOnion.layers[group] = m_OnionLayers[group];
-        runtimeParams.regirOnion.layers[group].innerRadius *= runtimeParams.regirCommon.cellSize;
-        runtimeParams.regirOnion.layers[group].outerRadius *= runtimeParams.regirCommon.cellSize;
-    }
-    
-    assert(m_OnionRings.size() <= RTXDI_ONION_MAX_RINGS);
-    for (int n = 0; n < int(m_OnionRings.size()); n++)
-    {
-        runtimeParams.regirOnion.rings[n] = m_OnionRings[n];
-    }
+    m_regirContext->FillRuntimeParameters(runtimeParams);
 }
 
-void rtxdi::Context::FillNeighborOffsetBuffer(uint8_t* buffer) const
+bool RTXDIContext::isLocalLightPowerRISEnabled() const
+{
+    return (m_initialSamplingSettings.localLightInitialSamplingMode == LocalLightSamplingMode::Power_RIS) ||
+           ((m_initialSamplingSettings.localLightInitialSamplingMode == LocalLightSamplingMode::ReGIR_RIS) && m_regirContext->isLocalLightPowerRISEnable());
+}
+
+void RTXDIContext::setFrameIndex(uint32_t frameIndex)
+{
+    m_frameIndex = frameIndex;
+}
+
+void RTXDIContext::setLightBufferParameters(const LightBufferParameters& lightBufferParams)
+{
+    m_lightBufferParams = lightBufferParams;
+}
+
+uint32_t RTXDIContext::getFrameIndex() const
+{
+    return m_frameIndex;
+}
+
+const LightBufferParameters& RTXDIContext::getLightBufferParameters() const
+{
+    return m_lightBufferParams;
+}
+
+ReGIRContext& RTXDIContext::getReGIRContext()
+{
+    return *m_regirContext;
+}
+
+void RTXDIContext::FillNeighborOffsetBuffer(uint8_t* buffer) const
 {
     // Create a sequence of low-discrepancy samples within a unit radius around the origin
     // for "randomly" sampling neighbors during spatial resampling
@@ -329,7 +191,7 @@ void rtxdi::Context::FillNeighborOffsetBuffer(uint8_t* buffer) const
     uint32_t num = 0;
     float u = 0.5f;
     float v = 0.5f;
-    while (num < m_Params.NeighborOffsetCount * 2) {
+    while (num < m_staticParams.NeighborOffsetCount * 2) {
         u += phi2;
         v += phi2 * phi2;
         if (u >= 1.0f) u -= 1.0f;
@@ -344,7 +206,32 @@ void rtxdi::Context::FillNeighborOffsetBuffer(uint8_t* buffer) const
     }
 }
 
-void rtxdi::ComputePdfTextureSize(uint32_t maxItems, uint32_t& outWidth, uint32_t& outHeight, uint32_t& outMipLevels)
+void RTXDIContext::setInitialSamplingSettings(const InitialSamplingSettings& initialSamplingSettings)
+{
+    m_initialSamplingSettings = initialSamplingSettings;
+}
+
+void RTXDIContext::setTemporalResamplingSettings(const TemporalResamplingSettings& temporalResamplingSettings)
+{
+    m_temporalResamplingSettings = temporalResamplingSettings;
+}
+
+void RTXDIContext::setBoilingFilterSettings(const BoilingFilterSettings& boilingFilterSettings)
+{
+    m_boilingFilterSettings = boilingFilterSettings;
+}
+
+void RTXDIContext::setSpatialResamplingSettings(const SpatialResamplingSettings& spatialResamplingSettings)
+{
+    m_spatialResamplingSettings = spatialResamplingSettings;
+}
+
+void RTXDIContext::setShadingSettings(const ShadingSettings& shadingSettings)
+{
+    m_shadingSettings = shadingSettings;
+}
+
+void ComputePdfTextureSize(uint32_t maxItems, uint32_t& outWidth, uint32_t& outHeight, uint32_t& outMipLevels)
 {
     // Compute the size of a power-of-2 rectangle that fits all items, 1 item per pixel
     double textureWidth = std::max(1.0, ceil(sqrt(double(maxItems))));
@@ -356,4 +243,6 @@ void rtxdi::ComputePdfTextureSize(uint32_t maxItems, uint32_t& outWidth, uint32_
     outWidth = uint32_t(textureWidth);
     outHeight = uint32_t(textureHeight);
     outMipLevels = uint32_t(textureMips);
+}
+
 }

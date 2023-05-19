@@ -68,7 +68,7 @@ void RayGen()
     const RAB_Surface primarySurface = RAB_GetGBufferSurface(pixelPosition, false);
     
     const uint2 reservoirPosition = RTXDI_PixelPosToReservoirPos(pixelPosition, g_Const.runtimeParams.resamplingParams);
-    const RTXDI_GIReservoir reservoir = RTXDI_LoadGIReservoir(g_Const.runtimeParams.resamplingParams, reservoirPosition, g_Const.shadeInputBufferIndex);
+    const RTXDI_GIReservoir reservoir = RTXDI_LoadGIReservoir(g_Const.runtimeParams.resamplingParams, reservoirPosition, g_Const.shadingConstants.shadeInputBufferIndex);
     
     float3 diffuse = 0;
     float3 specular = 0;
@@ -78,7 +78,7 @@ void RayGen()
         float3 radiance = reservoir.radiance * reservoir.weightSum;
 
         float3 visibility = 1.0;
-        if (g_Const.giEnableFinalVisibility)
+        if (g_Const.giSamplingConstants.giEnableFinalVisibility)
         {
             visibility = GetFinalVisibility(SceneBVH, primarySurface, reservoir.position);
         }
@@ -87,7 +87,7 @@ void RayGen()
 
         const SplitBrdf brdf = EvaluateBrdf(primarySurface, reservoir.position);
 
-        if (g_Const.giEnableFinalMIS)
+        if (g_Const.giSamplingConstants.giEnableFinalMIS)
         {
             const RTXDI_GIReservoir initialReservoir = LoadInitialSampleReservoir(reservoirPosition, primarySurface);
             const SplitBrdf brdf0 = EvaluateBrdf(primarySurface, initialReservoir.position);

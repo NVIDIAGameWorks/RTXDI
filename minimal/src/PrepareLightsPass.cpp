@@ -102,10 +102,9 @@ void PrepareLightsPass::CountLightsInScene(uint32_t& numEmissiveMeshes, uint32_t
     }
 }
 
-void PrepareLightsPass::Process(
-    nvrhi::ICommandList* commandList, 
-    rtxdi::FrameParameters& outFrameParameters)
+rtxdi::LightBufferParameters PrepareLightsPass::Process(nvrhi::ICommandList* commandList)
 {
+    rtxdi::LightBufferParameters outLightBufferParams;
     commandList->beginMarker("PrepareLights");
 
     std::vector<PrepareLightsTask> tasks;
@@ -145,12 +144,12 @@ void PrepareLightsPass::Process(
     
     commandList->writeBuffer(m_GeometryInstanceToLightBuffer, geometryInstanceToLight.data(), geometryInstanceToLight.size() * sizeof(uint32_t));
 
-    outFrameParameters.firstLocalLight = 0;
-    outFrameParameters.numLocalLights = lightBufferOffset;
-    outFrameParameters.firstInfiniteLight = 0;
-    outFrameParameters.numInfiniteLights = 0;
-    outFrameParameters.environmentLightIndex = RTXDI_INVALID_LIGHT_INDEX;
-    outFrameParameters.environmentLightPresent = false;
+    outLightBufferParams.firstLocalLight = 0;
+    outLightBufferParams.numLocalLights = lightBufferOffset;
+    outLightBufferParams.firstInfiniteLight = 0;
+    outLightBufferParams.numInfiniteLights = 0;
+    outLightBufferParams.environmentLightIndex = RTXDI_INVALID_LIGHT_INDEX;
+    outLightBufferParams.environmentLightPresent = false;
     
     commandList->writeBuffer(m_TaskBuffer, tasks.data(), tasks.size() * sizeof(PrepareLightsTask));
     
@@ -166,4 +165,5 @@ void PrepareLightsPass::Process(
     commandList->dispatch(dm::div_ceil(lightBufferOffset, 256));
 
     commandList->endMarker();
+    return outLightBufferParams;
 }

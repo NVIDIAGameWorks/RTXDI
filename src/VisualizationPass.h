@@ -17,8 +17,7 @@
 
 namespace rtxdi
 {
-    class Context;
-    struct FrameParameters;
+    class RTXDIContext;
 }
 
 namespace donut::engine
@@ -63,8 +62,7 @@ public:
         nvrhi::IFramebuffer* framebuffer,
         const donut::engine::IView& renderView,
         const donut::engine::IView& upscaledView,
-        rtxdi::Context& context,
-        const rtxdi::FrameParameters& frameParameters,
+        rtxdi::RTXDIContext& context,
         uint32_t inputBufferIndex,
         uint32_t visualizationMode,
         bool enableAccumulation);

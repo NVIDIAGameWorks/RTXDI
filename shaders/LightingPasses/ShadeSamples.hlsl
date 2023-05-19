@@ -39,7 +39,7 @@ void RayGen()
 
     RAB_Surface surface = RAB_GetGBufferSurface(pixelPosition, false);
 
-    RTXDI_Reservoir reservoir = RTXDI_LoadReservoir(params, GlobalIndex, g_Const.shadeInputBufferIndex);
+    RTXDI_Reservoir reservoir = RTXDI_LoadReservoir(params, GlobalIndex, g_Const.shadingConstants.shadeInputBufferIndex);
 
     float3 diffuse = 0;
     float3 specular = 0;
@@ -62,7 +62,7 @@ void RayGen()
 
         if (needToStore)
         {
-            RTXDI_StoreReservoir(reservoir, params, GlobalIndex, g_Const.shadeInputBufferIndex);
+            RTXDI_StoreReservoir(reservoir, params, GlobalIndex, g_Const.shadingConstants.shadeInputBufferIndex);
         }
     }
 
@@ -78,5 +78,5 @@ void RayGen()
 #endif
 
     StoreShadingOutput(GlobalIndex, pixelPosition, 
-        surface.viewDepth, surface.roughness, diffuse, specular, lightDistance, true, g_Const.enableDenoiserInputPacking);
+        surface.viewDepth, surface.roughness, diffuse, specular, lightDistance, true, g_Const.shadingConstants.enableDenoiserInputPacking);
 }

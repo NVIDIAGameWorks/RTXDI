@@ -34,21 +34,17 @@
 // Use MIS-like normalization with visibility rays. Unbiased.
 #define RTXDI_BIAS_CORRECTION_RAY_TRACED 3
 
+// Select local lights with equal probability from the light buffer during initial sampling
+#define RTXDI_LocalLightSamplingMode_UNIFORM 0
+// Use power based RIS to select local lights during initial sampling
+#define RTXDI_LocalLightSamplingMode_POWER_RIS 1
+// Use ReGIR based RIS to select local lights during initial sampling.
+#define RTXDI_LocalLightSamplingMode_REGIR_RIS 2
+
 // This macro enables the functions that deal with the RIS buffer and presampling.
 #ifndef RTXDI_ENABLE_PRESAMPLING
 #define RTXDI_ENABLE_PRESAMPLING 1
 #endif
-
-#define RTXDI_ONION_MAX_LAYER_GROUPS 8
-#define RTXDI_ONION_MAX_RINGS 52
-
-#define RTXDI_REGIR_DISABLED 0
-#define RTXDI_REGIR_GRID 1
-#define RTXDI_REGIR_ONION 2
-
-#ifndef RTXDI_REGIR_MODE
-#define RTXDI_REGIR_MODE RTXDI_REGIR_DISABLED
-#endif 
 
 #define RTXDI_INVALID_LIGHT_INDEX (0xffffffffu)
 
@@ -56,82 +52,35 @@
 static const uint RTXDI_InvalidLightIndex = RTXDI_INVALID_LIGHT_INDEX;
 #endif
 
-struct RTXDI_OnionLayerGroup
+#include "ReGIRParameters.h"
+
+struct RTXDI_LightsBufferRegion
 {
-    float innerRadius;
-    float outerRadius;
-    float invLogLayerScale;
-    int layerCount;
-
-    float invEquatorialCellAngle;
-    int cellsPerLayer;
-    int ringOffset;
-    int ringCount;
-
-    float equatorialCellAngle;
-    float layerScale;
-    int layerCellOffset;
-    int pad;
+    uint32_t firstLightIndex;
+    uint32_t numLights;
 };
 
-struct RTXDI_OnionRing
+struct RTXDI_RISBufferParameters
 {
-    float cellAngle;
-    float invCellAngle;
-    int cellOffset;
-    int cellCount;
-};
-
-struct RTXDI_ReGIRCommonParameters
-{
-    uint32_t enable;
-    float centerX;
-    float centerY;
-    float centerZ;
-
-    uint32_t risBufferOffset;
-    uint32_t lightsPerCell;
-    float cellSize;
-    float samplingJitter;
-};
-
-struct RTXDI_ReGIRGridParameters
-{
-    uint32_t cellsX;
-    uint32_t cellsY;
-    uint32_t cellsZ;
-    uint32_t pad;
-};
-
-struct RTXDI_ReGIROnionParameters
-{
-    RTXDI_OnionLayerGroup layers[RTXDI_ONION_MAX_LAYER_GROUPS];
-    RTXDI_OnionRing rings[RTXDI_ONION_MAX_RINGS];
-
-    uint32_t numLayerGroups;
-    float cubicRootFactor;
-    float linearFactor;
-    float pad;
+    uint32_t bufferOffset;
+    uint32_t tileSize;
+    uint32_t tileCount;
+    uint32_t pad0;
 };
 
 struct RTXDI_LocalLightRuntimeParameters
 {
-    uint32_t firstLocalLight;
-    uint32_t numLocalLights;
-    uint32_t enableLocalLightImportanceSampling;
+    RTXDI_LightsBufferRegion localLightsBufferRegion;
+    uint32_t localLightSamplingMode;
     uint32_t pad1;
 
     // Presampling parameters
-    uint32_t localRisBufferOffset;
-    uint32_t localRisTileSize;
-    uint32_t localRisTileCount;
-    uint32_t pad2;
+    RTXDI_RISBufferParameters risBufferParams;
 };
 
 struct RTXDI_InfiniteLightRuntimeParameters
 {
-    uint32_t firstInfiniteLight;
-    uint32_t numInfiniteLights;
+    RTXDI_LightsBufferRegion infiniteLightsBufferRegion;
     uint32_t pad1;
     uint32_t pad2;
 };
@@ -144,10 +93,7 @@ struct RTXDI_EnvironmentLightRuntimeParameters
     uint32_t pad2;
 
     // Presampling parameters
-    uint32_t environmentRisBufferOffset;
-    uint32_t environmentRisTileSize;
-    uint32_t environmentRisTileCount;
-    uint32_t pad3;
+    RTXDI_RISBufferParameters risBufferParams;
 };
 
 struct RTXDI_ResamplingRuntimeParameters

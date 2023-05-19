@@ -41,7 +41,6 @@ void main(uint2 pixelPosition : SV_DispatchThreadID)
         RAB_RandomSamplerState rng = RAB_InitRandomSampler(pixelPosition, 1);
         
         RTXDI_SampleParameters sampleParams = RTXDI_InitSampleParameters(
-            0, // reGIR samples
             g_Const.numInitialSamples, // local light samples 
             0, // infinite light samples
             0, // environment map samples

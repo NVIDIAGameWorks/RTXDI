@@ -323,13 +323,13 @@ float3 GetFinalVisibility(RaytracingAccelerationStructure accelStruct, RAB_Surfa
     uint instanceMask = INSTANCE_MASK_OPAQUE;
     uint rayFlags = RAY_FLAG_NONE;
     
-    if (g_Const.enableAlphaTestedGeometry)
+    if (g_Const.sceneConstants.enableAlphaTestedGeometry)
         instanceMask |= INSTANCE_MASK_ALPHA_TESTED;
 
-    if (g_Const.enableTransparentGeometry)
+    if (g_Const.sceneConstants.enableTransparentGeometry)
         instanceMask |= INSTANCE_MASK_TRANSPARENT;
 
-    if (!g_Const.enableTransparentGeometry && !g_Const.enableAlphaTestedGeometry)
+    if (!g_Const.sceneConstants.enableTransparentGeometry && !g_Const.sceneConstants.enableAlphaTestedGeometry)
         rayFlags |= RAY_FLAG_CULL_NON_OPAQUE;
 
     RayPayload payload = (RayPayload)0;
@@ -505,7 +505,7 @@ float RAB_GetNextRandom(inout RAB_RandomSamplerState rng)
 float2 RAB_GetEnvironmentMapRandXYFromDir(float3 worldDir)
 {
     float2 uv = directionToEquirectUV(worldDir); 
-    uv.x -= g_Const.environmentRotation;
+    uv.x -= g_Const.sceneConstants.environmentRotation;
     uv = frac(uv);
     return uv;
 }
@@ -514,7 +514,7 @@ float2 RAB_GetEnvironmentMapRandXYFromDir(float3 worldDir)
 // relative to all the other possible directions, based on the environment map pdf texture.
 float RAB_EvaluateEnvironmentMapSamplingPdf(float3 L)
 {
-    if (!g_Const.environmentMapImportanceSampling)
+    if (!g_Const.initialSamplingConstants.environmentMapImportanceSampling)
         return 1.0;
 
     float2 uv = RAB_GetEnvironmentMapRandXYFromDir(L);
@@ -536,7 +536,7 @@ float RAB_EvaluateEnvironmentMapSamplingPdf(float3 L)
 }
 
 // Evaluates pdf for a particular light
-float RAB_EvaluateLocalLightSourcePdf(RTXDI_RuntimeParameters params, uint lightIndex)
+float RAB_EvaluateLocalLightSourcePdf(RTXDI_LocalLightRuntimeParameters params, uint lightIndex)
 {
     uint2 pdfTextureSize = g_Const.localLightPdfTextureSize.xy;
     uint2 texelPosition = RTXDI_LinearIndexToZCurve(lightIndex);
@@ -766,16 +766,16 @@ bool RAB_AreMaterialsSimilar(RAB_Surface a, RAB_Surface b)
 
 float3 GetEnvironmentRadiance(float3 direction)
 {
-    if (!g_Const.enableEnvironmentMap)
+    if (!g_Const.sceneConstants.enableEnvironmentMap)
         return 0;
 
-    Texture2D environmentLatLongMap = t_BindlessTextures[g_Const.environmentMapTextureIndex];
+    Texture2D environmentLatLongMap = t_BindlessTextures[g_Const.sceneConstants.environmentMapTextureIndex];
 
     float2 uv = directionToEquirectUV(direction);
-    uv.x -= g_Const.environmentRotation;
+    uv.x -= g_Const.sceneConstants.environmentRotation;
 
     float3 environmentRadiance = environmentLatLongMap.SampleLevel(s_EnvironmentSampler, uv, 0).rgb;
-    environmentRadiance *= g_Const.environmentScale;
+    environmentRadiance *= g_Const.sceneConstants.environmentScale;
 
     return environmentRadiance;
 }
@@ -789,7 +789,7 @@ bool IsComplexSurface(int2 pixelPosition, RAB_Surface surface)
     // Detect that increase here and disable permutation sampling based on a threshold.
     // Other classification methods can be employed for better quality.
     float originalRoughness = t_DenoiserNormalRoughness[pixelPosition].a;
-    return originalRoughness < (surface.roughness * g_Const.permutationSamplingThreshold);
+    return originalRoughness < (surface.roughness * g_Const.temporalResamplingConstants.permutationSamplingThreshold);
 }
 
 uint getLightIndex(uint instanceID, uint geometryIndex, uint primitiveIndex)

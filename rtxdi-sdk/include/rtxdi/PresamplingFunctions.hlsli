@@ -14,6 +14,7 @@
 #include "rtxdi/RtxdiParameters.h"
 #include "rtxdi/RtxdiMath.hlsli"
 #include "rtxdi/RtxdiHelpers.hlsli"
+#include "rtxdi/LocalLightSelection.hlsli"
 
 #if RTXDI_ENABLE_PRESAMPLING && !defined(RTXDI_RIS_BUFFER)
 #error "RTXDI_RIS_BUFFER must be defined to point to a RWBuffer<uint2> type resource"
@@ -103,7 +104,7 @@ void RTXDI_PresampleLocalLights(
 
     uint lightIndex = RTXDI_ZCurveToLinearIndex(texelPosition);
 
-    uint risBufferPtr = sampleInTile + tileIndex * params.localLightParams.localRisTileSize;
+    uint risBufferPtr = sampleInTile + tileIndex * params.localLightParams.risBufferParams.tileSize;
 
     bool compact = false;
     float invSourcePdf = 0;
@@ -112,11 +113,11 @@ void RTXDI_PresampleLocalLights(
     {
         invSourcePdf = 1.0 / pdf;
 
-        RAB_LightInfo lightInfo = RAB_LoadLightInfo(lightIndex + params.localLightParams.firstLocalLight, false);
+        RAB_LightInfo lightInfo = RAB_LoadLightInfo(lightIndex + params.localLightParams.localLightsBufferRegion.firstLightIndex, false);
         compact = RAB_StoreCompactLightInfo(risBufferPtr, lightInfo);
     }
 
-    lightIndex += params.localLightParams.firstLocalLight;
+    lightIndex += params.localLightParams.localLightsBufferRegion.firstLightIndex;
 
     if (compact) {
         lightIndex |= RTXDI_LIGHT_COMPACT_BIT;
@@ -152,7 +153,7 @@ void RTXDI_PresampleEnvironmentMap(
     float invSourcePdf = (pdf > 0) ? (1.0 / pdf) : 0;
 
     // Store the result
-    uint risBufferPtr = params.environmentRisBufferOffset + sampleInTile + tileIndex * params.environmentRisTileSize;
+    uint risBufferPtr = params.risBufferParams.bufferOffset + sampleInTile + tileIndex * params.risBufferParams.tileSize;
     RTXDI_RIS_BUFFER[risBufferPtr] = uint2(packedUv, asuint(invSourcePdf));
 }
 
@@ -164,12 +165,11 @@ void RTXDI_PresampleLocalLightsForReGIR(
     inout RAB_RandomSamplerState rng,
     inout RAB_RandomSamplerState coherentRng,
     uint lightSlot,
-    uint numSamples,
     RTXDI_RuntimeParameters params)
 {
     uint risBufferPtr = params.regirCommon.risBufferOffset + lightSlot;
 
-    if (numSamples == 0)
+    if (params.regirCommon.numRegirBuildSamples == 0)
     {
         RTXDI_RIS_BUFFER[risBufferPtr] = uint2(0, 0);
         return;
@@ -194,13 +194,15 @@ void RTXDI_PresampleLocalLightsForReGIR(
     float selectedTargetPdf = 0;
     float weightSum = 0;
 
+    float invNumSamples = 1.0 / float(params.regirCommon.numRegirBuildSamples);
 
-    float rndTileSample = RAB_GetNextRandom(coherentRng);
-    uint tileIndex = uint(rndTileSample * params.localLightParams.localRisTileCount);
+    RTXDI_LocalLightSelectionContext ctx;
+    if (params.regirCommon.localLightPresamplingMode == REGIR_LOCAL_LIGHT_PRESAMPLING_MODE_POWER_RIS)
+        ctx = RTXDI_InitializeLocalLightSelectionContextRIS(coherentRng, params.localLightParams.risBufferParams);
+    else
+        ctx = RTXDI_InitializeLocalLightSelectionContextUniform(params.localLightParams.localLightsBufferRegion);
 
-    float invNumSamples = 1.0 / float(numSamples);
-
-    for (uint i = 0; i < numSamples; i++)
+    for (uint i = 0; i < params.regirCommon.numRegirBuildSamples; i++)
     {
         uint rndLight;
         RAB_LightInfo lightInfo = RAB_EmptyLightInfo();
@@ -208,30 +210,8 @@ void RTXDI_PresampleLocalLightsForReGIR(
         float rand = RAB_GetNextRandom(rng);
         bool lightLoaded = false;
 
-        if (params.localLightParams.enableLocalLightImportanceSampling != 0)
-        {
-            uint tileSample = uint(min(rand * params.localLightParams.localRisTileSize, params.localLightParams.localRisTileSize - 1));
-            uint tilePtr = tileSample + tileIndex * params.localLightParams.localRisTileSize;
-
-            uint2 tileData = RTXDI_RIS_BUFFER[tilePtr];
-            rndLight = tileData.x & RTXDI_LIGHT_INDEX_MASK;
-            invSourcePdf = asfloat(tileData.y) * invNumSamples;
-
-            if ((tileData.x & RTXDI_LIGHT_COMPACT_BIT) != 0)
-            {
-                lightInfo = RAB_LoadCompactLightInfo(tilePtr);
-                lightLoaded = true;
-            }
-        }
-        else
-        {
-            rndLight = uint(min(rand * params.localLightParams.numLocalLights, params.localLightParams.numLocalLights - 1)) + params.localLightParams.firstLocalLight;
-            invSourcePdf = float(params.localLightParams.numLocalLights) * invNumSamples;
-        }
-
-        if (!lightLoaded) {
-            lightInfo = RAB_LoadLightInfo(rndLight, false);
-        }
+        RTXDI_SelectNextLocalLight(ctx, rng, lightInfo, rndLight, invSourcePdf);
+        invSourcePdf *= invNumSamples;
 
         float targetPdf = RAB_GetLightTargetPdfForVolume(lightInfo, cellCenter, cellRadius);
         float risRnd = RAB_GetNextRandom(rng);

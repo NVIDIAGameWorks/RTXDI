@@ -131,10 +131,10 @@ float RAB_EvaluateEnvironmentMapSamplingPdf(float3 L)
     return 0;
 }
 
-float RAB_EvaluateLocalLightSourcePdf(RTXDI_RuntimeParameters params, uint lightIndex)
+float RAB_EvaluateLocalLightSourcePdf(RTXDI_LocalLightRuntimeParameters params, uint lightIndex)
 {
     // Uniform pdf
-    return 1.0 / params.localLightParams.numLocalLights;
+    return 1.0 / params.localLightsBufferRegion.numLights;
 }
 
 RayDesc setupVisibilityRay(RAB_Surface surface, RAB_LightSample lightSample, float offset = 0.001)

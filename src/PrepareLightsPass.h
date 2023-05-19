@@ -66,10 +66,9 @@ public:
     void CreateBindingSet(RtxdiResources& resources);
     void CountLightsInScene(uint32_t& numEmissiveMeshes, uint32_t& numEmissiveTriangles);
     
-    void Process(
+    rtxdi::LightBufferParameters Process(
         nvrhi::ICommandList* commandList, 
-        const rtxdi::Context& context, 
+        const rtxdi::RTXDIContext& context, 
         const std::vector<std::shared_ptr<donut::engine::Light>>& sceneLights,
-        bool enableImportanceSampledEnvironmentLight,
-        rtxdi::FrameParameters& outFrameParameters);
+        bool enableImportanceSampledEnvironmentLight);
 };

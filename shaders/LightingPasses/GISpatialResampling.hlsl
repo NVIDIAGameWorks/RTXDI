@@ -36,21 +36,21 @@ void RayGen()
     const RAB_Surface primarySurface = RAB_GetGBufferSurface(pixelPosition, false);
     
     const uint2 reservoirPosition = RTXDI_PixelPosToReservoirPos(pixelPosition, g_Const.runtimeParams.resamplingParams);
-    RTXDI_GIReservoir reservoir = RTXDI_LoadGIReservoir(g_Const.runtimeParams.resamplingParams, reservoirPosition, g_Const.spatialInputBufferIndex);
+    RTXDI_GIReservoir reservoir = RTXDI_LoadGIReservoir(g_Const.runtimeParams.resamplingParams, reservoirPosition, g_Const.spatialResamplingConstants.spatialInputBufferIndex);
 
     if (RAB_IsSurfaceValid(primarySurface)) {
         RTXDI_GISpatialResamplingParameters sparams;
 
-        sparams.sourceBufferIndex = g_Const.spatialInputBufferIndex;
-        sparams.biasCorrectionMode = g_Const.spatialBiasCorrection;
-        sparams.depthThreshold = g_Const.spatialDepthThreshold;
-        sparams.normalThreshold = g_Const.spatialNormalThreshold; 
-        sparams.numSamples = g_Const.numSpatialSamples;
-        sparams.samplingRadius = g_Const.spatialSamplingRadius;
+        sparams.sourceBufferIndex = g_Const.spatialResamplingConstants.spatialInputBufferIndex;
+        sparams.biasCorrectionMode = g_Const.spatialResamplingConstants.spatialBiasCorrection;
+        sparams.depthThreshold = g_Const.spatialResamplingConstants.spatialDepthThreshold;
+        sparams.normalThreshold = g_Const.spatialResamplingConstants.spatialNormalThreshold;
+        sparams.numSamples = g_Const.spatialResamplingConstants.numSpatialSamples;
+        sparams.samplingRadius = g_Const.spatialResamplingConstants.spatialSamplingRadius;
 
         // Execute resampling.
         reservoir = RTXDI_GISpatialResampling(pixelPosition, primarySurface, reservoir, rng, sparams, g_Const.runtimeParams.resamplingParams);
     }
 
-    RTXDI_StoreGIReservoir(reservoir, g_Const.runtimeParams.resamplingParams, reservoirPosition, g_Const.spatialOutputBufferIndex);
+    RTXDI_StoreGIReservoir(reservoir, g_Const.runtimeParams.resamplingParams, reservoirPosition, g_Const.spatialResamplingConstants.spatialOutputBufferIndex);
 }

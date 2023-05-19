@@ -339,14 +339,14 @@ static int isInfiniteLight(const donut::engine::Light& light)
     }
 }
 
-void PrepareLightsPass::Process(
+rtxdi::LightBufferParameters PrepareLightsPass::Process(
     nvrhi::ICommandList* commandList, 
-    const rtxdi::Context& context,
+    const rtxdi::RTXDIContext& context,
     const std::vector<std::shared_ptr<donut::engine::Light>>& sceneLights,
-    bool enableImportanceSampledEnvironmentLight,
-    rtxdi::FrameParameters& outFrameParameters)
+    bool enableImportanceSampledEnvironmentLight)
 {
-    const rtxdi::ContextParameters& contextParameters = context.GetParameters();
+    rtxdi::LightBufferParameters outLightBufferParams;
+    const rtxdi::RTXDIStaticParameters& contextParameters = context.getStaticParameters();
 
     commandList->beginMarker("PrepareLights");
 
@@ -402,8 +402,8 @@ void PrepareLightsPass::Process(
 
     commandList->writeBuffer(m_GeometryInstanceToLightBuffer, geometryInstanceToLight.data(), geometryInstanceToLight.size() * sizeof(uint32_t));
 
-    outFrameParameters.firstLocalLight = 0;
-    outFrameParameters.numLocalLights = lightBufferOffset;
+    outLightBufferParams.firstLocalLight = 0;
+    outLightBufferParams.numLocalLights = lightBufferOffset;
 
     auto sortedLights = sceneLights;
     std::sort(sortedLights.begin(), sortedLights.end(), [](const auto& a, const auto& b) 
@@ -447,11 +447,11 @@ void PrepareLightsPass::Process(
 
     assert(numImportanceSampledEnvironmentLights <= 1);
     
-    outFrameParameters.numLocalLights += numFinitePrimLights;
-    outFrameParameters.firstInfiniteLight = outFrameParameters.numLocalLights;
-    outFrameParameters.numInfiniteLights = numInfinitePrimLights;
-    outFrameParameters.environmentLightIndex = outFrameParameters.firstInfiniteLight + outFrameParameters.numInfiniteLights;
-    outFrameParameters.environmentLightPresent = numImportanceSampledEnvironmentLights;
+    outLightBufferParams.numLocalLights += numFinitePrimLights;
+    outLightBufferParams.firstInfiniteLight = outLightBufferParams.numLocalLights;
+    outLightBufferParams.numInfiniteLights = numInfinitePrimLights;
+    outLightBufferParams.environmentLightIndex = outLightBufferParams.firstInfiniteLight + outLightBufferParams.numInfiniteLights;
+    outLightBufferParams.environmentLightPresent = numImportanceSampledEnvironmentLights;
     
     commandList->writeBuffer(m_TaskBuffer, tasks.data(), tasks.size() * sizeof(PrepareLightsTask));
 
@@ -483,9 +483,10 @@ void PrepareLightsPass::Process(
 
     commandList->endMarker();
 
-    outFrameParameters.firstLocalLight += constants.currentFrameLightOffset;
-    outFrameParameters.firstInfiniteLight += constants.currentFrameLightOffset;
-    outFrameParameters.environmentLightIndex += constants.currentFrameLightOffset;
+    outLightBufferParams.firstLocalLight += constants.currentFrameLightOffset;
+    outLightBufferParams.firstInfiniteLight += constants.currentFrameLightOffset;
+    outLightBufferParams.environmentLightIndex += constants.currentFrameLightOffset;
 
     m_OddFrame = !m_OddFrame;
+    return outLightBufferParams;
 }

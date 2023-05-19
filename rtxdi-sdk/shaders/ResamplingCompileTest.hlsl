@@ -145,7 +145,7 @@ int RAB_TranslateLightIndex(uint lightIndex, bool currentToPrevious)
     return -1;
 }
 
-float RAB_EvaluateLocalLightSourcePdf(RTXDI_RuntimeParameters params, uint lightIndex)
+float RAB_EvaluateLocalLightSourcePdf(RTXDI_LocalLightRuntimeParameters params, uint lightIndex)
 {
     return 0.0;
 }

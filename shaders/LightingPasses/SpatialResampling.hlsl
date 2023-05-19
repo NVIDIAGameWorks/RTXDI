@@ -39,17 +39,17 @@ void RayGen()
     if (RAB_IsSurfaceValid(surface))
     {
         RTXDI_Reservoir centerSample = RTXDI_LoadReservoir(params,
-            GlobalIndex, g_Const.temporalOutputBufferIndex);
+            GlobalIndex, g_Const.temporalResamplingConstants.temporalOutputBufferIndex);
 
         RTXDI_SpatialResamplingParameters sparams;
-        sparams.sourceBufferIndex = g_Const.spatialInputBufferIndex;
-        sparams.numSamples = g_Const.numSpatialSamples;
-        sparams.numDisocclusionBoostSamples = g_Const.numDisocclusionBoostSamples;
-        sparams.targetHistoryLength = g_Const.maxHistoryLength;
-        sparams.biasCorrectionMode = g_Const.spatialBiasCorrection;
-        sparams.samplingRadius = g_Const.spatialSamplingRadius;
-        sparams.depthThreshold = g_Const.spatialDepthThreshold;
-        sparams.normalThreshold = g_Const.spatialNormalThreshold;
+        sparams.sourceBufferIndex = g_Const.spatialResamplingConstants.spatialInputBufferIndex;
+        sparams.numSamples = g_Const.spatialResamplingConstants.numSpatialSamples;
+        sparams.numDisocclusionBoostSamples = g_Const.spatialResamplingConstants.numDisocclusionBoostSamples;
+        sparams.targetHistoryLength = g_Const.temporalResamplingConstants.maxHistoryLength;
+        sparams.biasCorrectionMode = g_Const.spatialResamplingConstants.spatialBiasCorrection;
+        sparams.samplingRadius = g_Const.spatialResamplingConstants.spatialSamplingRadius;
+        sparams.depthThreshold = g_Const.spatialResamplingConstants.spatialDepthThreshold;
+        sparams.normalThreshold = g_Const.spatialResamplingConstants.spatialNormalThreshold;
         sparams.enableMaterialSimilarityTest = true;
 
         RAB_LightSample lightSample = (RAB_LightSample)0;
@@ -57,5 +57,5 @@ void RayGen()
              rng, sparams, params, lightSample);
     }
 
-    RTXDI_StoreReservoir(spatialResult, params, GlobalIndex, g_Const.spatialOutputBufferIndex);
+    RTXDI_StoreReservoir(spatialResult, params, GlobalIndex, g_Const.spatialResamplingConstants.spatialOutputBufferIndex);
 }

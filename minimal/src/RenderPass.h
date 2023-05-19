@@ -25,10 +25,10 @@ namespace donut::engine
 
 namespace rtxdi
 {
-    struct FrameParameters;
-    class Context;
+    struct RTXDIDynamicParameters;
+    class RTXDIContext;
     struct ResamplingSettings;
-    struct ContextParameters;
+    struct RTXDIStaticParameters;
 }
 
 class RenderTargets;
@@ -83,11 +83,10 @@ public:
 
     void Render(
         nvrhi::ICommandList* commandList,
-        rtxdi::Context& context,
+        rtxdi::RTXDIContext& context,
         const donut::engine::IView& view,
         const donut::engine::IView& previousView,
-        const Settings& localSettings,
-        const rtxdi::FrameParameters& frameParameters);
+        const Settings& localSettings);
 
     void NextFrame();
 };

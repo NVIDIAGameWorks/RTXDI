@@ -11,26 +11,15 @@
 #pragma once
 
 #include <stdint.h>
+#include <memory>
 #include <vector>
 
 #include "RtxdiParameters.h"
+#include "ReGIRParameters.h"
+#include "ReGIR.h"
 
 namespace rtxdi
 {
-    struct uint3
-    {
-        uint32_t x;
-        uint32_t y;
-        uint32_t z;
-    };
-
-    struct float3
-    {
-        float x;
-        float y;
-        float z;
-    };
-
     // Checkerboard sampling modes match those used in NRD, based on frameIndex:
     // Even frame(0)  Odd frame(1)   ...
     //     B W             W B
@@ -42,132 +31,146 @@ namespace rtxdi
         Black = 1,
         White = 2
     };
-    
-    enum class ReGIRMode : uint32_t
+        
+    enum class LocalLightSamplingMode : uint32_t
     {
-        Disabled = 0,
-        Grid = 1,
-        Onion = 2
-    };
-    
-    struct ReGIRContextParameters
-    {
-        ReGIRMode Mode = ReGIRMode::Disabled;
-
-        // Common settings
-
-        // Number of light reservoirs computed and stored for each cell.
-        uint32_t LightsPerCell = 512;
-
-        // Grid mode
-
-        // Grid dimensions along the primary axes, in cells.
-        uint3 GridSize = { 16, 16, 16 };
-
-        // Onion mode
-
-        // Number of onion layers that cover the volume around the center
-        // with high detail. These layers have cell size that is proportional
-        // to a cubic root of the distance from the center. The number of cells
-        // in each detail layer is higher than the number of cells in the previous
-        // detail layer.
-        // Acceptable values are 0 to RTXDI_ONION_MAX_LAYER_GROUPS.
-        uint32_t OnionDetailLayers = 5;
-
-        // Number of onion layers that cover the volume after the detail layers.
-        // Each coverage layer has the same number of cells that is determined
-        // only by the number of the detail layers. Coverage layers have cell size
-        // that is proportional to the distance from the center as a linear function.
-        uint32_t OnionCoverageLayers = 10;
+        Uniform = RTXDI_LocalLightSamplingMode_UNIFORM,
+        Power_RIS = RTXDI_LocalLightSamplingMode_POWER_RIS,
+        ReGIR_RIS = RTXDI_LocalLightSamplingMode_REGIR_RIS
     };
 
-    struct ContextParameters
+    struct RISBufferSegmentParameters
     {
-        uint32_t TileSize = 1024;
-        uint32_t TileCount = 128;
+        uint32_t tileSize;
+        uint32_t tileCount;
+    };
+
+    // Parameters used to initialize the RTXDIContext
+    // Changing any of these requires recreating the context.
+    struct RTXDIStaticParameters
+    {
+        RISBufferSegmentParameters localLightPowerRISBufferSegmentParams = {1024, 128};
+        RISBufferSegmentParameters environmentLightRISBufferSegmentParams = {1024, 128};
         uint32_t NeighborOffsetCount = 8192;
         uint32_t RenderWidth = 0;
         uint32_t RenderHeight = 0;
-        uint32_t EnvironmentTileSize = 1024;
-        uint32_t EnvironmentTileCount = 128;
 
         CheckerboardMode CheckerboardSamplingMode = CheckerboardMode::Off;
         
-        ReGIRContextParameters ReGIR;
+        ReGIRStaticParameters ReGIR;
     };
 
-    struct FrameParameters
+    // Description of what lights are stored and how in the light buffer
+    // Infinite lights must be indexed immediately after local lights
+    // Buffer layout: [local lights][infinite lights][environment light]
+    struct LightBufferParameters
     {
-        // Linear index of the current frame, used to determine the checkerboard field.
-        uint32_t frameIndex = 0;
-
-        // Index of the first local light in the light buffer.
         uint32_t firstLocalLight = 0;
-
-        // Number of local lights available on this frame.
         uint32_t numLocalLights = 0;
-
-        // Index of the first infinite light in the light buffer.
         uint32_t firstInfiniteLight = 0;
-
-        // Number of infinite lights available on this frame. They must be indexed
-        // immediately following the local lights.
         uint32_t numInfiniteLights = 0;
-
-        // Enables the use of an importance sampled environment map light.
         bool environmentLightPresent = false;
-
-        // Index of the importance environment light in the light buffer.
         uint32_t environmentLightIndex = RTXDI_INVALID_LIGHT_INDEX;
-
-        // Use image-based importance sampling for local lights
-        bool enableLocalLightImportanceSampling = false;
-
-        // Size of the smallest ReGIR cell, in world units.
-        float regirCellSize = 1.f;
-
-        // Scale of jitter applied to surface positions when sampling the ReGIR grid,
-        // measured in grid cells. The value of 1.0 means plus or minus one grid cell.
-        // This jitter scale is provided here because it affects both grid construction
-        // (to determine effective cell radii) and sampling.
-        float regirSamplingJitter = 1.0f;
-
-        // Center of the ReGIR structure, in world space.
-        float3 regirCenter{};
     };
 
+    struct InitialSamplingSettings
+    {
+        LocalLightSamplingMode localLightInitialSamplingMode = LocalLightSamplingMode::ReGIR_RIS;
+        uint32_t numPrimaryLocalLightUniformSamples = 8;
+        uint32_t numPrimaryLocalLightPowerRISSamples = 8;
+        uint32_t numPrimaryLocalLightReGIRRISSamples = 8;
+        uint32_t numPrimaryBrdfSamples = 1;
+        float brdfCutoff = 0;
+        uint32_t numPrimaryInfiniteLightSamples = 1;
+        uint32_t numPrimaryEnvironmentSamples = 1;
+        bool enableInitialVisibility = true;
+    };
 
-    class Context
+    // Currently shared between Temporal + GI
+    struct BoilingFilterSettings
+    {
+        bool enableBoilingFilter = true;
+        float boilingFilterStrength = 0.2f;
+    };
+
+    struct TemporalResamplingSettings
+    {
+        float temporalNormalThreshold = 0.5f;
+        float temporalDepthThreshold = 0.1f;
+        uint32_t maxHistoryLength = 20;
+        uint32_t temporalBiasCorrection = RTXDI_BIAS_CORRECTION_BASIC;
+        float permutationSamplingThreshold = 0.9f;
+        // Enables discarding the reservoirs if their lights turn out to be occluded in the final pass.
+        // This mode significantly reduces the noise in the penumbra but introduces bias. That bias can be 
+        // corrected by setting 'enableSpatialBiasCorrection' and 'enableTemporalBiasCorrection' to true.
+        bool discardInvisibleSamples = false;
+    };
+
+    struct SpatialResamplingSettings
+    {
+        uint32_t numSpatialSamples = 1;
+        uint32_t numDisocclusionBoostSamples = 8;
+        float spatialSamplingRadius = 32.f;
+        float spatialNormalThreshold = 0.5f;
+        float spatialDepthThreshold = 0.1f;
+        uint32_t spatialBiasCorrection = RTXDI_BIAS_CORRECTION_BASIC;
+    };
+
+    struct ShadingSettings
+    {
+        bool reuseFinalVisibility = true;
+        uint32_t finalVisibilityMaxAge = 4;
+        float finalVisibilityMaxDistance = 16.f;
+    };
+
+    // Make this constructor take static RTXDI params, update its dynamic ones
+    class RTXDIContext
     {
     private:
-        ContextParameters m_Params;
-        
         uint32_t m_ReservoirBlockRowPitch = 0;
         uint32_t m_ReservoirArrayPitch = 0;
+        
+        std::unique_ptr<ReGIRContext> m_regirContext;
 
-        uint32_t m_RegirCellOffset = 0;
-        uint32_t m_OnionCells = 0;
-        std::vector<RTXDI_OnionLayerGroup> m_OnionLayers;
-        std::vector<RTXDI_OnionRing> m_OnionRings;
-        float m_OnionCubicRootFactor = 0.f;
-        float m_OnionLinearFactor = 0.f;
+        uint32_t m_frameIndex;
+        LightBufferParameters m_lightBufferParams;
+        RTXDIStaticParameters m_staticParams;
 
-        void InitializeOnion();
-        void ComputeOnionJitterCurve();
+        InitialSamplingSettings m_initialSamplingSettings;
+        TemporalResamplingSettings m_temporalResamplingSettings;
+        BoilingFilterSettings m_boilingFilterSettings;
+        SpatialResamplingSettings m_spatialResamplingSettings;
+        ShadingSettings m_shadingSettings;
 
     public:
-        Context(const ContextParameters& params);
-        const ContextParameters& GetParameters() const;
-        
-        uint32_t GetRisBufferElementCount() const;
-        uint32_t GetReservoirBufferElementCount() const;
-        uint32_t GetReGIRLightSlotCount() const;
+        RTXDIContext(const RTXDIStaticParameters& params);
 
-        void FillRuntimeParameters(
-            RTXDI_RuntimeParameters& runtimeParams,
-            const FrameParameters& frame) const;
+        InitialSamplingSettings getInitialSamplingSettings() const;
+        TemporalResamplingSettings getTemporalResamplingSettings() const;
+        BoilingFilterSettings getBoilingFilterSettings() const;
+        SpatialResamplingSettings getSpatialResamplingSettings() const;
+        ShadingSettings getShadingSettings() const;
+
+        uint32_t getFrameIndex() const;
+        const LightBufferParameters& getLightBufferParameters() const;
+        const RTXDIStaticParameters& getStaticParameters() const;
+        uint32_t GetRisBufferElementCount() const;
+        ReGIRContext& getReGIRContext();
+        uint32_t GetReservoirBufferElementCount() const;
 
         void FillNeighborOffsetBuffer(uint8_t* buffer) const;
+        void FillRuntimeParameters(RTXDI_RuntimeParameters& runtimeParams) const;
+
+        bool isLocalLightPowerRISEnabled() const;
+
+        void setFrameIndex(uint32_t frameIndex);
+        void setLightBufferParameters(const LightBufferParameters& lightBufferParams);
+
+        void setInitialSamplingSettings(const InitialSamplingSettings& initialSamplingSettings);
+        void setTemporalResamplingSettings(const TemporalResamplingSettings& temporalResamplingSettings);
+        void setBoilingFilterSettings(const BoilingFilterSettings& boilingFilterSettings);
+        void setSpatialResamplingSettings(const SpatialResamplingSettings& spatialResamplingSettings);
+        void setShadingSettings(const ShadingSettings& shadingSettings);
     };
 
     void ComputePdfTextureSize(uint32_t maxItems, uint32_t& outWidth, uint32_t& outHeight, uint32_t& outMipLevels);

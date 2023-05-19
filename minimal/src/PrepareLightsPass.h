@@ -55,7 +55,5 @@ public:
     void CreateBindingSet(RtxdiResources& resources);
     void CountLightsInScene(uint32_t& numEmissiveMeshes, uint32_t& numEmissiveTriangles);
     
-    void Process(
-        nvrhi::ICommandList* commandList, 
-        rtxdi::FrameParameters& outFrameParameters);
+    rtxdi::LightBufferParameters Process(nvrhi::ICommandList* commandList);
 };

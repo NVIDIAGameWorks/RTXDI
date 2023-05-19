@@ -128,10 +128,10 @@ void RayGen()
 
     uint instanceMask = INSTANCE_MASK_OPAQUE;
     
-    if (g_Const.enableAlphaTestedGeometry)
+    if (g_Const.sceneConstants.enableAlphaTestedGeometry)
         instanceMask |= INSTANCE_MASK_ALPHA_TESTED;
 
-    if (g_Const.enableTransparentGeometry)
+    if (g_Const.sceneConstants.enableTransparentGeometry)
         instanceMask |= INSTANCE_MASK_TRANSPARENT;
 
 #if USE_RAY_QUERY
@@ -187,7 +187,7 @@ void RayGen()
     // Include the emissive component of surfaces seen with BRDF rays if requested (i.e. when Direct Lighting mode
     // is set to BRDF) or on delta reflection rays because those bypass ReSTIR GI and direct specular lighting,
     // and we need to see reflections of lamps and the sky in mirrors.
-    const bool includeEmissiveComponent = g_Const.enableIndirectEmissiveSurfaces || (isSpecularRay && isDeltaSurface);
+    const bool includeEmissiveComponent = g_Const.giSamplingConstants.enableIndirectEmissiveSurfaces || (isSpecularRay && isDeltaSurface);
 
     if (payload.instanceID != ~0u)
     {
@@ -209,16 +209,16 @@ void RayGen()
 
         ms.shadingNormal = getBentNormal(gs.flatNormal, ms.shadingNormal, ray.Direction);
 
-        if (g_Const.roughnessOverride >= 0)
-            ms.roughness = g_Const.roughnessOverride;
+        if (g_Const.giSamplingConstants.roughnessOverride >= 0)
+            ms.roughness = g_Const.giSamplingConstants.roughnessOverride;
 
-        if (g_Const.metalnessOverride >= 0)
+        if (g_Const.giSamplingConstants.metalnessOverride >= 0)
         {
-            ms.metalness = g_Const.metalnessOverride;
+            ms.metalness = g_Const.giSamplingConstants.metalnessOverride;
             getReflectivity(ms.metalness, ms.baseColor, ms.diffuseAlbedo, ms.specularF0);
         }
 
-        ms.roughness = max(ms.roughness, g_Const.minSecondaryRoughness);
+        ms.roughness = max(ms.roughness, g_Const.giSamplingConstants.minSecondaryRoughness);
 
         if (includeEmissiveComponent)
             radiance += ms.emissiveColor;
@@ -232,7 +232,7 @@ void RayGen()
     }
     else
     {
-        if (g_Const.enableEnvironmentMap && includeEmissiveComponent)
+        if (g_Const.sceneConstants.enableEnvironmentMap && includeEmissiveComponent)
         {
             float3 environmentRadiance = GetEnvironmentRadiance(ray.Direction);
             radiance += environmentRadiance;
@@ -255,7 +255,7 @@ void RayGen()
         secondaryGBufferData.diffuseAlbedo = Pack_R11G11B10_UFLOAT(secondarySurface.diffuseAlbedo);
         secondaryGBufferData.specularAndRoughness = Pack_R8G8B8A8_Gamma_UFLOAT(float4(secondarySurface.specularF0, secondarySurface.roughness));
 
-        if (g_Const.enableReSTIRIndirect)
+        if (g_Const.giSamplingConstants.enableReSTIRIndirect)
         {
             if (isSpecularRay && isDeltaSurface)
             {

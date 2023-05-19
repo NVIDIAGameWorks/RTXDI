@@ -102,7 +102,7 @@ private:
     std::shared_ptr<engine::LoadedTexture> m_EnvironmentMap;
     engine::BindingCache m_BindingCache;
 
-    std::unique_ptr<rtxdi::Context> m_RtxdiContext;
+    std::unique_ptr<rtxdi::RTXDIContext> m_RtxdiContext;
     std::unique_ptr<RaytracedGBufferPass> m_GBufferPass;
     std::unique_ptr<RasterizedGBufferPass> m_RasterizedGBufferPass;
     std::unique_ptr<PostprocessGBufferPass> m_PostprocessGBufferPass;
@@ -623,9 +623,9 @@ public:
             m_ui.rtxdiContextParams.RenderWidth = renderWidth;
             m_ui.rtxdiContextParams.RenderHeight = renderHeight;
 
-            m_RtxdiContext = std::make_unique<rtxdi::Context>(m_ui.rtxdiContextParams);
+            m_RtxdiContext = std::make_unique<rtxdi::RTXDIContext>(m_ui.rtxdiContextParams);
 
-            m_ui.regirLightSlotCount = m_RtxdiContext->GetReGIRLightSlotCount();
+            m_ui.regirLightSlotCount = m_RtxdiContext->getReGIRContext().getReGIRLightSlotCount();
         }
 
         if (!m_RenderTargets)
@@ -829,6 +829,24 @@ public:
         }
     }
 
+    void UpdateReGIRContextFromUI()
+    {
+        auto& regirContext = m_RtxdiContext->getReGIRContext();
+        auto dynamicParams = m_ui.regirDynamicParameters;
+        dynamicParams.center = { m_RegirCenter.x, m_RegirCenter.y, m_RegirCenter.z };
+        regirContext.setDynamicParameters(dynamicParams);
+    }
+
+    void UpdateRTXDIContextFromUI()
+    {
+        m_RtxdiContext->setInitialSamplingSettings(m_ui.initialSamplingSettings);
+        m_RtxdiContext->setBoilingFilterSettings(m_ui.boilingFilterSettings);
+        m_RtxdiContext->setTemporalResamplingSettings(m_ui.temporalResamplingSettings);
+        m_RtxdiContext->setSpatialResamplingSettings(m_ui.spatialResamplingSettings);
+        m_RtxdiContext->setShadingSettings(m_ui.shadingSettings);
+        UpdateReGIRContextFromUI();
+    }
+
     void RenderScene(nvrhi::IFramebuffer* framebuffer) override
     {
         if (m_FrameStepMode == FrameStepMode::Wait)
@@ -936,6 +954,7 @@ public:
         SetupRenderPasses(renderWidth, renderHeight, exposureResetRequired);
         if (!m_ui.freezeRegirPosition)
             m_RegirCenter = m_Camera.GetPosition();
+        UpdateRTXDIContextFromUI();
 #if WITH_DLSS
         if (!m_ui.dlssAvailable && m_ui.aaMode == AntiAliasingMode::DLSS)
             m_ui.aaMode = AntiAliasingMode::TAA;
@@ -955,7 +974,7 @@ public:
         // Advance the TAA jitter offset at half frame rate if accumulation is used with
         // checkerboard rendering. Otherwise, the jitter pattern resonates with the checkerboard,
         // and stipple patterns appear in the accumulated results.
-        if (!((m_ui.aaMode == AntiAliasingMode::Accumulation) && (m_RtxdiContext->GetParameters().CheckerboardSamplingMode != rtxdi::CheckerboardMode::Off) && (GetFrameIndex() & 1)))
+        if (!((m_ui.aaMode == AntiAliasingMode::Accumulation) && (m_RtxdiContext->getStaticParameters().CheckerboardSamplingMode != rtxdi::CheckerboardMode::Off) && (GetFrameIndex() & 1)))
         {
             m_TemporalAntiAliasingPass->AdvanceFrame();
         }
@@ -1078,26 +1097,21 @@ public:
             m_PostprocessGBufferPass->Render(m_CommandList, m_View);
         }
 
-        rtxdi::FrameParameters frameParameters;
         // The light indexing members of frameParameters are written by PrepareLightsPass below
-        frameParameters.frameIndex = effectiveFrameIndex;
-        frameParameters.regirCenter = { m_RegirCenter.x, m_RegirCenter.y, m_RegirCenter.z };
-        frameParameters.regirCellSize = m_ui.regirCellSize;
-        frameParameters.regirSamplingJitter = m_ui.regirSamplingJitter;
-        frameParameters.enableLocalLightImportanceSampling = m_ui.enableLocalLightImportanceSampling;
+        m_RtxdiContext->setFrameIndex(effectiveFrameIndex);
 
         {
             ProfilerScope scope(*m_Profiler, m_CommandList, ProfilerSection::MeshProcessing);
             
-            m_PrepareLightsPass->Process(
+            rtxdi::LightBufferParameters lightBufferParams = m_PrepareLightsPass->Process(
                 m_CommandList,
                 *m_RtxdiContext,
                 m_Scene->GetSceneGraph()->GetLights(),
-                m_EnvironmentMapPdfMipmapPass != nullptr && m_ui.environmentMapImportanceSampling,
-                frameParameters);
+                m_EnvironmentMapPdfMipmapPass != nullptr && m_ui.environmentMapImportanceSampling);
+            m_RtxdiContext->setLightBufferParameters(lightBufferParams);
         }
 
-        if (m_ui.enableLocalLightImportanceSampling)
+        if (m_RtxdiContext->isLocalLightPowerRISEnabled())
         {
             ProfilerScope scope(*m_Profiler, m_CommandList, ProfilerSection::LocalLightPdfMap);
             
@@ -1106,7 +1120,7 @@ public:
 
 
 #if WITH_NRD
-        if (m_RtxdiContext->GetParameters().CheckerboardSamplingMode != rtxdi::CheckerboardMode::Off)
+        if (m_RtxdiContext->getStaticParameters().CheckerboardSamplingMode != rtxdi::CheckerboardMode::Off)
         {
             m_ui.reblurSettings.checkerboardMode = nrd::CheckerboardMode::BLACK;
             m_ui.relaxSettings.checkerboardMode = nrd::CheckerboardMode::BLACK;
@@ -1132,7 +1146,7 @@ public:
         if (lightingSettings.denoiserMode == DENOISER_MODE_OFF)
             lightingSettings.enableGradients = false;
 
-        const bool checkerboard = m_RtxdiContext->GetParameters().CheckerboardSamplingMode != rtxdi::CheckerboardMode::Off;
+        const bool checkerboard = m_RtxdiContext->getStaticParameters().CheckerboardSamplingMode != rtxdi::CheckerboardMode::Off;
 
         bool enableDirectReStirPass = m_ui.directLightingMode == DirectLightingMode::ReStir;
         bool enableBrdfAndIndirectPass = m_ui.directLightingMode == DirectLightingMode::Brdf || m_ui.indirectLightingMode != IndirectLightingMode::None;
@@ -1145,7 +1159,7 @@ public:
         if (!enableDirectReStirPass)
         {
             // Secondary resampling can only be done as a post-process of ReSTIR direct lighting
-            lightingSettings.enableSecondaryResampling = false;
+            lightingSettings.giSamplingSettings.enableSecondaryResampling = false;
 
             // Gradients are only produced by the direct ReSTIR pass
             lightingSettings.enableGradients = false;
@@ -1157,7 +1171,6 @@ public:
                 *m_RtxdiContext,
                 m_View, m_ViewPrevious,
                 lightingSettings,
-                frameParameters,
                 /* enableAccumulation = */ m_ui.aaMode == AntiAliasingMode::Accumulation);
         }
 
@@ -1190,7 +1203,6 @@ public:
                 m_View, m_ViewPrevious,
                 lightingSettings,
                 m_ui.gbufferSettings,
-                frameParameters,
                 *m_EnvironmentLight,
                 /* enableIndirect = */ enableIndirect,
                 /* enableAdditiveBlend = */ enableDirectReStirPass,
@@ -1350,7 +1362,6 @@ public:
                     m_View,
                     m_UpscaledView,
                     *m_RtxdiContext,
-                    frameParameters,
                     inputBufferIndex,
                     m_ui.visualizationMode,
                     m_ui.aaMode == AntiAliasingMode::Accumulation);

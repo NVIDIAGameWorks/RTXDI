@@ -41,7 +41,7 @@ void RayGen()
     RAB_Surface surface = RAB_GetGBufferSurface(pixelPosition, false);
 
     bool usePermutationSampling = false;
-    if (g_Const.enablePermutationSampling)
+    if (g_Const.temporalResamplingConstants.enablePermutationSampling)
     {
         // Permutation sampling makes more noise on thin, high-detail objects.
         usePermutationSampling = !IsComplexSurface(pixelPosition, surface);
@@ -53,19 +53,19 @@ void RayGen()
     if (RAB_IsSurfaceValid(surface))
     {
         RTXDI_Reservoir curSample = RTXDI_LoadReservoir(params,
-            GlobalIndex, g_Const.initialOutputBufferIndex);
+            GlobalIndex, g_Const.initialSamplingConstants.initialOutputBufferIndex);
 
         float3 motionVector = t_MotionVectors[pixelPosition].xyz;
         motionVector = convertMotionVectorToPixelSpace(g_Const.view, g_Const.prevView, pixelPosition, motionVector);
 
         RTXDI_TemporalResamplingParameters tparams;
         tparams.screenSpaceMotion = motionVector;
-        tparams.sourceBufferIndex = g_Const.temporalInputBufferIndex;
-        tparams.maxHistoryLength = g_Const.maxHistoryLength;
-        tparams.biasCorrectionMode = g_Const.temporalBiasCorrection;
-        tparams.depthThreshold = g_Const.temporalDepthThreshold;
-        tparams.normalThreshold = g_Const.temporalNormalThreshold;
-        tparams.enableVisibilityShortcut = g_Const.discardInvisibleSamples;
+        tparams.sourceBufferIndex = g_Const.temporalResamplingConstants.temporalInputBufferIndex;
+        tparams.maxHistoryLength = g_Const.temporalResamplingConstants.maxHistoryLength;
+        tparams.biasCorrectionMode = g_Const.temporalResamplingConstants.temporalBiasCorrection;
+        tparams.depthThreshold = g_Const.temporalResamplingConstants.temporalDepthThreshold;
+        tparams.normalThreshold = g_Const.temporalResamplingConstants.temporalNormalThreshold;
+        tparams.enableVisibilityShortcut = g_Const.temporalResamplingConstants.discardInvisibleSamples;
         tparams.enablePermutationSampling = usePermutationSampling;
 
         RAB_LightSample selectedLightSample = (RAB_LightSample)0;
@@ -83,5 +83,5 @@ void RayGen()
 
     u_TemporalSamplePositions[GlobalIndex] = temporalSamplePixelPos;
     
-    RTXDI_StoreReservoir(temporalResult, params, GlobalIndex, g_Const.temporalOutputBufferIndex);
+    RTXDI_StoreReservoir(temporalResult, params, GlobalIndex, g_Const.temporalResamplingConstants.temporalOutputBufferIndex);
 }

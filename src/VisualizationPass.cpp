@@ -77,8 +77,7 @@ void VisualizationPass::Render(
     nvrhi::IFramebuffer* framebuffer,
     const IView& renderView,
     const IView& upscaledView,
-    rtxdi::Context& context,
-    const rtxdi::FrameParameters& frameParameters,
+    rtxdi::RTXDIContext& context,
     uint32_t inputBufferIndex,
     uint32_t visualizationMode,
     bool enableAccumulation)
@@ -122,7 +121,7 @@ void VisualizationPass::Render(
     const auto& upscaledViewport = upscaledView.GetViewportState().viewports[0];
     constants.resolutionScale.x = renderViewport.width() / upscaledViewport.width();
     constants.resolutionScale.y = renderViewport.height() / upscaledViewport.height();
-    context.FillRuntimeParameters(constants.runtimeParams, frameParameters);
+    context.FillRuntimeParameters(constants.runtimeParams);
     constants.visualizationMode = visualizationMode;
     constants.inputBufferIndex = inputBufferIndex;
     constants.enableAccumulation = enableAccumulation;

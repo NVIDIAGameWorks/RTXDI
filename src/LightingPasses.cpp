@@ -233,7 +233,7 @@ void LightingPasses::ExecuteRayTracingPass(nvrhi::ICommandList* commandList, Ray
     commandList->endMarker();
 }
 
-donut::engine::ShaderMacro LightingPasses::GetRegirMacro(const rtxdi::ContextParameters& contextParameters)
+donut::engine::ShaderMacro LightingPasses::GetRegirMacro(const rtxdi::RTXDIStaticParameters& contextParameters)
 {
     std::string regirMode;
 
@@ -253,7 +253,7 @@ donut::engine::ShaderMacro LightingPasses::GetRegirMacro(const rtxdi::ContextPar
     return { "RTXDI_REGIR_MODE", regirMode };
 }
 
-void LightingPasses::CreatePipelines(const rtxdi::ContextParameters& contextParameters, bool useRayQuery)
+void LightingPasses::CreatePipelines(const rtxdi::RTXDIStaticParameters& contextParameters, bool useRayQuery)
 {
     std::vector<donut::engine::ShaderMacro> regirMacros = {
         GetRegirMacro(contextParameters) 
@@ -295,7 +295,8 @@ static void NrdHitDistanceParamsToFloat4(const nrd::HitDistanceParameters* param
 void LightingPasses::FillResamplingConstants(
     ResamplingConstants& constants,
     const RenderSettings& lightingSettings,
-    const rtxdi::FrameParameters& frameParameters)
+    const rtxdi::RTXDIContext& rtxdiContext,
+    const rtxdi::LightBufferParameters& lightBufferParameters)
 {
     const bool useTemporalResampling =
         lightingSettings.resamplingMode == ResamplingMode::Temporal ||
@@ -309,9 +310,9 @@ void LightingPasses::FillResamplingConstants(
 
     constants.enablePreviousTLAS = lightingSettings.enablePreviousTLAS;
     constants.denoiserMode = lightingSettings.denoiserMode;
-    constants.enableAlphaTestedGeometry = lightingSettings.enableAlphaTestedGeometry;
-    constants.enableTransparentGeometry = lightingSettings.enableTransparentGeometry;
-    constants.enableDenoiserInputPacking = lightingSettings.enableDenoiserInputPacking;
+    constants.sceneConstants.enableAlphaTestedGeometry = lightingSettings.enableAlphaTestedGeometry;
+    constants.sceneConstants.enableTransparentGeometry = lightingSettings.enableTransparentGeometry;
+    constants.shadingConstants.enableDenoiserInputPacking = lightingSettings.enableDenoiserInputPacking;
     constants.visualizeRegirCells = lightingSettings.visualizeRegirCells;
 #if WITH_NRD
     if (lightingSettings.denoiserMode != DENOISER_MODE_OFF)
@@ -321,121 +322,136 @@ void LightingPasses::FillResamplingConstants(
     }
 #endif
 
-    constants.numPrimaryRegirSamples = lightingSettings.enableReGIR ? lightingSettings.numPrimaryRegirSamples : 0;
-    constants.numPrimaryLocalLightSamples = lightingSettings.numPrimaryLocalLightSamples;
-    constants.numPrimaryBrdfSamples = lightingSettings.numPrimaryBrdfSamples;
-    constants.numPrimaryInfiniteLightSamples = lightingSettings.numPrimaryInfiniteLightSamples;
-    constants.brdfCutoff = lightingSettings.brdfCutoff;
-    constants.numIndirectRegirSamples = lightingSettings.enableReGIR ? lightingSettings.numIndirectRegirSamples : 0;
-    constants.numIndirectLocalLightSamples = lightingSettings.numIndirectLocalLightSamples;
-    constants.numIndirectInfiniteLightSamples = lightingSettings.numIndirectInfiniteLightSamples;
+    auto initialSamplingSettings = rtxdiContext.getInitialSamplingSettings();
+    auto temporalResamplingSettings = rtxdiContext.getTemporalResamplingSettings();
+    auto boilingFilterSettings = rtxdiContext.getBoilingFilterSettings();
+    auto spatialResamplingSettings = rtxdiContext.getSpatialResamplingSettings();
+    auto shadingSettings = rtxdiContext.getShadingSettings();
 
-    constants.enableInitialVisibility = lightingSettings.enableInitialVisibility;
-    constants.enableFinalVisibility = lightingSettings.enableFinalVisibility;
-    constants.temporalNormalThreshold = lightingSettings.temporalNormalThreshold;
-    constants.temporalDepthThreshold = lightingSettings.temporalDepthThreshold;
-    constants.maxHistoryLength = lightingSettings.maxHistoryLength;
-    constants.temporalBiasCorrection = lightingSettings.temporalBiasCorrection;
-    constants.boilingFilterStrength = lightingSettings.enableBoilingFilter ? lightingSettings.boilingFilterStrength : 0.f;
-    constants.numSpatialSamples = useSpatialResampling ? lightingSettings.numSpatialSamples : 0;
-    constants.numDisocclusionBoostSamples = useTemporalResampling ? lightingSettings.numDisocclusionBoostSamples : 0;
-    constants.spatialSamplingRadius = lightingSettings.spatialSamplingRadius;
-    constants.spatialNormalThreshold = lightingSettings.spatialNormalThreshold;
-    constants.spatialDepthThreshold = lightingSettings.spatialDepthThreshold;
-    constants.spatialBiasCorrection = lightingSettings.spatialBiasCorrection;
-    constants.reuseFinalVisibility = lightingSettings.reuseFinalVisibility;
-    constants.finalVisibilityMaxAge = lightingSettings.finalVisibilityMaxAge;
-    constants.finalVisibilityMaxDistance = lightingSettings.finalVisibilityMaxDistance;
-    constants.discardInvisibleSamples = lightingSettings.discardInvisibleSamples;
-    constants.numRegirBuildSamples = lightingSettings.numRegirBuildSamples;
-    constants.enablePermutationSampling = lightingSettings.enablePermutationSampling;
-    constants.permutationSamplingThreshold = lightingSettings.permutationSamplingThreshold;
-
-    constants.numSecondarySamples = lightingSettings.enableSecondaryResampling ? lightingSettings.numSecondarySamples : 0;
-    constants.secondaryBiasCorrection = lightingSettings.secondaryBiasCorrection;
-    constants.secondarySamplingRadius = lightingSettings.secondarySamplingRadius;
-    constants.secondaryDepthThreshold = lightingSettings.secondaryDepthThreshold;
-    constants.secondaryNormalThreshold = lightingSettings.secondaryNormalThreshold;
+    switch (initialSamplingSettings.localLightInitialSamplingMode)
+    {
+    default:
+    case rtxdi::LocalLightSamplingMode::Uniform:
+        constants.initialSamplingConstants.numPrimaryLocalLightSamples = initialSamplingSettings.numPrimaryLocalLightUniformSamples;
+        break;
+    case rtxdi::LocalLightSamplingMode::Power_RIS:
+        constants.initialSamplingConstants.numPrimaryLocalLightSamples = initialSamplingSettings.numPrimaryLocalLightPowerRISSamples;
+        break;
+    case rtxdi::LocalLightSamplingMode::ReGIR_RIS:
+        constants.initialSamplingConstants.numPrimaryLocalLightSamples = initialSamplingSettings.numPrimaryLocalLightReGIRRISSamples;
+        break;
+    }
+    
+    constants.initialSamplingConstants.numPrimaryBrdfSamples = initialSamplingSettings.numPrimaryBrdfSamples;
+    constants.initialSamplingConstants.numPrimaryInfiniteLightSamples = initialSamplingSettings.numPrimaryInfiniteLightSamples;
+    constants.initialSamplingConstants.brdfCutoff = initialSamplingSettings.brdfCutoff;
+    constants.initialSamplingConstants.enableInitialVisibility = initialSamplingSettings.enableInitialVisibility;
+    constants.temporalResamplingConstants.temporalNormalThreshold = temporalResamplingSettings.temporalNormalThreshold;
+    constants.temporalResamplingConstants.temporalDepthThreshold = temporalResamplingSettings.temporalDepthThreshold;
+    constants.temporalResamplingConstants.maxHistoryLength = temporalResamplingSettings.maxHistoryLength;
+    constants.temporalResamplingConstants.temporalBiasCorrection = temporalResamplingSettings.temporalBiasCorrection;
+    constants.temporalResamplingConstants.discardInvisibleSamples = temporalResamplingSettings.discardInvisibleSamples;
+    constants.temporalResamplingConstants.enablePermutationSampling = lightingSettings.enablePermutationSampling;
+    constants.temporalResamplingConstants.permutationSamplingThreshold = temporalResamplingSettings.permutationSamplingThreshold;
+    constants.boilingFilterStrength = boilingFilterSettings.enableBoilingFilter ? boilingFilterSettings.boilingFilterStrength : 0.f;
+    constants.spatialResamplingConstants.numSpatialSamples = useSpatialResampling ? spatialResamplingSettings.numSpatialSamples : 0;
+    constants.spatialResamplingConstants.numDisocclusionBoostSamples = useTemporalResampling ? spatialResamplingSettings.numDisocclusionBoostSamples : 0;
+    constants.spatialResamplingConstants.spatialSamplingRadius = spatialResamplingSettings.spatialSamplingRadius;
+    constants.spatialResamplingConstants.spatialNormalThreshold = spatialResamplingSettings.spatialNormalThreshold;
+    constants.spatialResamplingConstants.spatialDepthThreshold = spatialResamplingSettings.spatialDepthThreshold;
+    constants.spatialResamplingConstants.spatialBiasCorrection = spatialResamplingSettings.spatialBiasCorrection;
+    constants.shadingConstants.enableFinalVisibility = lightingSettings.enableFinalVisibility;
+    constants.shadingConstants.reuseFinalVisibility = shadingSettings.reuseFinalVisibility;
+    constants.shadingConstants.finalVisibilityMaxAge = shadingSettings.finalVisibilityMaxAge;
+    constants.shadingConstants.finalVisibilityMaxDistance = shadingSettings.finalVisibilityMaxDistance;
+    constants.giSamplingConstants.numIndirectLocalLightSamples = lightingSettings.giSamplingSettings.numIndirectLocalLightSamples;
+    constants.giSamplingConstants.numIndirectInfiniteLightSamples = lightingSettings.giSamplingSettings.numIndirectInfiniteLightSamples;
+    constants.giSamplingConstants.numSecondarySamples = lightingSettings.giSamplingSettings.enableSecondaryResampling ? lightingSettings.giSamplingSettings.numSecondarySamples : 0;
+    constants.giSamplingConstants.secondaryBiasCorrection = lightingSettings.giSamplingSettings.secondaryBiasCorrection;
+    constants.giSamplingConstants.secondarySamplingRadius = lightingSettings.giSamplingSettings.secondarySamplingRadius;
+    constants.giSamplingConstants.secondaryDepthThreshold = lightingSettings.giSamplingSettings.secondaryDepthThreshold;
+    constants.giSamplingConstants.secondaryNormalThreshold = lightingSettings.giSamplingSettings.secondaryNormalThreshold;
     
     if (lightingSettings.resamplingMode == ResamplingMode::FusedSpatiotemporal)
     {
-        constants.initialOutputBufferIndex = (m_LastFrameOutputReservoir + 1) % RtxdiResources::c_NumReservoirBuffers;
-        constants.temporalInputBufferIndex = m_LastFrameOutputReservoir;
-        constants.shadeInputBufferIndex = constants.initialOutputBufferIndex;
+        constants.initialSamplingConstants.initialOutputBufferIndex = (m_LastFrameOutputReservoir + 1) % RtxdiResources::c_NumReservoirBuffers;
+        constants.temporalResamplingConstants.temporalInputBufferIndex = m_LastFrameOutputReservoir;
+        constants.shadingConstants.shadeInputBufferIndex = constants.initialSamplingConstants.initialOutputBufferIndex;
     }
     else
     {
-        constants.initialOutputBufferIndex = (m_LastFrameOutputReservoir + 1) % RtxdiResources::c_NumReservoirBuffers;
-        constants.temporalInputBufferIndex = m_LastFrameOutputReservoir;
-        constants.temporalOutputBufferIndex = (constants.temporalInputBufferIndex + 1) % RtxdiResources::c_NumReservoirBuffers;
-        constants.spatialInputBufferIndex = useTemporalResampling
-            ? constants.temporalOutputBufferIndex
-            : constants.initialOutputBufferIndex;
-        constants.spatialOutputBufferIndex = (constants.spatialInputBufferIndex + 1) % RtxdiResources::c_NumReservoirBuffers;
-        constants.shadeInputBufferIndex = useSpatialResampling
-            ? constants.spatialOutputBufferIndex
-            : constants.temporalOutputBufferIndex;
+        constants.initialSamplingConstants.initialOutputBufferIndex = (m_LastFrameOutputReservoir + 1) % RtxdiResources::c_NumReservoirBuffers;
+        constants.temporalResamplingConstants.temporalInputBufferIndex = m_LastFrameOutputReservoir;
+        constants.temporalResamplingConstants.temporalOutputBufferIndex = (constants.temporalResamplingConstants.temporalInputBufferIndex + 1) % RtxdiResources::c_NumReservoirBuffers;
+        constants.spatialResamplingConstants.spatialInputBufferIndex = useTemporalResampling
+            ? constants.temporalResamplingConstants.temporalOutputBufferIndex
+            : constants.initialSamplingConstants.initialOutputBufferIndex;
+        constants.spatialResamplingConstants.spatialOutputBufferIndex = (constants.spatialResamplingConstants.spatialInputBufferIndex + 1) % RtxdiResources::c_NumReservoirBuffers;
+        constants.shadingConstants.shadeInputBufferIndex = useSpatialResampling
+            ? constants.spatialResamplingConstants.spatialOutputBufferIndex
+            : constants.temporalResamplingConstants.temporalOutputBufferIndex;
     }
 
     constants.localLightPdfTextureSize = m_LocalLightPdfTextureSize;
     
-    if (frameParameters.environmentLightPresent)
+    if (lightBufferParameters.environmentLightPresent)
     {
         constants.environmentPdfTextureSize = m_EnvironmentPdfTextureSize;
-        constants.numPrimaryEnvironmentSamples = lightingSettings.numPrimaryEnvironmentSamples;
-        constants.numIndirectEnvironmentSamples = lightingSettings.numIndirectEnvironmentSamples;
-        constants.environmentMapImportanceSampling = 1;
+        constants.initialSamplingConstants.numPrimaryEnvironmentSamples = initialSamplingSettings.numPrimaryEnvironmentSamples;
+        constants.giSamplingConstants.numIndirectEnvironmentSamples = lightingSettings.giSamplingSettings.numIndirectEnvironmentSamples;
+        constants.initialSamplingConstants.environmentMapImportanceSampling = 1;
     }
 
-    m_CurrentFrameOutputReservoir = constants.shadeInputBufferIndex;
+    m_CurrentFrameOutputReservoir = constants.shadingConstants.shadeInputBufferIndex;
 }
 
 void LightingPasses::PrepareForLightSampling(
     nvrhi::ICommandList* commandList,
-    rtxdi::Context& context,
+    rtxdi::RTXDIContext& context,
     const donut::engine::IView& view,
     const donut::engine::IView& previousView,
     const RenderSettings& localSettings,
-    const rtxdi::FrameParameters& frameParameters,
     bool enableAccumulation)
 {
     ResamplingConstants constants = {};
-    constants.frameIndex = frameParameters.frameIndex;
+    constants.frameIndex = context.getFrameIndex();
     view.FillPlanarViewConstants(constants.view);
     previousView.FillPlanarViewConstants(constants.prevView);
-    context.FillRuntimeParameters(constants.runtimeParams, frameParameters);
-    FillResamplingConstants(constants, localSettings, frameParameters);
+    context.FillRuntimeParameters(constants.runtimeParams);
+    FillResamplingConstants(constants, localSettings, context, context.getLightBufferParameters());
     constants.enableAccumulation = enableAccumulation;
 
     commandList->writeBuffer(m_ConstantBuffer, &constants, sizeof(constants));
 
-    if (frameParameters.enableLocalLightImportanceSampling &&
-        frameParameters.numLocalLights > 0)
+    auto& lightBufferParams = context.getLightBufferParameters();
+
+    if (context.isLocalLightPowerRISEnabled() &&
+        lightBufferParams.numLocalLights > 0)
     {
         dm::int2 presampleDispatchSize = {
-            dm::div_ceil(context.GetParameters().TileSize, RTXDI_PRESAMPLING_GROUP_SIZE),
-            int(context.GetParameters().TileCount)
+            dm::div_ceil(context.getStaticParameters().localLightPowerRISBufferSegmentParams.tileSize, RTXDI_PRESAMPLING_GROUP_SIZE),
+            int(context.getStaticParameters().localLightPowerRISBufferSegmentParams.tileCount)
         };
 
         ExecuteComputePass(commandList, m_PresampleLightsPass, "PresampleLights", presampleDispatchSize, ProfilerSection::PresampleLights);
     }
 
-    if (frameParameters.environmentLightPresent)
+    if (lightBufferParams.environmentLightPresent)
     {
         dm::int2 presampleDispatchSize = {
-            dm::div_ceil(context.GetParameters().EnvironmentTileSize, RTXDI_PRESAMPLING_GROUP_SIZE),
-            int(context.GetParameters().EnvironmentTileCount)
+            dm::div_ceil(context.getStaticParameters().environmentLightRISBufferSegmentParams.tileSize, RTXDI_PRESAMPLING_GROUP_SIZE),
+            int(context.getStaticParameters().environmentLightRISBufferSegmentParams.tileCount)
         };
 
         ExecuteComputePass(commandList, m_PresampleEnvironmentMapPass, "PresampleEnvironmentMap", presampleDispatchSize, ProfilerSection::PresampleEnvMap);
     }
 
-    if (context.GetParameters().ReGIR.Mode != rtxdi::ReGIRMode::Disabled &&
-        localSettings.enableReGIR &&
-        frameParameters.numLocalLights > 0)
+    if (context.getStaticParameters().ReGIR.Mode != rtxdi::ReGIRMode::Disabled &&
+        context.getInitialSamplingSettings().localLightInitialSamplingMode == rtxdi::LocalLightSamplingMode::ReGIR_RIS &&
+        lightBufferParams.numLocalLights > 0)
     {
         dm::int2 worldGridDispatchSize = {
-            dm::div_ceil(context.GetReGIRLightSlotCount(), RTXDI_GRID_BUILD_GROUP_SIZE),
+            dm::div_ceil(context.getReGIRContext().getReGIRLightSlotCount(), RTXDI_GRID_BUILD_GROUP_SIZE),
             1
         };
 
@@ -445,7 +461,7 @@ void LightingPasses::PrepareForLightSampling(
 
 void LightingPasses::RenderDirectLighting(
     nvrhi::ICommandList* commandList,
-    rtxdi::Context& context,
+    rtxdi::RTXDIContext& context,
     const donut::engine::IView& view,
     const RenderSettings& localSettings)
 {
@@ -454,7 +470,7 @@ void LightingPasses::RenderDirectLighting(
         view.GetViewExtent().height()
     };
 
-    if (context.GetParameters().CheckerboardSamplingMode != rtxdi::CheckerboardMode::Off)
+    if (context.getStaticParameters().CheckerboardSamplingMode != rtxdi::CheckerboardMode::Off)
         dispatchSize.x /= 2;
 
     // Run the lighting passes in the necessary sequence: one fused kernel or multiple separate passes.
@@ -502,12 +518,11 @@ void LightingPasses::RenderDirectLighting(
 
 void LightingPasses::RenderBrdfRays(
     nvrhi::ICommandList* commandList, 
-    rtxdi::Context& context,
+    rtxdi::RTXDIContext& context,
     const donut::engine::IView& view,
     const donut::engine::IView& previousView,
     const RenderSettings& localSettings,
     const GBufferSettings& gbufferSettings,
-    const rtxdi::FrameParameters& frameParameters,
     const EnvironmentLight& environmentLight,
     bool enableIndirect,
     bool enableAdditiveBlend,
@@ -520,88 +535,85 @@ void LightingPasses::RenderBrdfRays(
     view.FillPlanarViewConstants(constants.view);
     previousView.FillPlanarViewConstants(constants.prevView);
 
-    constants.frameIndex = frameParameters.frameIndex;
+    constants.frameIndex = context.getFrameIndex();
     constants.denoiserMode = localSettings.denoiserMode;
     constants.enableBrdfIndirect = enableIndirect;
     constants.enableBrdfAdditiveBlend = enableAdditiveBlend;
-    constants.enableIndirectEmissiveSurfaces = enableEmissiveSurfaces;
-    constants.enableEnvironmentMap = (environmentLight.textureIndex >= 0);
     constants.enableAccumulation = enableAccumulation;
-    constants.environmentMapTextureIndex = (environmentLight.textureIndex >= 0) ? environmentLight.textureIndex : 0;
-    constants.environmentScale = environmentLight.radianceScale.x;
-    constants.environmentRotation = environmentLight.rotation;
-    constants.roughnessOverride = gbufferSettings.enableRoughnessOverride ? gbufferSettings.roughnessOverride : -1.f;
-    constants.metalnessOverride = gbufferSettings.enableMetalnessOverride ? gbufferSettings.metalnessOverride : -1.f;
-    constants.minSecondaryRoughness = localSettings.minSecondaryRoughness;
-    constants.enableFallbackSampling = localSettings.reStirGI.enableFallbackSampling;
-    constants.giEnableFinalMIS = localSettings.reStirGI.enableFinalMIS;
-    context.FillRuntimeParameters(constants.runtimeParams, frameParameters);
-    FillResamplingConstants(constants, localSettings, frameParameters);
+    constants.sceneConstants.enableEnvironmentMap = (environmentLight.textureIndex >= 0);
+    constants.sceneConstants.environmentMapTextureIndex = (environmentLight.textureIndex >= 0) ? environmentLight.textureIndex : 0;
+    constants.sceneConstants.environmentScale = environmentLight.radianceScale.x;
+    constants.sceneConstants.environmentRotation = environmentLight.rotation;
+    constants.giSamplingConstants.enableIndirectEmissiveSurfaces = enableEmissiveSurfaces;
+    constants.giSamplingConstants.roughnessOverride = gbufferSettings.enableRoughnessOverride ? gbufferSettings.roughnessOverride : -1.f;
+    constants.giSamplingConstants.metalnessOverride = gbufferSettings.enableMetalnessOverride ? gbufferSettings.metalnessOverride : -1.f;
+    constants.giSamplingConstants.minSecondaryRoughness = localSettings.giSamplingSettings.minSecondaryRoughness;
+    constants.giSamplingConstants.enableFallbackSampling = localSettings.reStirGI.enableFallbackSampling;
+    constants.giSamplingConstants.giEnableFinalMIS = localSettings.reStirGI.enableFinalMIS;
+    constants.giSamplingConstants.enableReSTIRIndirect = enableReStirGI;
+    context.FillRuntimeParameters(constants.runtimeParams);
+    FillResamplingConstants(constants, localSettings, context, context.getLightBufferParameters());
 
     // Override various DI related settings set in FillResamplingConstants
 
     constants.boilingFilterStrength = localSettings.reStirGI.enableBoilingFilter ? localSettings.reStirGI.boilingFilterStrength : 0.f;
     
-    constants.enableReSTIRIndirect = enableReStirGI;
-
     // There are 2 sets of GI reservoirs in total.
     switch(localSettings.reStirGI.resamplingMode)
     {
     case ResamplingMode::None:
-        constants.initialOutputBufferIndex = 0;
-        constants.shadeInputBufferIndex = 0;
+        constants.initialSamplingConstants.initialOutputBufferIndex = 0;
+        constants.shadingConstants.shadeInputBufferIndex = 0;
         break;
     case ResamplingMode::Temporal:
-        constants.initialOutputBufferIndex = frameParameters.frameIndex & 1;
-        constants.temporalInputBufferIndex = !constants.initialOutputBufferIndex;
-        constants.temporalOutputBufferIndex = constants.initialOutputBufferIndex;
-        constants.shadeInputBufferIndex = constants.temporalOutputBufferIndex;
+        constants.initialSamplingConstants.initialOutputBufferIndex = context.getFrameIndex() & 1;
+        constants.temporalResamplingConstants.temporalInputBufferIndex = !constants.initialSamplingConstants.initialOutputBufferIndex;
+        constants.temporalResamplingConstants.temporalOutputBufferIndex = constants.initialSamplingConstants.initialOutputBufferIndex;
+        constants.shadingConstants.shadeInputBufferIndex = constants.temporalResamplingConstants.temporalOutputBufferIndex;
         break;
     case ResamplingMode::Spatial:
-        constants.initialOutputBufferIndex = 0;
-        constants.spatialInputBufferIndex = 0;
-        constants.spatialOutputBufferIndex = 1;
-        constants.shadeInputBufferIndex = 1;
+        constants.initialSamplingConstants.initialOutputBufferIndex = 0;
+        constants.spatialResamplingConstants.spatialInputBufferIndex = 0;
+        constants.spatialResamplingConstants.spatialOutputBufferIndex = 1;
+        constants.shadingConstants.shadeInputBufferIndex = 1;
         break;
     case ResamplingMode::TemporalAndSpatial:
-        constants.initialOutputBufferIndex = 0;
-        constants.temporalInputBufferIndex = 1;
-        constants.temporalOutputBufferIndex = 0;
-        constants.spatialInputBufferIndex = 0;
-        constants.spatialOutputBufferIndex = 1;
-        constants.shadeInputBufferIndex = 1;
+        constants.initialSamplingConstants.initialOutputBufferIndex = 0;
+        constants.temporalResamplingConstants.temporalInputBufferIndex = 1;
+        constants.temporalResamplingConstants.temporalOutputBufferIndex = 0;
+        constants.spatialResamplingConstants.spatialInputBufferIndex = 0;
+        constants.spatialResamplingConstants.spatialOutputBufferIndex = 1;
+        constants.shadingConstants.shadeInputBufferIndex = 1;
         break;
     case ResamplingMode::FusedSpatiotemporal:
-        constants.initialOutputBufferIndex = frameParameters.frameIndex & 1;
-        constants.temporalInputBufferIndex = !constants.initialOutputBufferIndex;
-        constants.spatialOutputBufferIndex = constants.initialOutputBufferIndex;
-        constants.shadeInputBufferIndex = constants.spatialOutputBufferIndex;
+        constants.initialSamplingConstants.initialOutputBufferIndex = context.getFrameIndex() & 1;
+        constants.temporalResamplingConstants.temporalInputBufferIndex = !constants.initialSamplingConstants.initialOutputBufferIndex;
+        constants.spatialResamplingConstants.spatialOutputBufferIndex = constants.initialSamplingConstants.initialOutputBufferIndex;
+        constants.shadingConstants.shadeInputBufferIndex = constants.spatialResamplingConstants.spatialOutputBufferIndex;
         break;
     }
 
-    m_CurrentFrameGIOutputReservoir = constants.shadeInputBufferIndex;
+    m_CurrentFrameGIOutputReservoir = constants.shadingConstants.shadeInputBufferIndex;
     
-    constants.temporalDepthThreshold = localSettings.reStirGI.depthThreshold;
-    constants.temporalNormalThreshold = localSettings.reStirGI.normalThreshold;
-    constants.spatialDepthThreshold = localSettings.reStirGI.depthThreshold;
-    constants.spatialNormalThreshold = localSettings.reStirGI.normalThreshold;
+    constants.temporalResamplingConstants.temporalDepthThreshold = localSettings.reStirGI.depthThreshold;
+    constants.temporalResamplingConstants.temporalNormalThreshold = localSettings.reStirGI.normalThreshold;
+    constants.temporalResamplingConstants.maxHistoryLength = localSettings.reStirGI.maxHistoryLength;
+    constants.temporalResamplingConstants.enablePermutationSampling = localSettings.reStirGI.enablePermutationSampling;
+    constants.temporalResamplingConstants.temporalBiasCorrection = localSettings.reStirGI.temporalBiasCorrection;
+    constants.spatialResamplingConstants.numSpatialSamples = localSettings.reStirGI.numSpatialSamples;
+    constants.spatialResamplingConstants.spatialSamplingRadius = localSettings.reStirGI.samplingRadius;
+    constants.spatialResamplingConstants.spatialDepthThreshold = localSettings.reStirGI.depthThreshold;
+    constants.spatialResamplingConstants.spatialNormalThreshold = localSettings.reStirGI.normalThreshold;
+    constants.spatialResamplingConstants.spatialBiasCorrection = localSettings.reStirGI.spatialBiasCorrection;
+    constants.giSamplingConstants.giReservoirMaxAge = localSettings.reStirGI.maxReservoirAge;
+    constants.giSamplingConstants.giEnableFinalVisibility = localSettings.reStirGI.enableFinalVisibility;
 
-    constants.giReservoirMaxAge = localSettings.reStirGI.maxReservoirAge;
-    constants.maxHistoryLength = localSettings.reStirGI.maxHistoryLength;
-    constants.enablePermutationSampling = localSettings.reStirGI.enablePermutationSampling;
-
-    constants.numSpatialSamples = localSettings.reStirGI.numSpatialSamples;
-    constants.spatialSamplingRadius = localSettings.reStirGI.samplingRadius;
-    constants.giEnableFinalVisibility = localSettings.reStirGI.enableFinalVisibility;
-
-    constants.temporalBiasCorrection = localSettings.reStirGI.temporalBiasCorrection;
-    constants.spatialBiasCorrection = localSettings.reStirGI.spatialBiasCorrection;
     // Pairwise bias correction is not supported, fallback to RT for safety (although UI should not allow it anyway)
-    if (constants.temporalBiasCorrection == RTXDI_BIAS_CORRECTION_PAIRWISE) {
-        constants.temporalBiasCorrection = RTXDI_BIAS_CORRECTION_RAY_TRACED;
+    if (constants.temporalResamplingConstants.temporalBiasCorrection == RTXDI_BIAS_CORRECTION_PAIRWISE) {
+        constants.temporalResamplingConstants.temporalBiasCorrection = RTXDI_BIAS_CORRECTION_RAY_TRACED;
     }
-    if (constants.spatialBiasCorrection == RTXDI_BIAS_CORRECTION_PAIRWISE) {
-        constants.spatialBiasCorrection = RTXDI_BIAS_CORRECTION_RAY_TRACED;
+    if (constants.spatialResamplingConstants.spatialBiasCorrection == RTXDI_BIAS_CORRECTION_PAIRWISE) {
+        constants.spatialResamplingConstants.spatialBiasCorrection = RTXDI_BIAS_CORRECTION_RAY_TRACED;
     }
 
     commandList->writeBuffer(m_ConstantBuffer, &constants, sizeof(constants));
@@ -611,7 +623,7 @@ void LightingPasses::RenderBrdfRays(
         view.GetViewExtent().height()
     };
 
-    if (context.GetParameters().CheckerboardSamplingMode != rtxdi::CheckerboardMode::Off)
+    if (context.getStaticParameters().CheckerboardSamplingMode != rtxdi::CheckerboardMode::Off)
         dispatchSize.x /= 2;
 
     ExecuteRayTracingPass(commandList, m_BrdfRayTracingPass, localSettings.enableRayCounts, "BrdfRayTracingPass", dispatchSize, ProfilerSection::BrdfRays);

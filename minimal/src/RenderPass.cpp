@@ -141,17 +141,16 @@ void RenderPass::CreatePipeline()
 
 void RenderPass::Render(
     nvrhi::ICommandList* commandList,
-    rtxdi::Context& context,
+    rtxdi::RTXDIContext& context,
     const donut::engine::IView& view,
     const donut::engine::IView& previousView,
-    const Settings& localSettings,
-    const rtxdi::FrameParameters& frameParameters)
+    const Settings& localSettings)
 {
     ResamplingConstants constants = {};
-    constants.frameIndex = frameParameters.frameIndex;
+    constants.frameIndex = context.getFrameIndex();
     view.FillPlanarViewConstants(constants.view);
     previousView.FillPlanarViewConstants(constants.prevView);
-    context.FillRuntimeParameters(constants.runtimeParams, frameParameters);
+    context.FillRuntimeParameters(constants.runtimeParams);
 
     constants.enableResampling = localSettings.enableResampling;
     constants.unbiasedMode = localSettings.unbiasedMode;
@@ -159,11 +158,10 @@ void RenderPass::Render(
     constants.numInitialBRDFSamples = localSettings.numInitialBRDFSamples;
     constants.numSpatialSamples = localSettings.numSpatialSamples;
 
-    constants.inputBufferIndex = !(frameParameters.frameIndex & 1);
-    constants.outputBufferIndex = frameParameters.frameIndex & 1;
+    constants.inputBufferIndex = !(context.getFrameIndex() & 1);
+    constants.outputBufferIndex = context.getFrameIndex() & 1;
     
     commandList->writeBuffer(m_ConstantBuffer, &constants, sizeof(constants));
-
 
     commandList->beginMarker("Render");
 

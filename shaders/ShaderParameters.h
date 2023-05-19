@@ -187,6 +187,98 @@ struct VisualizationConstants
     uint enableAccumulation;
 };
 
+struct SceneConstants
+{
+    uint enableEnvironmentMap; // Global. Affects BRDFRayTracing's GI code, plus RTXDI, ReGIR, etc.
+    uint environmentMapTextureIndex; // Global
+    float environmentScale;
+    float environmentRotation;
+
+    uint enableAlphaTestedGeometry;
+    uint enableTransparentGeometry;
+    uint2 pad;
+};
+
+struct InitialSamplingConstants
+{
+    uint numPrimaryLocalLightSamples;
+    uint numPrimaryInfiniteLightSamples;
+    uint numPrimaryEnvironmentSamples;
+    uint numPrimaryBrdfSamples;
+
+    float brdfCutoff;
+    uint initialOutputBufferIndex;
+    uint enableInitialVisibility;
+    uint environmentMapImportanceSampling; // Only used in InitialSamplingFunctions.hlsli via RAB_EvaluateEnvironmentMapSamplingPdf
+};
+
+struct TemporalResamplingConstants
+{
+    uint temporalInputBufferIndex;
+    uint temporalOutputBufferIndex;
+    float temporalDepthThreshold;
+    float temporalNormalThreshold;
+
+    uint maxHistoryLength;
+    uint temporalBiasCorrection;
+    uint enablePermutationSampling;
+    float permutationSamplingThreshold;
+
+    uint discardInvisibleSamples;
+    uint3 pad;
+};
+
+struct SpatialResamplingConstants
+{
+    uint spatialInputBufferIndex;
+    uint spatialOutputBufferIndex;
+    float spatialDepthThreshold;
+    float spatialNormalThreshold;
+
+    uint spatialBiasCorrection;
+    uint numSpatialSamples;
+    uint numDisocclusionBoostSamples;
+    float spatialSamplingRadius;
+};
+
+struct GISamplingConstants
+{
+    uint enableReSTIRIndirect;
+    uint numIndirectLocalLightSamples;
+    uint numIndirectInfiniteLightSamples;
+    uint enableIndirectEmissiveSurfaces;
+
+    uint numIndirectEnvironmentSamples;
+    uint secondaryBiasCorrection;
+    float secondarySamplingRadius;
+    float secondaryDepthThreshold;
+
+    float secondaryNormalThreshold;
+    float minSecondaryRoughness;
+    uint giReservoirMaxAge;
+    uint giEnableFinalVisibility;
+
+    uint giEnableFinalMIS;
+    uint numSecondarySamples;
+    uint enableFallbackSampling;
+    float roughnessOverride;
+
+    float metalnessOverride;
+    uint3 pad;
+};
+
+struct ShadingConstants
+{
+    uint enableFinalVisibility;
+    uint reuseFinalVisibility;
+    uint finalVisibilityMaxAge;
+    float finalVisibilityMaxDistance;
+
+    uint shadeInputBufferIndex;
+    uint enableDenoiserInputPacking;
+    uint2 pad;
+};
+
 struct ResamplingConstants
 {
     PlanarViewConstants view;
@@ -199,88 +291,25 @@ struct ResamplingConstants
     uint frameIndex;
     uint enablePreviousTLAS;
     uint denoiserMode;
-    uint pad;
-    
     uint enableBrdfIndirect;
-    uint enableBrdfAdditiveBlend;
-    uint enableAlphaTestedGeometry;
-    uint enableReSTIRIndirect;
-    
-    uint enableTransparentGeometry;
-    uint enableDenoiserInputPacking;
+
+    uint enableBrdfAdditiveBlend;    
+    uint enableAccumulation; // StoreShadingOutput
+    uint2 pad1;
+
+    SceneConstants sceneConstants;
+    InitialSamplingConstants initialSamplingConstants;
+    TemporalResamplingConstants temporalResamplingConstants;
+    SpatialResamplingConstants spatialResamplingConstants;
+    GISamplingConstants giSamplingConstants;
+    ShadingConstants shadingConstants;
+
+    float boilingFilterStrength; // TemporalResampling + Fused, plus GI versions of both
     uint visualizeRegirCells;
-    float brdfCutoff;
-
-    uint numPrimaryRegirSamples;
-    uint numPrimaryLocalLightSamples;
-    uint numPrimaryBrdfSamples;
-    uint numPrimaryInfiniteLightSamples;
+    uint2 pad2;
     
-    uint numIndirectRegirSamples;
-    uint numIndirectLocalLightSamples;
-    uint numIndirectInfiniteLightSamples;
-    uint enableIndirectEmissiveSurfaces;
-
-    uint enableInitialVisibility;
-    uint enableFinalVisibility;
-    uint initialOutputBufferIndex;
-    uint enableFallbackSampling;
-
-    uint temporalInputBufferIndex;
-    uint temporalOutputBufferIndex;
-    uint spatialInputBufferIndex;
-    uint spatialOutputBufferIndex;
-
-    uint shadeInputBufferIndex;
-    uint discardInvisibleSamples;
-    uint maxHistoryLength;
-    float boilingFilterStrength;
-
-    float temporalDepthThreshold;
-    float temporalNormalThreshold;
-    float spatialDepthThreshold;
-    float spatialNormalThreshold;
-
-    uint temporalBiasCorrection;
-    uint spatialBiasCorrection;
-    uint numSpatialSamples;
-    uint numDisocclusionBoostSamples;
-
-    float spatialSamplingRadius;
-    uint reuseFinalVisibility;
-    uint finalVisibilityMaxAge;
-    float finalVisibilityMaxDistance;
-
     uint2 environmentPdfTextureSize;
-    uint numPrimaryEnvironmentSamples;
-    uint numIndirectEnvironmentSamples;
-
     uint2 localLightPdfTextureSize;
-    uint numRegirBuildSamples;
-    uint environmentMapImportanceSampling;
-
-    uint enableEnvironmentMap;
-    uint environmentMapTextureIndex;
-    float environmentScale;
-    float environmentRotation;
-
-    uint enablePermutationSampling;
-    uint enableAccumulation;
-    uint numSecondarySamples;
-    uint secondaryBiasCorrection;
-
-    float secondarySamplingRadius;
-    float secondaryDepthThreshold;
-    float secondaryNormalThreshold;
-    float permutationSamplingThreshold;
-
-    float roughnessOverride;
-    float metalnessOverride;
-    float minSecondaryRoughness;
-    uint giReservoirMaxAge;
-
-    uint giEnableFinalVisibility;
-    uint giEnableFinalMIS;
 };
 
 struct PerPassConstants

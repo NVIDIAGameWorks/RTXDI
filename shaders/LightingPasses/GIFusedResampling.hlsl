@@ -37,7 +37,7 @@ void RayGen()
     const RAB_Surface primarySurface = RAB_GetGBufferSurface(pixelPosition, false);
     
     const uint2 reservoirPosition = RTXDI_PixelPosToReservoirPos(pixelPosition, g_Const.runtimeParams.resamplingParams);
-    RTXDI_GIReservoir reservoir = RTXDI_LoadGIReservoir(g_Const.runtimeParams.resamplingParams, reservoirPosition, g_Const.initialOutputBufferIndex);
+    RTXDI_GIReservoir reservoir = RTXDI_LoadGIReservoir(g_Const.runtimeParams.resamplingParams, reservoirPosition, g_Const.initialSamplingConstants.initialOutputBufferIndex);
 
     float3 motionVector = t_MotionVectors[pixelPosition].xyz;
     motionVector = convertMotionVectorToPixelSpace(g_Const.view, g_Const.prevView, pixelPosition, motionVector);
@@ -46,19 +46,19 @@ void RayGen()
         RTXDI_GISpatioTemporalResamplingParameters stParams;
 
         stParams.screenSpaceMotion = motionVector;
-        stParams.sourceBufferIndex = g_Const.temporalInputBufferIndex;
-        stParams.maxHistoryLength = g_Const.maxHistoryLength;
-        stParams.biasCorrectionMode = g_Const.temporalBiasCorrection;
-        stParams.depthThreshold = g_Const.temporalDepthThreshold;
-        stParams.normalThreshold = g_Const.temporalNormalThreshold; 
-        stParams.enablePermutationSampling = g_Const.enablePermutationSampling;
-        stParams.numSpatialSamples = g_Const.numSpatialSamples;
-        stParams.samplingRadius = g_Const.spatialSamplingRadius;
-        stParams.enableFallbackSampling = g_Const.enableFallbackSampling;
+        stParams.sourceBufferIndex = g_Const.temporalResamplingConstants.temporalInputBufferIndex;
+        stParams.maxHistoryLength = g_Const.temporalResamplingConstants.maxHistoryLength;
+        stParams.biasCorrectionMode = g_Const.temporalResamplingConstants.temporalBiasCorrection;
+        stParams.depthThreshold = g_Const.temporalResamplingConstants.temporalDepthThreshold;
+        stParams.normalThreshold = g_Const.temporalResamplingConstants.temporalNormalThreshold;
+        stParams.enablePermutationSampling = g_Const.temporalResamplingConstants.enablePermutationSampling;
+        stParams.numSpatialSamples = g_Const.spatialResamplingConstants.numSpatialSamples;
+        stParams.samplingRadius = g_Const.spatialResamplingConstants.spatialSamplingRadius;
+        stParams.enableFallbackSampling = g_Const.giSamplingConstants.enableFallbackSampling;
 
         // Age threshold should vary.
         // This is to avoid to die a bunch of GI reservoirs at once at a disoccluded area.
-        stParams.maxReservoirAge = g_Const.giReservoirMaxAge * (0.5 + RAB_GetNextRandom(rng) * 0.5);
+        stParams.maxReservoirAge = g_Const.giSamplingConstants.giReservoirMaxAge * (0.5 + RAB_GetNextRandom(rng) * 0.5);
 
         // Execute resampling.
         reservoir = RTXDI_GISpatioTemporalResampling(pixelPosition, primarySurface, reservoir, rng, stParams, g_Const.runtimeParams.resamplingParams);
@@ -71,5 +71,5 @@ void RayGen()
     }
 #endif
 
-    RTXDI_StoreGIReservoir(reservoir, g_Const.runtimeParams.resamplingParams, reservoirPosition, g_Const.spatialOutputBufferIndex);
+    RTXDI_StoreGIReservoir(reservoir, g_Const.runtimeParams.resamplingParams, reservoirPosition, g_Const.spatialResamplingConstants.spatialOutputBufferIndex);
 }

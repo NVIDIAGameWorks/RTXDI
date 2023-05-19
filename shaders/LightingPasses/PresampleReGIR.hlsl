@@ -22,6 +22,5 @@ void main(uint GlobalIndex : SV_DispatchThreadID)
     RAB_RandomSamplerState rng = RAB_InitRandomSampler(uint2(GlobalIndex & 0xfff, GlobalIndex >> 12), 1);
     RAB_RandomSamplerState coherentRng = RAB_InitRandomSampler(uint2(GlobalIndex >> 8, 0), 1);
 
-    RTXDI_PresampleLocalLightsForReGIR(rng, coherentRng, GlobalIndex, 
-        g_Const.numRegirBuildSamples, params);
+    RTXDI_PresampleLocalLightsForReGIR(rng, coherentRng, GlobalIndex, params);
 }

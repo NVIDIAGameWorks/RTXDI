@@ -18,7 +18,7 @@ using namespace dm;
 
 RtxdiResources::RtxdiResources(
     nvrhi::IDevice* device, 
-    const rtxdi::Context& context,
+    const rtxdi::RTXDIContext& context,
     uint32_t maxEmissiveMeshes,
     uint32_t maxEmissiveTriangles,
     uint32_t maxPrimitiveLights,
@@ -100,7 +100,7 @@ RtxdiResources::RtxdiResources(
     
 
     nvrhi::BufferDesc neighborOffsetBufferDesc;
-    neighborOffsetBufferDesc.byteSize = context.GetParameters().NeighborOffsetCount * 2;
+    neighborOffsetBufferDesc.byteSize = context.getStaticParameters().NeighborOffsetCount * 2;
     neighborOffsetBufferDesc.format = nvrhi::Format::RG8_SNORM;
     neighborOffsetBufferDesc.canHaveTypedViews = true;
     neighborOffsetBufferDesc.debugName = "NeighborOffsets";
@@ -160,13 +160,13 @@ RtxdiResources::RtxdiResources(
     GIReservoirBuffer = device->createBuffer(giReservoirBufferDesc);
 }
 
-void RtxdiResources::InitializeNeighborOffsets(nvrhi::ICommandList* commandList, const rtxdi::Context& context)
+void RtxdiResources::InitializeNeighborOffsets(nvrhi::ICommandList* commandList, const rtxdi::RTXDIContext& context)
 {
     if (m_NeighborOffsetsInitialized)
         return;
 
     std::vector<uint8_t> offsets;
-    offsets.resize(context.GetParameters().NeighborOffsetCount* 2);
+    offsets.resize(context.getStaticParameters().NeighborOffsetCount* 2);
 
     context.FillNeighborOffsetBuffer(offsets.data());
 

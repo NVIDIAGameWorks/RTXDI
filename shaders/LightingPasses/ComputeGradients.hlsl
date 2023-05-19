@@ -103,7 +103,7 @@ void RayGen()
         // Load the reservoir that was selected for gradient evaluation, either from the current or the previous frame.
         RTXDI_Reservoir selectedReservoir = RTXDI_LoadReservoir(params,
             selectedCurrentOrPrevReservoirPos,
-            usePrevSample ? g_Const.temporalInputBufferIndex : g_Const.shadeInputBufferIndex);
+            usePrevSample ? g_Const.temporalResamplingConstants.temporalInputBufferIndex : g_Const.shadingConstants.shadeInputBufferIndex);
 
         // Map the reservoir's light index into the other frame (previous or current)
         int selectedMappedLightIndex = RAB_TranslateLightIndex(RTXDI_GetReservoirLightIndex(selectedReservoir), !usePrevSample);

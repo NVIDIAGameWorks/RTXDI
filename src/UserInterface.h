@@ -138,7 +138,6 @@ struct UIData
     int environmentMapDirty = 0; // 1 -> needs to be rendered; 2 -> passes/textures need to be created
     int environmentMapIndex = -1;
     bool environmentMapImportanceSampling = true;
-    bool enableLocalLightImportanceSampling = true;
     float environmentIntensityBias = 0.f;
     float environmentRotation = 0.f;
     
@@ -166,12 +165,11 @@ struct UIData
     bool enableFpsLimit = false;
     uint32_t fpsLimit = 60;
 
-    rtxdi::ContextParameters rtxdiContextParams;
+    rtxdi::RTXDIStaticParameters rtxdiContextParams;
+    rtxdi::ReGIRDynamicParameters regirDynamicParameters;
     bool resetRtxdiContext = false;
     uint32_t regirLightSlotCount = 0;
     bool freezeRegirPosition = false;
-    float regirCellSize = 1.f;
-    float regirSamplingJitter = 1.f;
     std::optional<int> animationFrame;
     std::string benchmarkResults;
 
@@ -184,6 +182,13 @@ struct UIData
 
     GBufferSettings gbufferSettings;
     LightingPasses::RenderSettings lightingSettings;
+
+    rtxdi::InitialSamplingSettings initialSamplingSettings;
+    rtxdi::TemporalResamplingSettings temporalResamplingSettings;
+    rtxdi::BoilingFilterSettings boilingFilterSettings;
+    rtxdi::SpatialResamplingSettings spatialResamplingSettings;
+    rtxdi::ShadingSettings shadingSettings;
+
     donut::render::TemporalAntiAliasingParameters taaParams;
 
     donut::render::TemporalAntiAliasingJitter temporalJitter = donut::render::TemporalAntiAliasingJitter::Halton;

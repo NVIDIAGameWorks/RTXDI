@@ -591,6 +591,9 @@ void UserInterface::SamplingSettings()
 
                     samplingSettingsChanged |= ImGui::SliderFloat("Spatial Normal Threshold", &m_ui.spatialResamplingSettings.spatialNormalThreshold, 0.f, 1.f);
                     ShowHelpMarker("Lower values result in accepting samples with normals more different from the center pixel.");
+
+					samplingSettingsChanged |= ImGui::Checkbox("Discount Naive Samples", &m_ui.spatialResamplingSettings.discountNaiveSamples);
+					ShowHelpMarker("Prevents samples which are from the current frame or have no reasonable temporal history merged being spread to neighbors.");
                 }
 
                 ImGui::TreePop();

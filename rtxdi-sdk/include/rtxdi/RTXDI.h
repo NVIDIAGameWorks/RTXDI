@@ -114,6 +114,7 @@ namespace rtxdi
         float spatialNormalThreshold = 0.5f;
         float spatialDepthThreshold = 0.1f;
         uint32_t spatialBiasCorrection = RTXDI_BIAS_CORRECTION_BASIC;
+        bool discountNaiveSamples = false;
     };
 
     struct ShadingSettings

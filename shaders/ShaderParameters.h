@@ -239,6 +239,9 @@ struct SpatialResamplingConstants
     uint numSpatialSamples;
     uint numDisocclusionBoostSamples;
     float spatialSamplingRadius;
+
+    uint discountNaiveSamples;
+    uint3 pad;
 };
 
 struct GISamplingConstants

@@ -51,6 +51,7 @@ void RayGen()
         sparams.depthThreshold = g_Const.spatialResamplingConstants.spatialDepthThreshold;
         sparams.normalThreshold = g_Const.spatialResamplingConstants.spatialNormalThreshold;
         sparams.enableMaterialSimilarityTest = true;
+        sparams.discountNaiveSamples = g_Const.spatialResamplingConstants.discountNaiveSamples;
 
         RAB_LightSample lightSample = (RAB_LightSample)0;
         spatialResult = RTXDI_SpatialResampling(pixelPosition, surface, centerSample, 

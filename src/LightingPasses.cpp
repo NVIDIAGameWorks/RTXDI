@@ -360,6 +360,7 @@ void LightingPasses::FillResamplingConstants(
     constants.spatialResamplingConstants.spatialNormalThreshold = spatialResamplingSettings.spatialNormalThreshold;
     constants.spatialResamplingConstants.spatialDepthThreshold = spatialResamplingSettings.spatialDepthThreshold;
     constants.spatialResamplingConstants.spatialBiasCorrection = spatialResamplingSettings.spatialBiasCorrection;
+    constants.spatialResamplingConstants.discountNaiveSamples = spatialResamplingSettings.discountNaiveSamples;
     constants.shadingConstants.enableFinalVisibility = lightingSettings.enableFinalVisibility;
     constants.shadingConstants.reuseFinalVisibility = shadingSettings.reuseFinalVisibility;
     constants.shadingConstants.finalVisibilityMaxAge = shadingSettings.finalVisibilityMaxAge;

@@ -8,6 +8,9 @@ set_target_properties(rtxdi-sdk PROPERTIES FOLDER "RTXDI SDK")
 # Dependencies for the resampling compile tests
 file(GLOB shader_dependencies "${CMAKE_CURRENT_SOURCE_DIR}/include/rtxdi/*")
 
+cmake_dependent_option(RTXDI_SKIP_SHADER_VALIDATION "Skip shader compilation when building just the rtxdi-sdk project" OFF WIN32 OFF)
+
+if (NOT RTXDI_SKIP_SHADER_VALIDATION)
 
 # ResamplingCompileTest.hlsl for DXIL target
 
@@ -67,4 +70,6 @@ if (NOT ${GLSLANG_PATH} STREQUAL "")
 	else()
 		message(WARNING "The GLSLANG_PATH variable points to a non-existent file: ${GLSLANG_PATH}")
 	endif()
+endif()
+
 endif()

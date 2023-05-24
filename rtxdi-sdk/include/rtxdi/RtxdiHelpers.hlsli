@@ -115,7 +115,11 @@ bool RTXDI_ReGIR_CellIndexToWorldPos(RTXDI_RuntimeParameters params, int cellInd
     cellPosition.z = cellPosition.y / params.regirGrid.cellsY;
     cellPosition.y %= params.regirGrid.cellsY;
     if (cellPosition.z >= params.regirGrid.cellsZ)
+    {
+        cellCenter = float3(0.0, 0.0, 0.0);
+        cellRadius = 0.0;
         return false;
+    }
 
     cellCenter = (float3(cellPosition) + 0.5) * params.regirCommon.cellSize + gridOrigin;
     

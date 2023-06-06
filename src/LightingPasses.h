@@ -173,6 +173,7 @@ public:
         float spatialNormalThreshold = 0.5f;
         float spatialDepthThreshold = 0.1f;
         uint32_t spatialBiasCorrection = RTXDI_BIAS_CORRECTION_BASIC;
+        ibool discountNaiveSamples = false;
 
         ibool reuseFinalVisibility = true;
         uint32_t finalVisibilityMaxAge = 4;

@@ -37,6 +37,8 @@
 #error "RTXDI_NEIGHBOR_OFFSETS_BUFFER must be defined to point to a Buffer<float2> type resource"
 #endif
 
+#define RTXDI_NAIVE_SAMPLING_M_THRESHOLD 2
+
 struct RTXDI_SampleParameters
 {
     uint numRegirSamples;
@@ -1383,6 +1385,9 @@ struct RTXDI_SpatialResamplingParameters
 
     // Enables the comparison of surface materials before taking a surface into resampling.
     bool enableMaterialSimilarityTest;
+
+    // Prevents samples which are from the current frame or have no reasonable temporal history merged being spread to neighbors
+    bool discountNaiveSamples;
 };
 
 // Spatial resampling pass, using pairwise MIS.  
@@ -1439,6 +1444,9 @@ RTXDI_Reservoir RTXDI_SpatialResamplingWithPairwiseMIS(
         RTXDI_Reservoir neighborSample = RTXDI_LoadReservoir(params,
             RTXDI_PixelPosToReservoirPos(idx, params), sparams.sourceBufferIndex);
         neighborSample.spatialDistance += spatialOffset;
+
+        if (sparams.discountNaiveSamples && neighborSample.M <= RTXDI_NAIVE_SAMPLING_M_THRESHOLD)
+            continue;
 
         validSpatialSamples++;
 
@@ -1563,6 +1571,9 @@ RTXDI_Reservoir RTXDI_SpatialResampling(
         RAB_LightSample candidateLightSample = RAB_EmptyLightSample();
         if (RTXDI_IsValidReservoir(neighborSample))
         {   
+            if (sparams.discountNaiveSamples && neighborSample.M <= RTXDI_NAIVE_SAMPLING_M_THRESHOLD)
+                continue;
+
             candidateLight = RAB_LoadLightInfo(RTXDI_GetReservoirLightIndex(neighborSample), false);
             
             candidateLightSample = RAB_SamplePolymorphicLight(

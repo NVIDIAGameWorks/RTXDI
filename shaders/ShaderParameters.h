@@ -199,7 +199,7 @@ struct ResamplingConstants
     uint frameIndex;
     uint enablePreviousTLAS;
     uint denoiserMode;
-    uint pad;
+    uint discountNaiveSamples;
     
     uint enableBrdfIndirect;
     uint enableBrdfAdditiveBlend;

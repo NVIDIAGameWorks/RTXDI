@@ -485,7 +485,7 @@ void RTXDI_RandomlySelectLocalLight(
     }
 }
 
-float2 RTXDI_RandomlySelectLocalLightUV(RAB_RandomSamplerState rng)
+float2 RTXDI_RandomlySelectLocalLightUV(inout RAB_RandomSamplerState rng)
 {
     float2 uv;
     uv.x = RAB_GetNextRandom(rng);

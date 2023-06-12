@@ -94,6 +94,7 @@ void main(uint2 pixelPosition : SV_DispatchThreadID)
             stparams.samplingRadius = 32;
             stparams.enableVisibilityShortcut = true;
             stparams.enablePermutationSampling = true;
+            stparams.discountNaiveSamples = false;
 
             // This variable will receive the position of the sample reused from the previous frame.
             // It's only needed for gradient evaluation, ignore it here.

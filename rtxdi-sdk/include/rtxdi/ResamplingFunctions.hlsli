@@ -1714,6 +1714,9 @@ struct RTXDI_SpatioTemporalResamplingParameters
 
     // Enables the comparison of surface materials before taking a surface into resampling.
     bool enableMaterialSimilarityTest;
+
+    // Prevents samples which are from the current frame or have no reasonable temporal history merged being spread to neighbors
+    bool discountNaiveSamples;
 };
 
 // Fused spatialtemporal resampling pass, using pairwise MIS.  
@@ -1855,6 +1858,13 @@ RTXDI_Reservoir RTXDI_SpatioTemporalResamplingWithPairwiseMIS(
         // The surfaces are similar enough so we *can* reuse a neighbor from this pixel, so load it.
         RTXDI_Reservoir neighborSample = RTXDI_LoadReservoir(params,
             RTXDI_PixelPosToReservoirPos(idx, params), stparams.sourceBufferIndex);
+
+        if (RTXDI_IsValidReservoir(prevSample))
+        {
+            if (stparams.discountNaiveSamples && neighborSample.M <= RTXDI_NAIVE_SAMPLING_M_THRESHOLD)
+                continue;
+        }
+
         neighborSample.M = min(neighborSample.M, historyLimit);
         neighborSample.spatialDistance += spatialOffset;
         neighborSample.age += 1;
@@ -2045,6 +2055,12 @@ RTXDI_Reservoir RTXDI_SpatioTemporalResampling(
 
         RTXDI_Reservoir prevSample = RTXDI_LoadReservoir(params,
             neighborReservoirPos, stparams.sourceBufferIndex);
+
+        if (RTXDI_IsValidReservoir(prevSample))
+        {
+            if (stparams.discountNaiveSamples && prevSample.M <= RTXDI_NAIVE_SAMPLING_M_THRESHOLD)
+                continue;
+        }
 
         prevSample.M = min(prevSample.M, historyLimit);
         prevSample.spatialDistance += spatialOffset;

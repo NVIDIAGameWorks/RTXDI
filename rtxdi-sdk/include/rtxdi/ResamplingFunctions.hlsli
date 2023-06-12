@@ -1445,8 +1445,11 @@ RTXDI_Reservoir RTXDI_SpatialResamplingWithPairwiseMIS(
             RTXDI_PixelPosToReservoirPos(idx, params), sparams.sourceBufferIndex);
         neighborSample.spatialDistance += spatialOffset;
 
-        if (sparams.discountNaiveSamples && neighborSample.M <= RTXDI_NAIVE_SAMPLING_M_THRESHOLD)
-            continue;
+        if (RTXDI_IsValidReservoir(neighborSample))
+        {
+            if (sparams.discountNaiveSamples && neighborSample.M <= RTXDI_NAIVE_SAMPLING_M_THRESHOLD)
+                continue;
+        }
 
         validSpatialSamples++;
 

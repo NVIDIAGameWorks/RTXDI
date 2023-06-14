@@ -510,6 +510,12 @@ void UserInterface::SamplingSettings()
                     ShowHelpMarker("Lower values result in accepting samples with normals more different from the center pixel.");
                 }
 
+                if (m_showAdvancedSamplingSettings && m_ui.lightingSettings.resamplingMode != ResamplingMode::Temporal)
+                {
+					samplingSettingsChanged |= ImGui::Checkbox("Discount Naive Samples", (bool*)&m_ui.lightingSettings.discountNaiveSamples);
+					ShowHelpMarker("Prevents samples which are from the current frame or have no reasonable temporal history merged being spread to neighbors.");
+                }
+
                 ImGui::TreePop();
             }
 

@@ -343,6 +343,7 @@ void LightingPasses::FillResamplingConstants(
     constants.spatialNormalThreshold = lightingSettings.spatialNormalThreshold;
     constants.spatialDepthThreshold = lightingSettings.spatialDepthThreshold;
     constants.spatialBiasCorrection = lightingSettings.spatialBiasCorrection;
+    constants.discountNaiveSamples = lightingSettings.discountNaiveSamples;
     constants.reuseFinalVisibility = lightingSettings.reuseFinalVisibility;
     constants.finalVisibilityMaxAge = lightingSettings.finalVisibilityMaxAge;
     constants.finalVisibilityMaxDistance = lightingSettings.finalVisibilityMaxDistance;

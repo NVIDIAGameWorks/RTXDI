@@ -73,6 +73,7 @@ void RayGen()
     stparams.enableVisibilityShortcut = g_Const.discardInvisibleSamples;
     stparams.enablePermutationSampling = usePermutationSampling;
     stparams.enableMaterialSimilarityTest = true;
+    stparams.discountNaiveSamples = g_Const.discountNaiveSamples;
 
     RAB_LightSample lightSample;
     reservoir = RTXDI_SpatioTemporalResampling(pixelPosition, surface, reservoir,

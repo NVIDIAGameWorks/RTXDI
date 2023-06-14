@@ -115,6 +115,7 @@ void RayGen()
                 sparams.depthThreshold = g_Const.secondaryDepthThreshold;
                 sparams.normalThreshold = g_Const.secondaryNormalThreshold;
                 sparams.enableMaterialSimilarityTest = false;
+                sparams.discountNaiveSamples = false;
 
                 reservoir = RTXDI_SpatialResampling(secondaryPixelPos, secondarySurface, reservoir,
                     rng, sparams, params, lightSample);

@@ -173,6 +173,7 @@ void ProcessCommandLine(int argc, char** argv, donut::app::DeviceCreationParamet
         ("render-height", "Internal render target height, overrides window size", value(args.renderHeight))
         ("save-file", "Save frame to file and exit", value(args.saveFrameFileName))
         ("save-frame", "Index of the frame to save, default is 0", value(args.saveFrameIndex))
+        ("scene-file", "Name of the scene file in the 'media' folder", value(args.sceneFile))
         ("tone-mapping", "Tone mapping toggle", value(ui.enableToneMapping))
         ("transparent", "Transparent materials toggle", value(ui.gbufferSettings.enableTransparentGeometry))
         ("verbose", "Enable debug log messages", value(args.verbose))

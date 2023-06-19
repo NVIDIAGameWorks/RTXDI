@@ -212,7 +212,7 @@ public:
             m_BindlessLayout = GetDevice()->createBindlessLayout(bindlessLayoutDesc);
         }
 
-        std::filesystem::path scenePath = "/media/bistro-rtxdi.scene.json";
+        std::filesystem::path scenePath = "/media/" + m_args.sceneFile;
 
         m_DescriptorTableManager = std::make_shared<engine::DescriptorTableManager>(GetDevice(), m_BindlessLayout);
 

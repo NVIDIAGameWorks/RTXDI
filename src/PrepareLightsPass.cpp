@@ -210,15 +210,28 @@ static bool ConvertLight(const donut::engine::Light& light, PolymorphicLightInfo
     }
     case LightType_Spot: {
         auto& spot = static_cast<const SpotLightWithProfile&>(light);
-        float projectedArea = dm::PI_f * square(spot.radius);
-        float3 radiance = spot.color * spot.intensity / projectedArea;
+        if (spot.radius == 0.f)
+        {
+            float3 flux = spot.color * spot.intensity;
+
+            polymorphic.colorTypeAndFlags = (uint32_t)PolymorphicLightType::kPoint << kPolymorphicLightTypeShift;
+            packLightColor(flux, polymorphic);
+            polymorphic.center = float3(spot.GetPosition());
+        }
+        else
+        {
+            float projectedArea = dm::PI_f * square(spot.radius);
+            float3 radiance = spot.color * spot.intensity / projectedArea;
+
+            polymorphic.colorTypeAndFlags = (uint32_t)PolymorphicLightType::kSphere << kPolymorphicLightTypeShift;
+            packLightColor(radiance, polymorphic);
+            polymorphic.center = float3(spot.GetPosition());
+            polymorphic.scalars = fp32ToFp16(spot.radius);
+        }
+
         float softness = saturate(1.f - spot.innerAngle / spot.outerAngle);
 
-        polymorphic.colorTypeAndFlags = (uint32_t)PolymorphicLightType::kSphere << kPolymorphicLightTypeShift;
         polymorphic.colorTypeAndFlags |= kPolymorphicLightShapingEnableBit;
-        packLightColor(radiance, polymorphic);
-        polymorphic.center = float3(spot.GetPosition());
-        polymorphic.scalars = fp32ToFp16(spot.radius);
         polymorphic.primaryAxis = packNormalizedVector(float3(normalize(spot.GetDirection())));
         polymorphic.cosConeAngleAndSoftness = fp32ToFp16(cosf(dm::radians(spot.outerAngle)));
         polymorphic.cosConeAngleAndSoftness |= fp32ToFp16(softness) << 16;

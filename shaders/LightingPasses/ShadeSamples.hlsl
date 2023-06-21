@@ -33,13 +33,13 @@ void RayGen()
     uint2 GlobalIndex = DispatchRaysIndex().xy;
 #endif
 
-    const RTXDI_ResamplingRuntimeParameters params = g_Const.runtimeParams.resamplingParams;
+    const RTXDI_RuntimeParameters params = g_Const.runtimeParams;
 
-    uint2 pixelPosition = RTXDI_ReservoirPosToPixelPos(GlobalIndex, params);
+    uint2 pixelPosition = RTXDI_ReservoirPosToPixelPos(GlobalIndex, params.activeCheckerboardField);
 
     RAB_Surface surface = RAB_GetGBufferSurface(pixelPosition, false);
 
-    RTXDI_Reservoir reservoir = RTXDI_LoadReservoir(params, GlobalIndex, g_Const.shadingConstants.shadeInputBufferIndex);
+    RTXDI_Reservoir reservoir = RTXDI_LoadReservoir(g_Const.restirDI.reservoirBufferParams, GlobalIndex, g_Const.restirDI.bufferIndices.shadingInputBufferIndex);
 
     float3 diffuse = 0;
     float3 specular = 0;
@@ -62,7 +62,7 @@ void RayGen()
 
         if (needToStore)
         {
-            RTXDI_StoreReservoir(reservoir, params, GlobalIndex, g_Const.shadingConstants.shadeInputBufferIndex);
+            RTXDI_StoreReservoir(reservoir, g_Const.restirDI.reservoirBufferParams, GlobalIndex, g_Const.restirDI.bufferIndices.shadingInputBufferIndex);
         }
     }
 
@@ -73,10 +73,10 @@ void RayGen()
 #if RTXDI_REGIR_MODE != RTXDI_REGIR_DISABLED
     if (g_Const.visualizeRegirCells)
     {
-        diffuse *= RTXDI_VisualizeReGIRCells(g_Const.runtimeParams, RAB_GetSurfaceWorldPos(surface));
+        diffuse *= RTXDI_VisualizeReGIRCells(g_Const.regir, RAB_GetSurfaceWorldPos(surface));
     }
 #endif
 
     StoreShadingOutput(GlobalIndex, pixelPosition, 
-        surface.viewDepth, surface.roughness, diffuse, specular, lightDistance, true, g_Const.shadingConstants.enableDenoiserInputPacking);
+        surface.viewDepth, surface.roughness, diffuse, specular, lightDistance, true, g_Const.restirDI.shadingParams.enableDenoiserInputPacking);
 }

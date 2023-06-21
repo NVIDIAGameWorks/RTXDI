@@ -18,7 +18,7 @@
 #include <donut/engine/View.h>
 #include <donut/core/log.h>
 #include <nvrhi/utils.h>
-#include <rtxdi/RTXDI.h>
+#include <rtxdi/ReSTIRDI.h>
 
 using namespace donut::math;
 #include "../shaders/ShaderParameters.h"
@@ -141,22 +141,26 @@ void RenderPass::CreatePipeline()
 
 void RenderPass::Render(
     nvrhi::ICommandList* commandList,
-    rtxdi::RTXDIContext& context,
+    rtxdi::ReSTIRDIContext& context,
     const donut::engine::IView& view,
     const donut::engine::IView& previousView,
-    const Settings& localSettings)
+    const Settings& localSettings,
+    const RTXDI_LightBufferParameters& lightBufferParams)
 {
     ResamplingConstants constants = {};
     constants.frameIndex = context.getFrameIndex();
     view.FillPlanarViewConstants(constants.view);
     previousView.FillPlanarViewConstants(constants.prevView);
-    context.FillRuntimeParameters(constants.runtimeParams);
 
     constants.enableResampling = localSettings.enableResampling;
     constants.unbiasedMode = localSettings.unbiasedMode;
     constants.numInitialSamples = localSettings.numInitialSamples;
     constants.numInitialBRDFSamples = localSettings.numInitialBRDFSamples;
     constants.numSpatialSamples = localSettings.numSpatialSamples;
+    constants.restirDIReservoirBufferParams = context.getReservoirBufferParameters();
+    constants.lightBufferParams = lightBufferParams;
+    constants.runtimeParams.neighborOffsetMask = context.getStaticParameters().NeighborOffsetCount - 1;
+    constants.runtimeParams.activeCheckerboardField = 0;
 
     constants.inputBufferIndex = !(context.getFrameIndex() & 1);
     constants.outputBufferIndex = context.getFrameIndex() & 1;

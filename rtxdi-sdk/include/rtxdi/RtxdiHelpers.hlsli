@@ -16,40 +16,47 @@
 bool RTXDI_IsActiveCheckerboardPixel(
     uint2 pixelPosition,
     bool previousFrame,
-    RTXDI_ResamplingRuntimeParameters params)
+    uint activeCheckerboardField)
 {
-    if (params.activeCheckerboardField == 0)
+    if (activeCheckerboardField == 0)
         return true;
 
-    return ((pixelPosition.x + pixelPosition.y + int(previousFrame)) & 1) == (params.activeCheckerboardField & 1);
+    return ((pixelPosition.x + pixelPosition.y + int(previousFrame)) & 1) == (activeCheckerboardField & 1);
 }
 
-void RTXDI_ActivateCheckerboardPixel(inout int2 pixelPosition, bool previousFrame, RTXDI_ResamplingRuntimeParameters params)
+void RTXDI_ActivateCheckerboardPixel(inout uint2 pixelPosition, bool previousFrame, uint activeCheckerboardField)
 {
-    if (RTXDI_IsActiveCheckerboardPixel(pixelPosition, previousFrame, params))
+    if (RTXDI_IsActiveCheckerboardPixel(pixelPosition, previousFrame, activeCheckerboardField))
         return;
     
     if (previousFrame)
-        pixelPosition.x += int(params.activeCheckerboardField) * 2 - 3;
+        pixelPosition.x += int(activeCheckerboardField) * 2 - 3;
     else
         pixelPosition.x += (pixelPosition.y & 1) != 0 ? 1 : -1;
 }
 
-uint2 RTXDI_PixelPosToReservoirPos(uint2 pixelPosition, RTXDI_ResamplingRuntimeParameters params)
+void RTXDI_ActivateCheckerboardPixel(inout int2 pixelPosition, bool previousFrame, uint activeCheckerboardField)
 {
-    if (params.activeCheckerboardField == 0)
+    uint2 uPixelPosition = uint2(pixelPosition);
+    RTXDI_ActivateCheckerboardPixel(uPixelPosition, previousFrame, activeCheckerboardField);
+    pixelPosition = int2(uPixelPosition);
+}
+
+uint2 RTXDI_PixelPosToReservoirPos(uint2 pixelPosition, uint activeCheckerboardField)
+{
+    if (activeCheckerboardField == 0)
         return pixelPosition;
 
     return uint2(pixelPosition.x >> 1, pixelPosition.y);
 }
 
-uint2 RTXDI_ReservoirPosToPixelPos(uint2 reservoirIndex, RTXDI_ResamplingRuntimeParameters params)
+uint2 RTXDI_ReservoirPosToPixelPos(uint2 reservoirIndex, uint activeCheckerboardField)
 {
-    if (params.activeCheckerboardField == 0)
+    if (activeCheckerboardField == 0)
         return reservoirIndex;
 
     uint2 pixelPosition = uint2(reservoirIndex.x << 1, reservoirIndex.y);
-    pixelPosition.x += ((pixelPosition.y + params.activeCheckerboardField) & 1);
+    pixelPosition.x += ((pixelPosition.y + activeCheckerboardField) & 1);
     return pixelPosition;
 }
 
@@ -66,15 +73,15 @@ void RTXDI_ApplyPermutationSampling(inout int2 prevPixelPos, uint uniformRandomN
 }
 
 uint RTXDI_ReservoirPositionToPointer(
-    RTXDI_ResamplingRuntimeParameters params,
+    RTXDI_ReservoirBufferParameters reservoirParams,
     uint2 reservoirPosition,
     uint reservoirArrayIndex)
 {
     uint2 blockIdx = reservoirPosition / RTXDI_RESERVOIR_BLOCK_SIZE;
     uint2 positionInBlock = reservoirPosition % RTXDI_RESERVOIR_BLOCK_SIZE;
 
-    return reservoirArrayIndex * params.reservoirArrayPitch
-        + blockIdx.y * params.reservoirBlockRowPitch
+    return reservoirArrayIndex * reservoirParams.reservoirArrayPitch
+        + blockIdx.y * reservoirParams.reservoirBlockRowPitch
         + blockIdx.x * (RTXDI_RESERVOIR_BLOCK_SIZE * RTXDI_RESERVOIR_BLOCK_SIZE)
         + positionInBlock.y * RTXDI_RESERVOIR_BLOCK_SIZE
         + positionInBlock.x;
@@ -82,18 +89,18 @@ uint RTXDI_ReservoirPositionToPointer(
 
 #if RTXDI_REGIR_MODE == RTXDI_REGIR_GRID
 
-float RTXDI_ReGIR_GetJitterScale(RTXDI_RuntimeParameters params, float3 worldPos)
+float RTXDI_ReGIR_GetJitterScale(ReGIR_Parameters params, float3 worldPos)
 {
-    return params.regirCommon.samplingJitter * params.regirCommon.cellSize;
+    return params.commonParams.samplingJitter * params.commonParams.cellSize;
 }
 
-int RTXDI_ReGIR_WorldPosToCellIndex(RTXDI_RuntimeParameters params, float3 worldPos)
+int RTXDI_ReGIR_WorldPosToCellIndex(ReGIR_Parameters params, float3 worldPos)
 {
-    const float3 gridCenter = float3(params.regirCommon.centerX, params.regirCommon.centerY, params.regirCommon.centerZ);
-    const int3 gridCellCount = int3(params.regirGrid.cellsX, params.regirGrid.cellsY, params.regirGrid.cellsZ);
-    const float3 gridOrigin = gridCenter - float3(gridCellCount) * (params.regirCommon.cellSize * 0.5);
+    const float3 gridCenter = float3(params.commonParams.centerX, params.commonParams.centerY, params.commonParams.centerZ);
+    const int3 gridCellCount = int3(params.gridParams.cellsX, params.gridParams.cellsY, params.gridParams.cellsZ);
+    const float3 gridOrigin = gridCenter - float3(gridCellCount) * (params.commonParams.cellSize * 0.5);
     
-    int3 gridCell = int3(floor((worldPos - gridOrigin) / params.regirCommon.cellSize));
+    int3 gridCell = int3(floor((worldPos - gridOrigin) / params.commonParams.cellSize));
 
     if (gridCell.x < 0 || gridCell.y < 0 || gridCell.z < 0 ||
         gridCell.x >= gridCellCount.x || gridCell.y >= gridCellCount.y || gridCell.z >= gridCellCount.z)
@@ -102,80 +109,80 @@ int RTXDI_ReGIR_WorldPosToCellIndex(RTXDI_RuntimeParameters params, float3 world
     return gridCell.x + (gridCell.y + (gridCell.z * gridCellCount.y)) * gridCellCount.x;
 }
 
-bool RTXDI_ReGIR_CellIndexToWorldPos(RTXDI_RuntimeParameters params, int cellIndex, out float3 cellCenter, out float cellRadius)
+bool RTXDI_ReGIR_CellIndexToWorldPos(ReGIR_Parameters params, int cellIndex, out float3 cellCenter, out float cellRadius)
 {
-    const float3 gridCenter = float3(params.regirCommon.centerX, params.regirCommon.centerY, params.regirCommon.centerZ);
-    const int3 gridCellCount = int3(params.regirGrid.cellsX, params.regirGrid.cellsY, params.regirGrid.cellsZ);
-    const float3 gridOrigin = gridCenter - float3(gridCellCount) * (params.regirCommon.cellSize * 0.5);
+    const float3 gridCenter = float3(params.commonParams.centerX, params.commonParams.centerY, params.commonParams.centerZ);
+    const int3 gridCellCount = int3(params.gridParams.cellsX, params.gridParams.cellsY, params.gridParams.cellsZ);
+    const float3 gridOrigin = gridCenter - float3(gridCellCount) * (params.commonParams.cellSize * 0.5);
 
     uint3 cellPosition;
     cellPosition.x = cellIndex;
-    cellPosition.y = cellPosition.x / params.regirGrid.cellsX;
-    cellPosition.x %= params.regirGrid.cellsX;
-    cellPosition.z = cellPosition.y / params.regirGrid.cellsY;
-    cellPosition.y %= params.regirGrid.cellsY;
-    if (cellPosition.z >= params.regirGrid.cellsZ)
+    cellPosition.y = cellPosition.x / params.gridParams.cellsX;
+    cellPosition.x %= params.gridParams.cellsX;
+    cellPosition.z = cellPosition.y / params.gridParams.cellsY;
+    cellPosition.y %= params.gridParams.cellsY;
+    if (cellPosition.z >= params.gridParams.cellsZ)
     {
         cellCenter = float3(0.0, 0.0, 0.0);
         cellRadius = 0.0;
         return false;
     }
 
-    cellCenter = (float3(cellPosition) + 0.5) * params.regirCommon.cellSize + gridOrigin;
+    cellCenter = (float3(cellPosition) + 0.5) * params.commonParams.cellSize + gridOrigin;
     
-    cellRadius = params.regirCommon.cellSize * sqrt(3.0);
+    cellRadius = params.commonParams.cellSize * sqrt(3.0);
 
     return true;
 }
 
 #elif RTXDI_REGIR_MODE == RTXDI_REGIR_ONION
 
-float RTXDI_ReGIR_GetJitterScale(RTXDI_RuntimeParameters params, float3 worldPos)
+float RTXDI_ReGIR_GetJitterScale(ReGIR_Parameters params, float3 worldPos)
 {
-    const float3 onionCenter = float3(params.regirCommon.centerX, params.regirCommon.centerY, params.regirCommon.centerZ);
+    const float3 onionCenter = float3(params.commonParams.centerX, params.commonParams.centerY, params.commonParams.centerZ);
     const float3 translatedPos = worldPos - onionCenter;
 
-    float distanceToCenter = length(translatedPos) / params.regirCommon.cellSize;
+    float distanceToCenter = length(translatedPos) / params.commonParams.cellSize;
     float jitterScale = max(1.0, max(
-        pow(distanceToCenter, 1.0 / 3.0) * params.regirOnion.cubicRootFactor,
-        distanceToCenter * params.regirOnion.linearFactor
+        pow(distanceToCenter, 1.0 / 3.0) * params.onionParams.cubicRootFactor,
+        distanceToCenter * params.onionParams.linearFactor
     ));
 
-    return jitterScale * params.regirCommon.samplingJitter * params.regirCommon.cellSize;
+    return jitterScale * params.commonParams.samplingJitter * params.commonParams.cellSize;
 }
 
-int RTXDI_ReGIR_WorldPosToCellIndex(RTXDI_RuntimeParameters params, float3 worldPos)
+int RTXDI_ReGIR_WorldPosToCellIndex(ReGIR_Parameters params, float3 worldPos)
 {
-    const float3 onionCenter = float3(params.regirCommon.centerX, params.regirCommon.centerY, params.regirCommon.centerZ);
+    const float3 onionCenter = float3(params.commonParams.centerX, params.commonParams.centerY, params.commonParams.centerZ);
     const float3 translatedPos = worldPos - onionCenter;
 
     float r, azimuth, elevation;
     RTXDI_CartesianToSpherical(translatedPos, r, azimuth, elevation);
     azimuth += RTXDI_PI; // Add PI to make sure azimuth doesn't cross zero
 
-    if (r <= params.regirOnion.layers[0].innerRadius)
+    if (r <= params.onionParams.layers[0].innerRadius)
         return 0;
 
-    RTXDI_OnionLayerGroup layerGroup;
+    ReGIR_OnionLayerGroup layerGroup;
 
     int layerGroupIndex;
-    for (layerGroupIndex = 0; layerGroupIndex < params.regirOnion.numLayerGroups; layerGroupIndex++)
+    for (layerGroupIndex = 0; layerGroupIndex < params.onionParams.numLayerGroups; layerGroupIndex++)
     {
-        if (r <= params.regirOnion.layers[layerGroupIndex].outerRadius)
+        if (r <= params.onionParams.layers[layerGroupIndex].outerRadius)
         {
-            layerGroup = params.regirOnion.layers[layerGroupIndex];
+            layerGroup = params.onionParams.layers[layerGroupIndex];
             break;
         }
     }
 
-    if (layerGroupIndex >= params.regirOnion.numLayerGroups)
+    if (layerGroupIndex >= params.onionParams.numLayerGroups)
         return -1;
 
     uint layerIndex = uint(floor(max(0, log(r / layerGroup.innerRadius) * layerGroup.invLogLayerScale)));
     layerIndex = min(layerIndex, layerGroup.layerCount - 1); // Guard against numeric errors at the outer shell
 
     uint ringIndex = uint(floor(abs(elevation) * layerGroup.invEquatorialCellAngle + 0.5));
-    RTXDI_OnionRing ring = params.regirOnion.rings[layerGroup.ringOffset + ringIndex];
+    ReGIR_OnionRing ring = params.onionParams.rings[layerGroup.ringOffset + ringIndex];
 
     if ((layerIndex & 1) != 0)
     {
@@ -193,9 +200,9 @@ int RTXDI_ReGIR_WorldPosToCellIndex(RTXDI_RuntimeParameters params, float3 world
     return int(cellIndex + ringCellOffset + layerIndex * layerGroup.cellsPerLayer + layerGroup.layerCellOffset);
 }
 
-bool RTXDI_ReGIR_CellIndexToWorldPos(RTXDI_RuntimeParameters params, int cellIndex, out float3 cellCenter, out float cellRadius)
+bool RTXDI_ReGIR_CellIndexToWorldPos(ReGIR_Parameters params, int cellIndex, out float3 cellCenter, out float cellRadius)
 {
-    const float3 onionCenter = float3(params.regirCommon.centerX, params.regirCommon.centerY, params.regirCommon.centerZ);
+    const float3 onionCenter = float3(params.commonParams.centerX, params.commonParams.centerY, params.commonParams.centerZ);
 
     cellCenter = float3(0, 0, 0);
     cellRadius = 0;
@@ -206,18 +213,18 @@ bool RTXDI_ReGIR_CellIndexToWorldPos(RTXDI_RuntimeParameters params, int cellInd
     if (cellIndex == 0)
     {
         cellCenter = onionCenter;
-        cellRadius = params.regirOnion.layers[0].innerRadius;
+        cellRadius = params.onionParams.layers[0].innerRadius;
         return true;
     }
 
-    RTXDI_OnionLayerGroup layerGroup;
+    ReGIR_OnionLayerGroup layerGroup;
     
     cellIndex -= 1;
 
     int layerGroupIndex;
-    for (layerGroupIndex = 0; layerGroupIndex < params.regirOnion.numLayerGroups; layerGroupIndex++)
+    for (layerGroupIndex = 0; layerGroupIndex < params.onionParams.numLayerGroups; layerGroupIndex++)
     {
-        layerGroup = params.regirOnion.layers[layerGroupIndex];
+        layerGroup = params.onionParams.layers[layerGroupIndex];
         int cellsPerGroup = layerGroup.cellsPerLayer * layerGroup.layerCount;
 
         if (cellIndex < cellsPerGroup)
@@ -226,18 +233,18 @@ bool RTXDI_ReGIR_CellIndexToWorldPos(RTXDI_RuntimeParameters params, int cellInd
         cellIndex -= cellsPerGroup;
     }
 
-    if (layerGroupIndex >= params.regirOnion.numLayerGroups)
+    if (layerGroupIndex >= params.onionParams.numLayerGroups)
         return false;
 
     int layerIndex = cellIndex / layerGroup.cellsPerLayer;
     cellIndex -= layerIndex * layerGroup.cellsPerLayer;
 
-    RTXDI_OnionRing ring;
+    ReGIR_OnionRing ring;
 
     int ringIndex;
     for (ringIndex = 0; ringIndex < layerGroup.ringCount; ringIndex++)
     {
-        ring = params.regirOnion.rings[layerGroup.ringOffset + ringIndex];
+        ring = params.onionParams.rings[layerGroup.ringOffset + ringIndex];
 
         if (cellIndex < ring.cellOffset + ring.cellCount * (ringIndex > 0 ? 2 : 1))
             break;
@@ -285,7 +292,7 @@ bool RTXDI_ReGIR_CellIndexToWorldPos(RTXDI_RuntimeParameters params, int cellInd
 
 #if RTXDI_REGIR_MODE != RTXDI_REGIR_DISABLED
 
-float3 RTXDI_VisualizeReGIRCells(RTXDI_RuntimeParameters params, float3 worldPos)
+float3 RTXDI_VisualizeReGIRCells(ReGIR_Parameters params, float3 worldPos)
 {
     int cellIndex = RTXDI_ReGIR_WorldPosToCellIndex(params, worldPos);
     

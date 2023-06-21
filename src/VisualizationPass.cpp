@@ -14,7 +14,7 @@
 #include <donut/engine/ShaderFactory.h>
 #include <donut/engine/View.h>
 #include <nvrhi/utils.h>
-#include <rtxdi/RTXDI.h>
+#include <rtxdi/ImportanceSamplingContext.h>
 
 #include "RenderTargets.h"
 #include "RtxdiResources.h"
@@ -77,7 +77,7 @@ void VisualizationPass::Render(
     nvrhi::IFramebuffer* framebuffer,
     const IView& renderView,
     const IView& upscaledView,
-    rtxdi::RTXDIContext& context,
+    const rtxdi::ImportanceSamplingContext& isContext,
     uint32_t inputBufferIndex,
     uint32_t visualizationMode,
     bool enableAccumulation)
@@ -121,7 +121,8 @@ void VisualizationPass::Render(
     const auto& upscaledViewport = upscaledView.GetViewportState().viewports[0];
     constants.resolutionScale.x = renderViewport.width() / upscaledViewport.width();
     constants.resolutionScale.y = renderViewport.height() / upscaledViewport.height();
-    context.FillRuntimeParameters(constants.runtimeParams);
+    constants.restirDIReservoirBufferParams = isContext.getReSTIRDIContext().getReservoirBufferParameters();
+    constants.restirGIReservoirBufferParams = isContext.getReSTIRGIContext().getReservoirBufferParameters();
     constants.visualizationMode = visualizationMode;
     constants.inputBufferIndex = inputBufferIndex;
     constants.enableAccumulation = enableAccumulation;

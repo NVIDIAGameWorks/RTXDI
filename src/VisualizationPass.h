@@ -17,7 +17,7 @@
 
 namespace rtxdi
 {
-    class RTXDIContext;
+    class ImportanceSamplingContext;
 }
 
 namespace donut::engine
@@ -62,7 +62,7 @@ public:
         nvrhi::IFramebuffer* framebuffer,
         const donut::engine::IView& renderView,
         const donut::engine::IView& upscaledView,
-        rtxdi::RTXDIContext& context,
+        const rtxdi::ImportanceSamplingContext& context,
         uint32_t inputBufferIndex,
         uint32_t visualizationMode,
         bool enableAccumulation);

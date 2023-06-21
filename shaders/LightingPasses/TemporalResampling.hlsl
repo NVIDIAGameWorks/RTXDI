@@ -32,16 +32,16 @@ void RayGen()
     uint2 GlobalIndex = DispatchRaysIndex().xy;
 #endif
 
-    const RTXDI_ResamplingRuntimeParameters params = g_Const.runtimeParams.resamplingParams;
+    const RTXDI_RuntimeParameters params = g_Const.runtimeParams;
 
-    uint2 pixelPosition = RTXDI_ReservoirPosToPixelPos(GlobalIndex, params);
+    uint2 pixelPosition = RTXDI_ReservoirPosToPixelPos(GlobalIndex, params.activeCheckerboardField);
 
     RAB_RandomSamplerState rng = RAB_InitRandomSampler(pixelPosition, 2);
 
     RAB_Surface surface = RAB_GetGBufferSurface(pixelPosition, false);
 
     bool usePermutationSampling = false;
-    if (g_Const.temporalResamplingConstants.enablePermutationSampling)
+    if (g_Const.restirDI.temporalResamplingParams.enablePermutationSampling)
     {
         // Permutation sampling makes more noise on thin, high-detail objects.
         usePermutationSampling = !IsComplexSurface(pixelPosition, surface);
@@ -52,36 +52,37 @@ void RayGen()
     
     if (RAB_IsSurfaceValid(surface))
     {
-        RTXDI_Reservoir curSample = RTXDI_LoadReservoir(params,
-            GlobalIndex, g_Const.initialSamplingConstants.initialOutputBufferIndex);
+        RTXDI_Reservoir curSample = RTXDI_LoadReservoir(g_Const.restirDI.reservoirBufferParams,
+            GlobalIndex, g_Const.restirDI.bufferIndices.initialSamplingOutputBufferIndex);
 
         float3 motionVector = t_MotionVectors[pixelPosition].xyz;
         motionVector = convertMotionVectorToPixelSpace(g_Const.view, g_Const.prevView, pixelPosition, motionVector);
 
         RTXDI_TemporalResamplingParameters tparams;
         tparams.screenSpaceMotion = motionVector;
-        tparams.sourceBufferIndex = g_Const.temporalResamplingConstants.temporalInputBufferIndex;
-        tparams.maxHistoryLength = g_Const.temporalResamplingConstants.maxHistoryLength;
-        tparams.biasCorrectionMode = g_Const.temporalResamplingConstants.temporalBiasCorrection;
-        tparams.depthThreshold = g_Const.temporalResamplingConstants.temporalDepthThreshold;
-        tparams.normalThreshold = g_Const.temporalResamplingConstants.temporalNormalThreshold;
-        tparams.enableVisibilityShortcut = g_Const.temporalResamplingConstants.discardInvisibleSamples;
+        tparams.sourceBufferIndex = g_Const.restirDI.bufferIndices.temporalResamplingInputBufferIndex;
+        tparams.maxHistoryLength = g_Const.restirDI.temporalResamplingParams.maxHistoryLength;
+        tparams.biasCorrectionMode = g_Const.restirDI.temporalResamplingParams.temporalBiasCorrection;
+        tparams.depthThreshold = g_Const.restirDI.temporalResamplingParams.temporalDepthThreshold;
+        tparams.normalThreshold = g_Const.restirDI.temporalResamplingParams.temporalNormalThreshold;
+        tparams.enableVisibilityShortcut = g_Const.restirDI.temporalResamplingParams.discardInvisibleSamples;
         tparams.enablePermutationSampling = usePermutationSampling;
+        tparams.uniformRandomNumber = g_Const.restirDI.temporalResamplingParams.uniformRandomNumber;
 
         RAB_LightSample selectedLightSample = (RAB_LightSample)0;
         
         temporalResult = RTXDI_TemporalResampling(pixelPosition, surface, curSample,
-            rng, tparams, params, temporalSamplePixelPos, selectedLightSample);
+            rng, params, g_Const.restirDI.reservoirBufferParams, tparams, temporalSamplePixelPos, selectedLightSample);
     }
 
 #ifdef RTXDI_ENABLE_BOILING_FILTER
-    if (g_Const.boilingFilterStrength > 0)
+    if (g_Const.restirDI.temporalResamplingParams.enableBoilingFilter)
     {
-        RTXDI_BoilingFilter(LocalIndex, g_Const.boilingFilterStrength, temporalResult);
+        RTXDI_BoilingFilter(LocalIndex, g_Const.restirDI.temporalResamplingParams.boilingFilterStrength, temporalResult);
     }
 #endif
 
     u_TemporalSamplePositions[GlobalIndex] = temporalSamplePixelPos;
     
-    RTXDI_StoreReservoir(temporalResult, params, GlobalIndex, g_Const.temporalResamplingConstants.temporalOutputBufferIndex);
+    RTXDI_StoreReservoir(temporalResult, g_Const.restirDI.reservoirBufferParams, GlobalIndex, g_Const.restirDI.bufferIndices.temporalResamplingOutputBufferIndex);
 }

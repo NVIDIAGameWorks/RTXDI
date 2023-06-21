@@ -5,6 +5,7 @@
 #include <numeric>
 
 #include "rtxdi/RtxdiParameters.h"
+#include "rtxdi/RISBufferSegmentAllocator.h"
 
 namespace
 {
@@ -14,13 +15,14 @@ namespace
 namespace rtxdi
 {
 
-    ReGIRContext::ReGIRContext(const ReGIRStaticParameters& params) :
+    ReGIRContext::ReGIRContext(const ReGIRStaticParameters& params, RISBufferSegmentAllocator& risBufferSegmentAllocator) :
         m_regirCellOffset(0),
         m_regirStaticParameters(params)
     {
         ComputeGridLightSlotCount();
         InitializeOnion(params);
         ComputeOnionJitterCurve();
+        AllocateRISBufferSegment(risBufferSegmentAllocator);
     }
 
     void ReGIRContext::ComputeGridLightSlotCount()
@@ -29,6 +31,22 @@ namespace rtxdi
             * m_regirStaticParameters.gridParameters.GridSize.y
             * m_regirStaticParameters.gridParameters.GridSize.z
             * m_regirStaticParameters.LightsPerCell;
+    }
+
+    void ReGIRContext::AllocateRISBufferSegment(RISBufferSegmentAllocator& risBufferSegmentAllocator)
+    {
+        switch (m_regirStaticParameters.Mode)
+        {
+        default:
+        case ReGIRMode::Disabled:
+            m_regirCellOffset = 0;
+            break;
+        case ReGIRMode::Grid:
+            m_regirCellOffset = risBufferSegmentAllocator.allocateSegment(m_regirGridCalculatedParameters.lightSlotCount);
+            break;
+        case ReGIRMode::Onion:
+            m_regirCellOffset = risBufferSegmentAllocator.allocateSegment(m_regirOnionCalculatedParameters.lightSlotCount);
+        }
     }
 
     void ReGIRContext::InitializeOnion(const ReGIRStaticParameters& params)
@@ -49,7 +67,7 @@ namespace rtxdi
             const float outerRadius = innerRadius * powf(radiusRatio, float(layerCount));
             const float equatorialAngle = 2 * c_pi / float(partitions);
 
-            RTXDI_OnionLayerGroup layerGroup{};
+            ReGIR_OnionLayerGroup layerGroup{};
             layerGroup.ringOffset = int(m_regirOnionCalculatedParameters.regirOnionRings.size());
             layerGroup.innerRadius = innerRadius;
             layerGroup.outerRadius = outerRadius;
@@ -60,7 +78,7 @@ namespace rtxdi
             layerGroup.layerScale = radiusRatio;
             layerGroup.layerCellOffset = totalCells;
 
-            RTXDI_OnionRing ring{};
+            ReGIR_OnionRing ring{};
             ring.cellCount = partitions;
             ring.cellOffset = 0;
             ring.invCellAngle = float(partitions) / (2 * c_pi);
@@ -179,42 +197,6 @@ namespace rtxdi
         float sumOfLinearFactors = std::accumulate(linearFactors.begin(), linearFactors.end(), 0.f);
         m_regirOnionCalculatedParameters.regirOnionLinearFactor = sumOfLinearFactors / std::max(float(linearFactors.size()), 1.f);
     }
-
-    void ReGIRContext::FillRuntimeParameters(RTXDI_RuntimeParameters& runtimeParams) const
-    {
-        runtimeParams.regirGrid.cellsX = m_regirStaticParameters.gridParameters.GridSize.x;
-        runtimeParams.regirGrid.cellsY = m_regirStaticParameters.gridParameters.GridSize.y;
-        runtimeParams.regirGrid.cellsZ = m_regirStaticParameters.gridParameters.GridSize.z;
-        runtimeParams.regirCommon.numRegirBuildSamples = m_regirDynamicParameters.regirNumBuildSamples;
-        runtimeParams.regirCommon.risBufferOffset = getReGIRCellOffset();
-        runtimeParams.regirCommon.lightsPerCell = m_regirStaticParameters.LightsPerCell;
-        runtimeParams.regirCommon.centerX = m_regirDynamicParameters.center.x;
-        runtimeParams.regirCommon.centerY = m_regirDynamicParameters.center.y;
-        runtimeParams.regirCommon.centerZ = m_regirDynamicParameters.center.z;
-        runtimeParams.regirCommon.cellSize = (m_regirStaticParameters.Mode == ReGIRMode::Onion)
-            ? m_regirDynamicParameters.regirCellSize * 0.5f // Onion operates with radii, while "size" feels more like diameter
-            : m_regirDynamicParameters.regirCellSize;
-        runtimeParams.regirCommon.localLightSamplingFallbackMode = static_cast<uint32_t>(m_regirDynamicParameters.fallbackSamplingMode);
-        runtimeParams.regirCommon.localLightPresamplingMode = static_cast<uint32_t>(m_regirDynamicParameters.presamplingMode);
-        runtimeParams.regirCommon.samplingJitter = std::max(0.f, m_regirDynamicParameters.regirSamplingJitter * 2.f);
-        runtimeParams.regirOnion.cubicRootFactor = m_regirOnionCalculatedParameters.regirOnionCubicRootFactor;
-        runtimeParams.regirOnion.linearFactor = m_regirOnionCalculatedParameters.regirOnionLinearFactor;
-        runtimeParams.regirOnion.numLayerGroups = uint32_t(m_regirOnionCalculatedParameters.regirOnionLayers.size());
-
-        assert(m_regirOnionCalculatedParameters.regirOnionLayers.size() <= RTXDI_ONION_MAX_LAYER_GROUPS);
-        for (int group = 0; group < int(m_regirOnionCalculatedParameters.regirOnionLayers.size()); group++)
-        {
-            runtimeParams.regirOnion.layers[group] = m_regirOnionCalculatedParameters.regirOnionLayers[group];
-            runtimeParams.regirOnion.layers[group].innerRadius *= runtimeParams.regirCommon.cellSize;
-            runtimeParams.regirOnion.layers[group].outerRadius *= runtimeParams.regirCommon.cellSize;
-        }
-
-        assert(m_regirOnionCalculatedParameters.regirOnionRings.size() <= RTXDI_ONION_MAX_RINGS);
-        for (int n = 0; n < int(m_regirOnionCalculatedParameters.regirOnionRings.size()); n++)
-        {
-            runtimeParams.regirOnion.rings[n] = m_regirOnionCalculatedParameters.regirOnionRings[n];
-        }
-    }
   
     ReGIRGridCalculatedParameters rtxdi::ReGIRContext::getReGIRGridCalculatedParameters() const
     {
@@ -253,9 +235,9 @@ namespace rtxdi
         return m_regirDynamicParameters;
     }
 
-    void ReGIRContext::setReGIRCellOffset(uint32_t regirCellOffset)
+    ReGIRStaticParameters ReGIRContext::getReGIRStaticParameters() const
     {
-        m_regirCellOffset = regirCellOffset;
+        return m_regirStaticParameters;
     }
 
     void ReGIRContext::setDynamicParameters(const ReGIRDynamicParameters& regirDynamicParameters)

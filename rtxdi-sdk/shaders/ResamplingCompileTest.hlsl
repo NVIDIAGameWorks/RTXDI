@@ -12,7 +12,8 @@
 // that they do not make any undeclared assumptions about the contents of the 
 // user-defined structures and about the functions being available.
 
-#include <rtxdi/RtxdiParameters.h>
+#include <rtxdi/ReSTIRDIParameters.h>
+#include <rtxdi/ReSTIRGIParameters.h>
 
 struct RAB_RandomSamplerState
 {
@@ -145,7 +146,7 @@ int RAB_TranslateLightIndex(uint lightIndex, bool currentToPrevious)
     return -1;
 }
 
-float RAB_EvaluateLocalLightSourcePdf(RTXDI_LocalLightRuntimeParameters params, uint lightIndex)
+float RAB_EvaluateLocalLightSourcePdf(uint lightIndex)
 {
     return 0.0;
 }

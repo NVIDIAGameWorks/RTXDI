@@ -51,7 +51,7 @@ float4 main(float4 i_position : SV_Position) : SV_Target
         resolutionScale = 1.0;
 
     int2 inputPos = int2(pixelPos.x * resolutionScale.x, g_Const.outputSize.y * resolutionScale.y * 0.5);
-    int2 reservoirPos = RTXDI_PixelPosToReservoirPos(inputPos, g_Const.runtimeParams.resamplingParams);
+    int2 reservoirPos = RTXDI_PixelPosToReservoirPos(inputPos, g_Const.runtimeParams.activeCheckerboardField);
     float input = 0;
 
     switch(g_Const.visualizationMode)
@@ -84,13 +84,13 @@ float4 main(float4 i_position : SV_Position) : SV_Target
         break;
         
     case VIS_MODE_RESERVOIR_WEIGHT: {
-        RTXDI_Reservoir reservoir = RTXDI_LoadReservoir(g_Const.runtimeParams.resamplingParams, reservoirPos, g_Const.inputBufferIndex);
+        RTXDI_Reservoir reservoir = RTXDI_LoadReservoir(g_Const.restirDIReservoirBufferParams, reservoirPos, g_Const.inputBufferIndex);
         input = reservoir.weightSum;
         break;
     }
 
     case VIS_MODE_RESERVOIR_M: {
-        RTXDI_Reservoir reservoir = RTXDI_LoadReservoir(g_Const.runtimeParams.resamplingParams, reservoirPos, g_Const.inputBufferIndex);
+        RTXDI_Reservoir reservoir = RTXDI_LoadReservoir(g_Const.restirDIReservoirBufferParams, reservoirPos, g_Const.inputBufferIndex);
         input = reservoir.M;
         break;
     }
@@ -108,13 +108,13 @@ float4 main(float4 i_position : SV_Position) : SV_Target
     }
                                    
     case VIS_MODE_GI_WEIGHT: {
-        RTXDI_GIReservoir reservoir = RTXDI_LoadGIReservoir(g_Const.runtimeParams.resamplingParams, reservoirPos, g_Const.inputBufferIndex);
+        RTXDI_GIReservoir reservoir = RTXDI_LoadGIReservoir(g_Const.restirGIReservoirBufferParams, reservoirPos, g_Const.inputBufferIndex);
         input = reservoir.weightSum;
         break;
     }
 
     case VIS_MODE_GI_M: {
-        RTXDI_GIReservoir reservoir = RTXDI_LoadGIReservoir(g_Const.runtimeParams.resamplingParams, reservoirPos, g_Const.inputBufferIndex);
+        RTXDI_GIReservoir reservoir = RTXDI_LoadGIReservoir(g_Const.restirGIReservoirBufferParams, reservoirPos, g_Const.inputBufferIndex);
         input = reservoir.M;
         break;
     }

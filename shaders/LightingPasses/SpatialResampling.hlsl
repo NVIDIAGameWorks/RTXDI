@@ -26,9 +26,9 @@ void RayGen()
     uint2 GlobalIndex = DispatchRaysIndex().xy;
 #endif
 
-    const RTXDI_ResamplingRuntimeParameters params = g_Const.runtimeParams.resamplingParams;
+    const RTXDI_RuntimeParameters params = g_Const.runtimeParams;
 
-    uint2 pixelPosition = RTXDI_ReservoirPosToPixelPos(GlobalIndex, params);
+    uint2 pixelPosition = RTXDI_ReservoirPosToPixelPos(GlobalIndex, params.activeCheckerboardField);
 
     RAB_RandomSamplerState rng = RAB_InitRandomSampler(pixelPosition, 3);
 
@@ -38,25 +38,25 @@ void RayGen()
     
     if (RAB_IsSurfaceValid(surface))
     {
-        RTXDI_Reservoir centerSample = RTXDI_LoadReservoir(params,
-            GlobalIndex, g_Const.temporalResamplingConstants.temporalOutputBufferIndex);
+        RTXDI_Reservoir centerSample = RTXDI_LoadReservoir(g_Const.restirDI.reservoirBufferParams,
+            GlobalIndex, g_Const.restirDI.bufferIndices.temporalResamplingOutputBufferIndex);
 
         RTXDI_SpatialResamplingParameters sparams;
-        sparams.sourceBufferIndex = g_Const.spatialResamplingConstants.spatialInputBufferIndex;
-        sparams.numSamples = g_Const.spatialResamplingConstants.numSpatialSamples;
-        sparams.numDisocclusionBoostSamples = g_Const.spatialResamplingConstants.numDisocclusionBoostSamples;
-        sparams.targetHistoryLength = g_Const.temporalResamplingConstants.maxHistoryLength;
-        sparams.biasCorrectionMode = g_Const.spatialResamplingConstants.spatialBiasCorrection;
-        sparams.samplingRadius = g_Const.spatialResamplingConstants.spatialSamplingRadius;
-        sparams.depthThreshold = g_Const.spatialResamplingConstants.spatialDepthThreshold;
-        sparams.normalThreshold = g_Const.spatialResamplingConstants.spatialNormalThreshold;
+        sparams.sourceBufferIndex = g_Const.restirDI.bufferIndices.spatialResamplingInputBufferIndex;
+        sparams.numSamples = g_Const.restirDI.spatialResamplingParams.numSpatialSamples;
+        sparams.numDisocclusionBoostSamples = g_Const.restirDI.spatialResamplingParams.numDisocclusionBoostSamples;
+        sparams.targetHistoryLength = g_Const.restirDI.temporalResamplingParams.maxHistoryLength;
+        sparams.biasCorrectionMode = g_Const.restirDI.spatialResamplingParams.spatialBiasCorrection;
+        sparams.samplingRadius = g_Const.restirDI.spatialResamplingParams.spatialSamplingRadius;
+        sparams.depthThreshold = g_Const.restirDI.spatialResamplingParams.spatialDepthThreshold;
+        sparams.normalThreshold = g_Const.restirDI.spatialResamplingParams.spatialNormalThreshold;
         sparams.enableMaterialSimilarityTest = true;
-        sparams.discountNaiveSamples = g_Const.spatialResamplingConstants.discountNaiveSamples;
+        sparams.discountNaiveSamples = g_Const.restirDI.spatialResamplingParams.discountNaiveSamples;
 
         RAB_LightSample lightSample = (RAB_LightSample)0;
         spatialResult = RTXDI_SpatialResampling(pixelPosition, surface, centerSample, 
-             rng, sparams, params, lightSample);
+             rng, params, g_Const.restirDI.reservoirBufferParams, sparams, lightSample);
     }
 
-    RTXDI_StoreReservoir(spatialResult, params, GlobalIndex, g_Const.spatialResamplingConstants.spatialOutputBufferIndex);
+    RTXDI_StoreReservoir(spatialResult, g_Const.restirDI.reservoirBufferParams, GlobalIndex, g_Const.restirDI.bufferIndices.spatialResamplingOutputBufferIndex);
 }

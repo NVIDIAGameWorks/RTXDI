@@ -514,7 +514,7 @@ float2 RAB_GetEnvironmentMapRandXYFromDir(float3 worldDir)
 // relative to all the other possible directions, based on the environment map pdf texture.
 float RAB_EvaluateEnvironmentMapSamplingPdf(float3 L)
 {
-    if (!g_Const.initialSamplingConstants.environmentMapImportanceSampling)
+    if (!g_Const.restirDI.initialSamplingParams.environmentMapImportanceSampling)
         return 1.0;
 
     float2 uv = RAB_GetEnvironmentMapRandXYFromDir(L);
@@ -536,7 +536,7 @@ float RAB_EvaluateEnvironmentMapSamplingPdf(float3 L)
 }
 
 // Evaluates pdf for a particular light
-float RAB_EvaluateLocalLightSourcePdf(RTXDI_LocalLightRuntimeParameters params, uint lightIndex)
+float RAB_EvaluateLocalLightSourcePdf(uint lightIndex)
 {
     uint2 pdfTextureSize = g_Const.localLightPdfTextureSize.xy;
     uint2 texelPosition = RTXDI_LinearIndexToZCurve(lightIndex);
@@ -789,7 +789,7 @@ bool IsComplexSurface(int2 pixelPosition, RAB_Surface surface)
     // Detect that increase here and disable permutation sampling based on a threshold.
     // Other classification methods can be employed for better quality.
     float originalRoughness = t_DenoiserNormalRoughness[pixelPosition].a;
-    return originalRoughness < (surface.roughness * g_Const.temporalResamplingConstants.permutationSamplingThreshold);
+    return originalRoughness < (surface.roughness * g_Const.restirDI.temporalResamplingParams.permutationSamplingThreshold);
 }
 
 uint getLightIndex(uint instanceID, uint geometryIndex, uint primitiveIndex)

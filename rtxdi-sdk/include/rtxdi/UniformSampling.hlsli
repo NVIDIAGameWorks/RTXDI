@@ -3,7 +3,7 @@
 
 void RTXDI_RandomlySelectLightUniformly(
     inout RAB_RandomSamplerState rng,
-    RTXDI_LightsBufferRegion region,
+    RTXDI_LightBufferRegion region,
     out RAB_LightInfo lightInfo,
     out uint lightIndex,
     out float invSourcePdf)

@@ -14,7 +14,11 @@
 #include <donut/shaders/view_cb.h>
 #include <donut/shaders/sky_cb.h>
 
-#include <rtxdi/RtxdiParameters.h>
+#include <rtxdi/ReSTIRDIParameters.h>
+#include <rtxdi/ReGIRParameters.h>
+#include <rtxdi/ReSTIRGIParameters.h>
+
+#include "BRDFPTParameters.h"
 
 #define TASK_PRIMITIVE_LIGHT_BIT 0x80000000u
 
@@ -178,6 +182,8 @@ struct ConfidenceConstants
 struct VisualizationConstants
 {
     RTXDI_RuntimeParameters runtimeParams;
+    RTXDI_ReservoirBufferParameters restirDIReservoirBufferParams;
+    RTXDI_ReservoirBufferParameters restirGIReservoirBufferParams;
 
     int2 outputSize;
     float2 resolutionScale;
@@ -196,90 +202,7 @@ struct SceneConstants
 
     uint enableAlphaTestedGeometry;
     uint enableTransparentGeometry;
-    uint2 pad;
-};
-
-struct InitialSamplingConstants
-{
-    uint numPrimaryLocalLightSamples;
-    uint numPrimaryInfiniteLightSamples;
-    uint numPrimaryEnvironmentSamples;
-    uint numPrimaryBrdfSamples;
-
-    float brdfCutoff;
-    uint initialOutputBufferIndex;
-    uint enableInitialVisibility;
-    uint environmentMapImportanceSampling; // Only used in InitialSamplingFunctions.hlsli via RAB_EvaluateEnvironmentMapSamplingPdf
-};
-
-struct TemporalResamplingConstants
-{
-    uint temporalInputBufferIndex;
-    uint temporalOutputBufferIndex;
-    float temporalDepthThreshold;
-    float temporalNormalThreshold;
-
-    uint maxHistoryLength;
-    uint temporalBiasCorrection;
-    uint enablePermutationSampling;
-    float permutationSamplingThreshold;
-
-    uint discardInvisibleSamples;
-    uint3 pad;
-};
-
-struct SpatialResamplingConstants
-{
-    uint spatialInputBufferIndex;
-    uint spatialOutputBufferIndex;
-    float spatialDepthThreshold;
-    float spatialNormalThreshold;
-
-    uint spatialBiasCorrection;
-    uint numSpatialSamples;
-    uint numDisocclusionBoostSamples;
-    float spatialSamplingRadius;
-
-    uint discountNaiveSamples;
-    uint3 pad;
-};
-
-struct GISamplingConstants
-{
-    uint enableReSTIRIndirect;
-    uint numIndirectLocalLightSamples;
-    uint numIndirectInfiniteLightSamples;
-    uint enableIndirectEmissiveSurfaces;
-
-    uint numIndirectEnvironmentSamples;
-    uint secondaryBiasCorrection;
-    float secondarySamplingRadius;
-    float secondaryDepthThreshold;
-
-    float secondaryNormalThreshold;
-    float minSecondaryRoughness;
-    uint giReservoirMaxAge;
-    uint giEnableFinalVisibility;
-
-    uint giEnableFinalMIS;
-    uint numSecondarySamples;
-    uint enableFallbackSampling;
-    float roughnessOverride;
-
-    float metalnessOverride;
-    uint3 pad;
-};
-
-struct ShadingConstants
-{
-    uint enableFinalVisibility;
-    uint reuseFinalVisibility;
-    uint finalVisibilityMaxAge;
-    float finalVisibilityMaxDistance;
-
-    uint shadeInputBufferIndex;
-    uint enableDenoiserInputPacking;
-    uint2 pad;
+    uint2 pad1;
 };
 
 struct ResamplingConstants
@@ -301,15 +224,20 @@ struct ResamplingConstants
     uint2 pad1;
 
     SceneConstants sceneConstants;
-    InitialSamplingConstants initialSamplingConstants;
-    TemporalResamplingConstants temporalResamplingConstants;
-    SpatialResamplingConstants spatialResamplingConstants;
-    GISamplingConstants giSamplingConstants;
-    ShadingConstants shadingConstants;
 
-    float boilingFilterStrength; // TemporalResampling + Fused, plus GI versions of both
+    // Common buffer params
+    RTXDI_LightBufferParameters lightBufferParams;
+    RTXDI_RISBufferSegmentParameters localLightsRISBufferSegmentParams;
+    RTXDI_RISBufferSegmentParameters environmentLightRISBufferSegmentParams;
+
+    // Algo-specific params
+    ReSTIRDI_Parameters restirDI;
+    ReGIR_Parameters regir;
+    ReSTIRGI_Parameters restirGI;
+    BRDFPathTracing_Parameters brdfPT;
+
     uint visualizeRegirCells;
-    uint2 pad2;
+    uint3 pad2;
     
     uint2 environmentPdfTextureSize;
     uint2 localLightPdfTextureSize;

@@ -21,7 +21,8 @@
 #define RTXDI_GLSL
 #define RTXDI_REGIR_MODE RTXDI_REGIR_ONION
 
-#include "rtxdi/RtxdiParameters.h"
+#include "rtxdi/ReSTIRDIParameters.h"
+#include "rtxdi/ReSTIRGIParameters.h"
 
 struct RAB_RandomSamplerState
 {
@@ -154,7 +155,7 @@ int RAB_TranslateLightIndex(uint lightIndex, bool currentToPrevious)
     return -1;
 }
 
-float RAB_EvaluateLocalLightSourcePdf(RTXDI_LocalLightRuntimeParameters params, uint lightIndex)
+float RAB_EvaluateLocalLightSourcePdf(uint lightIndex)
 {
     return 0.0;
 }

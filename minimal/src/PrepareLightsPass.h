@@ -11,7 +11,7 @@
 #pragma once
 
 #include <nvrhi/nvrhi.h>
-#include <rtxdi/RTXDI.h>
+#include <rtxdi/ReSTIRDI.h>
 #include <memory>
 
 
@@ -55,5 +55,5 @@ public:
     void CreateBindingSet(RtxdiResources& resources);
     void CountLightsInScene(uint32_t& numEmissiveMeshes, uint32_t& numEmissiveTriangles);
     
-    rtxdi::LightBufferParameters Process(nvrhi::ICommandList* commandList);
+    RTXDI_LightBufferParameters Process(nvrhi::ICommandList* commandList);
 };

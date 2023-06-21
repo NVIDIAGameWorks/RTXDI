@@ -15,7 +15,7 @@
 #include <donut/engine/ShaderFactory.h>
 #include <donut/engine/CommonRenderPasses.h>
 #include <donut/core/log.h>
-#include <rtxdi/RTXDI.h>
+#include <rtxdi/ReSTIRDI.h>
 
 #include <algorithm>
 #include <utility>
@@ -102,9 +102,9 @@ void PrepareLightsPass::CountLightsInScene(uint32_t& numEmissiveMeshes, uint32_t
     }
 }
 
-rtxdi::LightBufferParameters PrepareLightsPass::Process(nvrhi::ICommandList* commandList)
+RTXDI_LightBufferParameters PrepareLightsPass::Process(nvrhi::ICommandList* commandList)
 {
-    rtxdi::LightBufferParameters outLightBufferParams;
+    RTXDI_LightBufferParameters outLightBufferParams;
     commandList->beginMarker("PrepareLights");
 
     std::vector<PrepareLightsTask> tasks;
@@ -144,12 +144,12 @@ rtxdi::LightBufferParameters PrepareLightsPass::Process(nvrhi::ICommandList* com
     
     commandList->writeBuffer(m_GeometryInstanceToLightBuffer, geometryInstanceToLight.data(), geometryInstanceToLight.size() * sizeof(uint32_t));
 
-    outLightBufferParams.firstLocalLight = 0;
-    outLightBufferParams.numLocalLights = lightBufferOffset;
-    outLightBufferParams.firstInfiniteLight = 0;
-    outLightBufferParams.numInfiniteLights = 0;
-    outLightBufferParams.environmentLightIndex = RTXDI_INVALID_LIGHT_INDEX;
-    outLightBufferParams.environmentLightPresent = false;
+    outLightBufferParams.localLightBufferRegion.firstLightIndex = 0;
+    outLightBufferParams.localLightBufferRegion.numLights = lightBufferOffset;
+    outLightBufferParams.infiniteLightBufferRegion.firstLightIndex = 0;
+    outLightBufferParams.infiniteLightBufferRegion.numLights = 0;
+    outLightBufferParams.environmentLightParams.lightIndex = RTXDI_INVALID_LIGHT_INDEX;
+    outLightBufferParams.environmentLightParams.lightPresent = false;
     
     commandList->writeBuffer(m_TaskBuffer, tasks.data(), tasks.size() * sizeof(PrepareLightsTask));
     

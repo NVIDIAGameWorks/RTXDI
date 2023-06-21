@@ -23,5 +23,6 @@ void main(uint2 GlobalIndex : SV_DispatchThreadID)
         g_Const.localLightPdfTextureSize,
         GlobalIndex.y,
         GlobalIndex.x,
-        g_Const.runtimeParams);
+        g_Const.lightBufferParams.localLightBufferRegion,
+        g_Const.localLightsRISBufferSegmentParams);
 }

@@ -13,7 +13,7 @@
 
 #include <donut/shaders/view_cb.h>
 #include <donut/shaders/sky_cb.h>
-#include <rtxdi/RtxdiParameters.h>
+#include <rtxdi/ReSTIRDIParameters.h>
 
 #define RTXDI_GRID_BUILD_GROUP_SIZE 256
 #define RTXDI_SCREEN_SPACE_GROUP_SIZE 8
@@ -43,15 +43,17 @@ struct ResamplingConstants
     PlanarViewConstants view;
     PlanarViewConstants prevView;
     RTXDI_RuntimeParameters runtimeParams;
-    
+    RTXDI_LightBufferParameters lightBufferParams;
+    RTXDI_ReservoirBufferParameters restirDIReservoirBufferParams;
+
     uint frameIndex;
     uint numInitialSamples;
     uint numSpatialSamples;
-    uint pad0;
+    uint pad1;
 
     uint numInitialBRDFSamples;
     float brdfCutoff;
-    uint2 pad1;
+    uint2 pad2;
 
     uint enableResampling;
     uint unbiasedMode;

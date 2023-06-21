@@ -14,7 +14,7 @@
 #define RTXDI_REGIR_MODE RTXDI_REGIR_DISABLED
 #endif 
 
-struct RTXDI_OnionLayerGroup
+struct ReGIR_OnionLayerGroup
 {
     float innerRadius;
     float outerRadius;
@@ -29,10 +29,10 @@ struct RTXDI_OnionLayerGroup
     float equatorialCellAngle;
     float layerScale;
     int layerCellOffset;
-    int pad;
+    int pad1;
 };
 
-struct RTXDI_OnionRing
+struct ReGIR_OnionRing
 {
     float cellAngle;
     float invCellAngle;
@@ -46,7 +46,7 @@ struct RTXDI_OnionRing
 #define REGIR_LOCAL_LIGHT_FALLBACK_MODE_UNIFORM 0
 #define REGIR_LOCAL_LIGHT_FALLBACK_MODE_POWER_RIS 1
 
-struct RTXDI_ReGIRCommonParameters
+struct ReGIR_CommonParameters
 {
     uint32_t localLightSamplingFallbackMode;
     float centerX;
@@ -60,27 +60,34 @@ struct RTXDI_ReGIRCommonParameters
 
     uint32_t localLightPresamplingMode;
     uint32_t numRegirBuildSamples; // PresampleReGIR.hlsl -> RTXDI_PresampleLocalLightsForReGIR
-    uint32_t pad0;
     uint32_t pad1;
+    uint32_t pad2;
 };
 
-struct RTXDI_ReGIRGridParameters
+struct ReGIR_GridParameters
 {
     uint32_t cellsX;
     uint32_t cellsY;
     uint32_t cellsZ;
-    uint32_t pad;
+    uint32_t pad1;
 };
 
-struct RTXDI_ReGIROnionParameters
+struct ReGIR_OnionParameters
 {
-    RTXDI_OnionLayerGroup layers[RTXDI_ONION_MAX_LAYER_GROUPS];
-    RTXDI_OnionRing rings[RTXDI_ONION_MAX_RINGS];
+    ReGIR_OnionLayerGroup layers[RTXDI_ONION_MAX_LAYER_GROUPS];
+    ReGIR_OnionRing rings[RTXDI_ONION_MAX_RINGS];
 
     uint32_t numLayerGroups;
     float cubicRootFactor;
     float linearFactor;
-    float pad;
+    float pad1;
+};
+
+struct ReGIR_Parameters
+{
+    ReGIR_CommonParameters commonParams;
+    ReGIR_GridParameters gridParams;
+    ReGIR_OnionParameters onionParams;
 };
 
 #endif // RTXDI_REGIR_PARAMETERS_H

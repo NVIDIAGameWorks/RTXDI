@@ -13,6 +13,7 @@
 #include <donut/core/math/math.h>
 #include <nvrhi/nvrhi.h>
 #include <memory>
+#include "rtxdi/ReSTIRDIParameters.h"
 
 namespace donut::engine
 {
@@ -25,10 +26,7 @@ namespace donut::engine
 
 namespace rtxdi
 {
-    struct RTXDIDynamicParameters;
-    class RTXDIContext;
-    struct ResamplingSettings;
-    struct RTXDIStaticParameters;
+    class ReSTIRDIContext;
 }
 
 class RenderTargets;
@@ -83,10 +81,11 @@ public:
 
     void Render(
         nvrhi::ICommandList* commandList,
-        rtxdi::RTXDIContext& context,
+        rtxdi::ReSTIRDIContext& context,
         const donut::engine::IView& view,
         const donut::engine::IView& previousView,
-        const Settings& localSettings);
+        const Settings& localSettings,
+        const RTXDI_LightBufferParameters& lightBufferParams);
 
     void NextFrame();
 };

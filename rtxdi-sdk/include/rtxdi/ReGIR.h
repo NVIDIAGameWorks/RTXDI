@@ -20,6 +20,8 @@ struct RTXDI_RuntimeParameters;
 
 namespace rtxdi
 {
+    class RISBufferSegmentAllocator;
+
     struct uint3
     {
         uint32_t x;
@@ -92,8 +94,8 @@ namespace rtxdi
     {
         uint32_t lightSlotCount = 0;
         uint32_t regirOnionCells = 0;
-        std::vector<RTXDI_OnionLayerGroup> regirOnionLayers;
-        std::vector<RTXDI_OnionRing> regirOnionRings;
+        std::vector<ReGIR_OnionLayerGroup> regirOnionLayers;
+        std::vector<ReGIR_OnionRing> regirOnionRings;
         float regirOnionCubicRootFactor = 0.f;
         float regirOnionLinearFactor = 0.f;
     };
@@ -141,25 +143,24 @@ namespace rtxdi
     class ReGIRContext
     {
     public:
-        ReGIRContext(const ReGIRStaticParameters& params);
+        ReGIRContext(const ReGIRStaticParameters& params, RISBufferSegmentAllocator& risBufferSegmentAllocator);
 
         bool isLocalLightPowerRISEnable() const;
-
-        void FillRuntimeParameters(RTXDI_RuntimeParameters& runtimeParams) const;
 
         uint32_t getReGIRCellOffset() const;
         uint32_t getReGIRLightSlotCount() const;
         ReGIRGridCalculatedParameters getReGIRGridCalculatedParameters() const;
         ReGIROnionCalculatedParameters getReGIROnionCalculatedParameters() const;
         ReGIRDynamicParameters getReGIRDynamicParameters() const;
+        ReGIRStaticParameters getReGIRStaticParameters() const;
 
         void setDynamicParameters(const ReGIRDynamicParameters& dynamicParameters);
-        void setReGIRCellOffset(uint32_t regirCellOffset);
 
     private:
         void InitializeOnion(const ReGIRStaticParameters& params);
         void ComputeOnionJitterCurve();
         void ComputeGridLightSlotCount();
+        void AllocateRISBufferSegment(RISBufferSegmentAllocator& risBufferSegmentAllocator);
 
         uint32_t m_regirCellOffset = 0;
 

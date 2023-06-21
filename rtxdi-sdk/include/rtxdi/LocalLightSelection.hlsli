@@ -19,14 +19,14 @@ struct RTXDI_LocalLightSelectionContext
 #if RTXDI_ENABLE_PRESAMPLING
     RTXDI_RISTileInfo risTileInfo;
 #endif // RTXDI_ENABLE_PRESAMPLING
-    RTXDI_LightsBufferRegion lightsBufferRegion;
+    RTXDI_LightBufferRegion lightBufferRegion;
 };
 
-RTXDI_LocalLightSelectionContext RTXDI_InitializeLocalLightSelectionContextUniform(RTXDI_LightsBufferRegion lightsBufferRegion)
+RTXDI_LocalLightSelectionContext RTXDI_InitializeLocalLightSelectionContextUniform(RTXDI_LightBufferRegion lightBufferRegion)
 {
     RTXDI_LocalLightSelectionContext ctx;
     ctx.mode = RTXDI_LocalLightContextSamplingMode_UNIFORM;
-    ctx.lightsBufferRegion = lightsBufferRegion;
+    ctx.lightBufferRegion = lightBufferRegion;
     return ctx;
 }
 
@@ -41,11 +41,11 @@ RTXDI_LocalLightSelectionContext RTXDI_InitializeLocalLightSelectionContextRIS(R
 
 RTXDI_LocalLightSelectionContext RTXDI_InitializeLocalLightSelectionContextRIS(
     inout RAB_RandomSamplerState coherentRng,
-    RTXDI_RISBufferParameters risBufferParams)
+    RTXDI_RISBufferSegmentParameters risBufferSegmentParams)
 {
     RTXDI_LocalLightSelectionContext ctx;
     ctx.mode = RTXDI_LocalLightContextSamplingMode_RIS;
-    ctx.risTileInfo = RTXDI_RandomlySelectRISTile(coherentRng, risBufferParams);
+    ctx.risTileInfo = RTXDI_RandomlySelectRISTile(coherentRng, risBufferSegmentParams);
     return ctx;
 }
 
@@ -99,7 +99,7 @@ void RTXDI_SelectNextLocalLight(
 #endif // RTXDI_ENABLE_PRESAMPLING
     default:
     case RTXDI_LocalLightContextSamplingMode_UNIFORM:
-        RTXDI_RandomlySelectLightUniformly(rng, ctx.lightsBufferRegion, lightInfo, lightIndex, invSourcePdf);
+        RTXDI_RandomlySelectLightUniformly(rng, ctx.lightBufferRegion, lightInfo, lightIndex, invSourcePdf);
         break;
     }
 }

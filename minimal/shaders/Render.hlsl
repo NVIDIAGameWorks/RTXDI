@@ -21,7 +21,7 @@
 [numthreads(RTXDI_SCREEN_SPACE_GROUP_SIZE, RTXDI_SCREEN_SPACE_GROUP_SIZE, 1)]
 void main(uint2 pixelPosition : SV_DispatchThreadID)
 {
-    const RTXDI_RuntimeParameters params = g_Const.runtimeParams;
+    const RTXDI_LightBufferParameters lightBufferParams = g_Const.lightBufferParams;
 
     // Trace the primary ray
     PrimarySurfaceOutput primary = TracePrimaryRay(pixelPosition);
@@ -50,13 +50,13 @@ void main(uint2 pixelPosition : SV_DispatchThreadID)
 
         // Generate the initial sample
         RAB_LightSample lightSample = RAB_EmptyLightSample();
-        RTXDI_Reservoir localReservoir = RTXDI_SampleLocalLights(rng, rng, primary.surface, 
-            sampleParams, params, lightSample);
+        RTXDI_Reservoir localReservoir = RTXDI_SampleLocalLights(rng, rng, primary.surface,
+            sampleParams, ReSTIRDI_LocalLightSamplingMode_UNIFORM, lightBufferParams.localLightBufferRegion, lightSample);
         RTXDI_CombineReservoirs(reservoir, localReservoir, 0.5, localReservoir.targetPdf);
 
         // Resample BRDF samples.
         RAB_LightSample brdfSample = RAB_EmptyLightSample();
-        RTXDI_Reservoir brdfReservoir = RTXDI_SampleBrdf(rng, primary.surface, sampleParams, params, brdfSample);
+        RTXDI_Reservoir brdfReservoir = RTXDI_SampleBrdf(rng, primary.surface, sampleParams, lightBufferParams, brdfSample);
         bool selectBrdf = RTXDI_CombineReservoirs(reservoir, brdfReservoir, RAB_GetNextRandom(rng), brdfReservoir.targetPdf);
         if (selectBrdf)
         {
@@ -101,7 +101,7 @@ void main(uint2 pixelPosition : SV_DispatchThreadID)
 
             // Call the resampling function, update the reservoir and lightSample variables
             reservoir = RTXDI_SpatioTemporalResampling(pixelPosition, primary.surface, reservoir,
-                    rng, stparams, params.resamplingParams, temporalSamplePixelPos, lightSample);
+                    rng, g_Const.runtimeParams, g_Const.restirDIReservoirBufferParams, stparams, temporalSamplePixelPos, lightSample);
         }
 
         float3 shadingOutput = 0;
@@ -136,5 +136,5 @@ void main(uint2 pixelPosition : SV_DispatchThreadID)
         u_ShadingOutput[pixelPosition] = 0;
     }
 
-    RTXDI_StoreReservoir(reservoir, params.resamplingParams, pixelPosition, g_Const.outputBufferIndex);
+    RTXDI_StoreReservoir(reservoir, g_Const.restirDIReservoirBufferParams, pixelPosition, g_Const.outputBufferIndex);
 }

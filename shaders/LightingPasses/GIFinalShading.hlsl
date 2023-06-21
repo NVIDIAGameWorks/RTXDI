@@ -38,7 +38,7 @@ float GetMISWeight(const SplitBrdf roughBrdf, const SplitBrdf trueBrdf, const fl
 
 RTXDI_GIReservoir LoadInitialSampleReservoir(int2 reservoirPosition, RAB_Surface primarySurface)
 {
-    const uint gbufferIndex = RTXDI_ReservoirPositionToPointer(g_Const.runtimeParams.resamplingParams, reservoirPosition, 0);
+    const uint gbufferIndex = RTXDI_ReservoirPositionToPointer(g_Const.restirGI.reservoirBufferParams, reservoirPosition, 0);
     const SecondaryGBufferData secondaryGBufferData = u_SecondaryGBuffer[gbufferIndex];
 
     const float3 normal = octToNdirUnorm32(secondaryGBufferData.normal);
@@ -60,15 +60,15 @@ void RayGen()
 #if !USE_RAY_QUERY
     uint2 GlobalIndex = DispatchRaysIndex().xy;
 #endif
-    uint2 pixelPosition = RTXDI_ReservoirPosToPixelPos(GlobalIndex, g_Const.runtimeParams.resamplingParams);
+    uint2 pixelPosition = RTXDI_ReservoirPosToPixelPos(GlobalIndex, g_Const.runtimeParams.activeCheckerboardField);
 
     if (any(pixelPosition > int2(g_Const.view.viewportSize)))
         return;
 
     const RAB_Surface primarySurface = RAB_GetGBufferSurface(pixelPosition, false);
     
-    const uint2 reservoirPosition = RTXDI_PixelPosToReservoirPos(pixelPosition, g_Const.runtimeParams.resamplingParams);
-    const RTXDI_GIReservoir reservoir = RTXDI_LoadGIReservoir(g_Const.runtimeParams.resamplingParams, reservoirPosition, g_Const.shadingConstants.shadeInputBufferIndex);
+    const uint2 reservoirPosition = RTXDI_PixelPosToReservoirPos(pixelPosition, g_Const.runtimeParams.activeCheckerboardField);
+    const RTXDI_GIReservoir reservoir = RTXDI_LoadGIReservoir(g_Const.restirGI.reservoirBufferParams, reservoirPosition, g_Const.restirGI.bufferIndices.secondarySurfaceReSTIRDIOutputBufferIndex);
     
     float3 diffuse = 0;
     float3 specular = 0;
@@ -78,7 +78,7 @@ void RayGen()
         float3 radiance = reservoir.radiance * reservoir.weightSum;
 
         float3 visibility = 1.0;
-        if (g_Const.giSamplingConstants.giEnableFinalVisibility)
+        if (g_Const.restirGI.finalShadingParams.enableFinalVisibility)
         {
             visibility = GetFinalVisibility(SceneBVH, primarySurface, reservoir.position);
         }
@@ -87,7 +87,7 @@ void RayGen()
 
         const SplitBrdf brdf = EvaluateBrdf(primarySurface, reservoir.position);
 
-        if (g_Const.giSamplingConstants.giEnableFinalMIS)
+        if (g_Const.restirGI.finalShadingParams.enableFinalMIS)
         {
             const RTXDI_GIReservoir initialReservoir = LoadInitialSampleReservoir(reservoirPosition, primarySurface);
             const SplitBrdf brdf0 = EvaluateBrdf(primarySurface, initialReservoir.position);

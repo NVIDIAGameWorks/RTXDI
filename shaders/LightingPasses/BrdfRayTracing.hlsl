@@ -34,7 +34,7 @@ void RayGen()
 #if !USE_RAY_QUERY
     uint2 GlobalIndex = DispatchRaysIndex().xy;
 #endif
-    uint2 pixelPosition = RTXDI_ReservoirPosToPixelPos(GlobalIndex, g_Const.runtimeParams.resamplingParams);
+    uint2 pixelPosition = RTXDI_ReservoirPosToPixelPos(GlobalIndex, g_Const.runtimeParams.activeCheckerboardField);
 
     RAB_Surface surface = RAB_GetGBufferSurface(pixelPosition, false);
 
@@ -172,7 +172,7 @@ void RayGen()
         InterlockedAdd(u_RayCountBuffer[RAY_COUNT_TRACED(g_PerPassConstants.rayCountBufferIndex)], 1);
     }
 
-    uint gbufferIndex = RTXDI_ReservoirPositionToPointer(g_Const.runtimeParams.resamplingParams, GlobalIndex, 0);
+    uint gbufferIndex = RTXDI_ReservoirPositionToPointer(g_Const.restirGI.reservoirBufferParams, GlobalIndex, 0);
     
     struct 
     {
@@ -187,7 +187,7 @@ void RayGen()
     // Include the emissive component of surfaces seen with BRDF rays if requested (i.e. when Direct Lighting mode
     // is set to BRDF) or on delta reflection rays because those bypass ReSTIR GI and direct specular lighting,
     // and we need to see reflections of lamps and the sky in mirrors.
-    const bool includeEmissiveComponent = g_Const.giSamplingConstants.enableIndirectEmissiveSurfaces || (isSpecularRay && isDeltaSurface);
+    const bool includeEmissiveComponent = g_Const.brdfPT.enableIndirectEmissiveSurfaces || (isSpecularRay && isDeltaSurface);
 
     if (payload.instanceID != ~0u)
     {
@@ -209,16 +209,16 @@ void RayGen()
 
         ms.shadingNormal = getBentNormal(gs.flatNormal, ms.shadingNormal, ray.Direction);
 
-        if (g_Const.giSamplingConstants.roughnessOverride >= 0)
-            ms.roughness = g_Const.giSamplingConstants.roughnessOverride;
+        if (g_Const.brdfPT.materialOverrideParams.roughnessOverride >= 0)
+            ms.roughness = g_Const.brdfPT.materialOverrideParams.roughnessOverride;
 
-        if (g_Const.giSamplingConstants.metalnessOverride >= 0)
+        if (g_Const.brdfPT.materialOverrideParams.metalnessOverride >= 0)
         {
-            ms.metalness = g_Const.giSamplingConstants.metalnessOverride;
+            ms.metalness = g_Const.brdfPT.materialOverrideParams.metalnessOverride;
             getReflectivity(ms.metalness, ms.baseColor, ms.diffuseAlbedo, ms.specularF0);
         }
 
-        ms.roughness = max(ms.roughness, g_Const.giSamplingConstants.minSecondaryRoughness);
+        ms.roughness = max(ms.roughness, g_Const.brdfPT.materialOverrideParams.minSecondaryRoughness);
 
         if (includeEmissiveComponent)
             radiance += ms.emissiveColor;
@@ -255,7 +255,7 @@ void RayGen()
         secondaryGBufferData.diffuseAlbedo = Pack_R11G11B10_UFLOAT(secondarySurface.diffuseAlbedo);
         secondaryGBufferData.specularAndRoughness = Pack_R8G8B8A8_Gamma_UFLOAT(float4(secondarySurface.specularF0, secondarySurface.roughness));
 
-        if (g_Const.giSamplingConstants.enableReSTIRIndirect)
+        if (g_Const.brdfPT.enableReSTIRGI)
         {
             if (isSpecularRay && isDeltaSurface)
             {

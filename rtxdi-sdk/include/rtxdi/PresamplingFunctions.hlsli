@@ -96,7 +96,8 @@ void RTXDI_PresampleLocalLights(
     uint2 pdfTextureSize,
     uint tileIndex,
     uint sampleInTile,
-    RTXDI_RuntimeParameters params)
+    RTXDI_LightBufferRegion localLightBufferRegion,
+    RTXDI_RISBufferSegmentParameters localLightsRISBufferSegmentParams)
 {
     uint2 texelPosition;
     float pdf;
@@ -104,7 +105,7 @@ void RTXDI_PresampleLocalLights(
 
     uint lightIndex = RTXDI_ZCurveToLinearIndex(texelPosition);
 
-    uint risBufferPtr = sampleInTile + tileIndex * params.localLightParams.risBufferParams.tileSize;
+    uint risBufferPtr = sampleInTile + tileIndex * localLightsRISBufferSegmentParams.tileSize;
 
     bool compact = false;
     float invSourcePdf = 0;
@@ -113,11 +114,11 @@ void RTXDI_PresampleLocalLights(
     {
         invSourcePdf = 1.0 / pdf;
 
-        RAB_LightInfo lightInfo = RAB_LoadLightInfo(lightIndex + params.localLightParams.localLightsBufferRegion.firstLightIndex, false);
+        RAB_LightInfo lightInfo = RAB_LoadLightInfo(lightIndex + localLightBufferRegion.firstLightIndex, false);
         compact = RAB_StoreCompactLightInfo(risBufferPtr, lightInfo);
     }
 
-    lightIndex += params.localLightParams.localLightsBufferRegion.firstLightIndex;
+    lightIndex += localLightBufferRegion.firstLightIndex;
 
     if (compact) {
         lightIndex |= RTXDI_LIGHT_COMPACT_BIT;
@@ -134,7 +135,7 @@ void RTXDI_PresampleEnvironmentMap(
     uint2 pdfTextureSize,
     uint tileIndex,
     uint sampleInTile,
-    RTXDI_EnvironmentLightRuntimeParameters params)
+    RTXDI_RISBufferSegmentParameters risBufferSegmentParams)
 {
     uint2 texelPosition;
     float pdf;
@@ -153,7 +154,7 @@ void RTXDI_PresampleEnvironmentMap(
     float invSourcePdf = (pdf > 0) ? (1.0 / pdf) : 0;
 
     // Store the result
-    uint risBufferPtr = params.risBufferParams.bufferOffset + sampleInTile + tileIndex * params.risBufferParams.tileSize;
+    uint risBufferPtr = risBufferSegmentParams.bufferOffset + sampleInTile + tileIndex * risBufferSegmentParams.tileSize;
     RTXDI_RIS_BUFFER[risBufferPtr] = uint2(packedUv, asuint(invSourcePdf));
 }
 
@@ -165,44 +166,46 @@ void RTXDI_PresampleLocalLightsForReGIR(
     inout RAB_RandomSamplerState rng,
     inout RAB_RandomSamplerState coherentRng,
     uint lightSlot,
-    RTXDI_RuntimeParameters params)
+    RTXDI_LightBufferRegion localLightBufferRegion,
+    RTXDI_RISBufferSegmentParameters localLightRISBufferSegmentParams,
+    ReGIR_Parameters regirParams)
 {
-    uint risBufferPtr = params.regirCommon.risBufferOffset + lightSlot;
+    uint risBufferPtr = regirParams.commonParams.risBufferOffset + lightSlot;
 
-    if (params.regirCommon.numRegirBuildSamples == 0)
+    if (regirParams.commonParams.numRegirBuildSamples == 0)
     {
         RTXDI_RIS_BUFFER[risBufferPtr] = uint2(0, 0);
         return;
     }
 
-    uint lightInCell = lightSlot % params.regirCommon.lightsPerCell;
+    uint lightInCell = lightSlot % regirParams.commonParams.lightsPerCell;
 
-    uint cellIndex = lightSlot / params.regirCommon.lightsPerCell;
+    uint cellIndex = lightSlot / regirParams.commonParams.lightsPerCell;
 
     float3 cellCenter;
     float cellRadius;
-    if (!RTXDI_ReGIR_CellIndexToWorldPos(params, int(cellIndex), cellCenter, cellRadius))
+    if (!RTXDI_ReGIR_CellIndexToWorldPos(regirParams, int(cellIndex), cellCenter, cellRadius))
     {
         RTXDI_RIS_BUFFER[risBufferPtr] = uint2(0, 0);
         return;
     }
 
-    cellRadius *= (params.regirCommon.samplingJitter + 1.0);
+    cellRadius *= (regirParams.commonParams.samplingJitter + 1.0);
 
     RAB_LightInfo selectedLightInfo = RAB_EmptyLightInfo();
     uint selectedLight = 0;
     float selectedTargetPdf = 0;
     float weightSum = 0;
 
-    float invNumSamples = 1.0 / float(params.regirCommon.numRegirBuildSamples);
+    float invNumSamples = 1.0 / float(regirParams.commonParams.numRegirBuildSamples);
 
     RTXDI_LocalLightSelectionContext ctx;
-    if (params.regirCommon.localLightPresamplingMode == REGIR_LOCAL_LIGHT_PRESAMPLING_MODE_POWER_RIS)
-        ctx = RTXDI_InitializeLocalLightSelectionContextRIS(coherentRng, params.localLightParams.risBufferParams);
+    if (regirParams.commonParams.localLightPresamplingMode == REGIR_LOCAL_LIGHT_PRESAMPLING_MODE_POWER_RIS)
+        ctx = RTXDI_InitializeLocalLightSelectionContextRIS(coherentRng, localLightRISBufferSegmentParams);
     else
-        ctx = RTXDI_InitializeLocalLightSelectionContextUniform(params.localLightParams.localLightsBufferRegion);
+        ctx = RTXDI_InitializeLocalLightSelectionContextUniform(localLightBufferRegion);
 
-    for (uint i = 0; i < params.regirCommon.numRegirBuildSamples; i++)
+    for (uint i = 0; i < regirParams.commonParams.numRegirBuildSamples; i++)
     {
         uint rndLight;
         RAB_LightInfo lightInfo = RAB_EmptyLightInfo();

@@ -12,7 +12,7 @@
 
 #include <donut/engine/SceneGraph.h>
 #include <nvrhi/nvrhi.h>
-#include <rtxdi/RTXDI.h>
+#include <rtxdi/ReSTIRDI.h>
 #include <memory>
 #include <unordered_map>
 
@@ -66,9 +66,9 @@ public:
     void CreateBindingSet(RtxdiResources& resources);
     void CountLightsInScene(uint32_t& numEmissiveMeshes, uint32_t& numEmissiveTriangles);
     
-    rtxdi::LightBufferParameters Process(
+    RTXDI_LightBufferParameters Process(
         nvrhi::ICommandList* commandList, 
-        const rtxdi::RTXDIContext& context, 
+        const rtxdi::ReSTIRDIContext& context, 
         const std::vector<std::shared_ptr<donut::engine::Light>>& sceneLights,
         bool enableImportanceSampledEnvironmentLight);
 };

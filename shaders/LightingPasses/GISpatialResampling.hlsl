@@ -26,7 +26,7 @@ void RayGen()
 #if !USE_RAY_QUERY
     uint2 GlobalIndex = DispatchRaysIndex().xy;
 #endif
-    uint2 pixelPosition = RTXDI_ReservoirPosToPixelPos(GlobalIndex, g_Const.runtimeParams.resamplingParams);
+    uint2 pixelPosition = RTXDI_ReservoirPosToPixelPos(GlobalIndex, g_Const.runtimeParams.activeCheckerboardField);
 
     if (any(pixelPosition > int2(g_Const.view.viewportSize)))
         return;
@@ -35,22 +35,22 @@ void RayGen()
     
     const RAB_Surface primarySurface = RAB_GetGBufferSurface(pixelPosition, false);
     
-    const uint2 reservoirPosition = RTXDI_PixelPosToReservoirPos(pixelPosition, g_Const.runtimeParams.resamplingParams);
-    RTXDI_GIReservoir reservoir = RTXDI_LoadGIReservoir(g_Const.runtimeParams.resamplingParams, reservoirPosition, g_Const.spatialResamplingConstants.spatialInputBufferIndex);
+    const uint2 reservoirPosition = RTXDI_PixelPosToReservoirPos(pixelPosition, g_Const.runtimeParams.activeCheckerboardField);
+    RTXDI_GIReservoir reservoir = RTXDI_LoadGIReservoir(g_Const.restirGI.reservoirBufferParams, reservoirPosition, g_Const.restirGI.bufferIndices.spatialResamplingInputBufferIndex);
 
     if (RAB_IsSurfaceValid(primarySurface)) {
         RTXDI_GISpatialResamplingParameters sparams;
 
-        sparams.sourceBufferIndex = g_Const.spatialResamplingConstants.spatialInputBufferIndex;
-        sparams.biasCorrectionMode = g_Const.spatialResamplingConstants.spatialBiasCorrection;
-        sparams.depthThreshold = g_Const.spatialResamplingConstants.spatialDepthThreshold;
-        sparams.normalThreshold = g_Const.spatialResamplingConstants.spatialNormalThreshold;
-        sparams.numSamples = g_Const.spatialResamplingConstants.numSpatialSamples;
-        sparams.samplingRadius = g_Const.spatialResamplingConstants.spatialSamplingRadius;
+        sparams.sourceBufferIndex = g_Const.restirGI.bufferIndices.spatialResamplingInputBufferIndex;
+        sparams.biasCorrectionMode = g_Const.restirGI.spatialResamplingParams.spatialBiasCorrectionMode;
+        sparams.depthThreshold = g_Const.restirGI.spatialResamplingParams.spatialDepthThreshold;
+        sparams.normalThreshold = g_Const.restirGI.spatialResamplingParams.spatialNormalThreshold;
+        sparams.numSamples = g_Const.restirGI.spatialResamplingParams.numSpatialSamples;
+        sparams.samplingRadius = g_Const.restirGI.spatialResamplingParams.spatialSamplingRadius;
 
         // Execute resampling.
-        reservoir = RTXDI_GISpatialResampling(pixelPosition, primarySurface, reservoir, rng, sparams, g_Const.runtimeParams.resamplingParams);
+        reservoir = RTXDI_GISpatialResampling(pixelPosition, primarySurface, reservoir, rng, g_Const.runtimeParams, g_Const.restirGI.reservoirBufferParams, sparams);
     }
 
-    RTXDI_StoreGIReservoir(reservoir, g_Const.runtimeParams.resamplingParams, reservoirPosition, g_Const.spatialResamplingConstants.spatialOutputBufferIndex);
+    RTXDI_StoreGIReservoir(reservoir, g_Const.restirGI.reservoirBufferParams, reservoirPosition, g_Const.restirGI.bufferIndices.spatialResamplingOutputBufferIndex);
 }

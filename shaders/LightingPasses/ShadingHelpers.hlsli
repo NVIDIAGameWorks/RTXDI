@@ -31,16 +31,16 @@ bool ShadeSurfaceWithLightSample(
         return false;
 
     bool needToStore = false;
-    if (g_Const.shadingConstants.enableFinalVisibility)
+    if (g_Const.restirDI.shadingParams.enableFinalVisibility)
     {
         float3 visibility = 0;
         bool visibilityReused = false;
 
-        if (g_Const.shadingConstants.reuseFinalVisibility && enableVisibilityReuse)
+        if (g_Const.restirDI.shadingParams.reuseFinalVisibility && enableVisibilityReuse)
         {
             RTXDI_VisibilityReuseParameters rparams;
-            rparams.maxAge = g_Const.shadingConstants.finalVisibilityMaxAge;
-            rparams.maxDistance = g_Const.shadingConstants.finalVisibilityMaxDistance;
+            rparams.maxAge = g_Const.restirDI.shadingParams.finalVisibilityMaxAge;
+            rparams.maxDistance = g_Const.restirDI.shadingParams.finalVisibilityMaxDistance;
 
             visibilityReused = RTXDI_GetReservoirVisibility(reservoir, rparams, visibility);
         }
@@ -51,7 +51,7 @@ bool ShadeSurfaceWithLightSample(
                 visibility = GetFinalVisibility(PrevSceneBVH, surface, lightSample.position);
             else
                 visibility = GetFinalVisibility(SceneBVH, surface, lightSample.position);
-            RTXDI_StoreVisibilityInReservoir(reservoir, visibility, g_Const.temporalResamplingConstants.discardInvisibleSamples);
+            RTXDI_StoreVisibilityInReservoir(reservoir, visibility, g_Const.restirDI.temporalResamplingParams.discardInvisibleSamples);
             needToStore = true;
         }
 
@@ -114,10 +114,10 @@ void StoreShadingOutput(
         specular += priorSpecular.rgb;
     }
 
-    if (g_Const.denoiserMode == DENOISER_MODE_OFF && g_Const.runtimeParams.resamplingParams.activeCheckerboardField != 0 && isLastPass)
+    if (g_Const.denoiserMode == DENOISER_MODE_OFF && g_Const.runtimeParams.activeCheckerboardField != 0 && isLastPass)
     {
         int2 otherFieldPixelPosition = pixelPosition;
-        otherFieldPixelPosition.x += (g_Const.runtimeParams.resamplingParams.activeCheckerboardField == 1) == ((pixelPosition.y & 1) != 0)
+        otherFieldPixelPosition.x += (g_Const.runtimeParams.activeCheckerboardField == 1) == ((pixelPosition.y & 1) != 0)
             ? 1 : -1;
 
         if (g_Const.denoiserMode == DENOISER_MODE_RELAX || g_Const.enableAccumulation)

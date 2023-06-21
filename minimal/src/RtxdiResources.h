@@ -14,7 +14,7 @@
 
 namespace rtxdi
 {
-    class RTXDIContext;
+    class ReSTIRDIContext;
 }
 
 class RtxdiResources
@@ -34,16 +34,14 @@ public:
 
     RtxdiResources(
         nvrhi::IDevice* device, 
-        const rtxdi::RTXDIContext& context,
+        const rtxdi::ReSTIRDIContext& context,
         uint32_t maxEmissiveMeshes,
         uint32_t maxEmissiveTriangles,
         uint32_t maxMeshInstances);
 
-    void InitializeNeighborOffsets(nvrhi::ICommandList* commandList, const rtxdi::RTXDIContext& context);
+    void InitializeNeighborOffsets(nvrhi::ICommandList* commandList, uint32_t neighborOffsetCount);
 
     uint32_t GetMaxEmissiveMeshes() const { return m_MaxEmissiveMeshes; }
     uint32_t GetMaxEmissiveTriangles() const { return m_MaxEmissiveTriangles; }
     uint32_t GetMaxGeometryInstances() const { return m_MaxGeometryInstances; }
-
-    static constexpr uint32_t c_NumReservoirBuffers = 3;
 };

@@ -16,7 +16,7 @@
 #include <donut/engine/CommonRenderPasses.h>
 #include <donut/core/log.h>
 #include <nvrhi/utils.h>
-#include <rtxdi/RTXDI.h>
+#include <rtxdi/ReSTIRDI.h>
 
 #include <algorithm>
 #include <utility>
@@ -339,14 +339,14 @@ static int isInfiniteLight(const donut::engine::Light& light)
     }
 }
 
-rtxdi::LightBufferParameters PrepareLightsPass::Process(
+RTXDI_LightBufferParameters PrepareLightsPass::Process(
     nvrhi::ICommandList* commandList, 
-    const rtxdi::RTXDIContext& context,
+    const rtxdi::ReSTIRDIContext& context,
     const std::vector<std::shared_ptr<donut::engine::Light>>& sceneLights,
     bool enableImportanceSampledEnvironmentLight)
 {
-    rtxdi::LightBufferParameters outLightBufferParams;
-    const rtxdi::RTXDIStaticParameters& contextParameters = context.getStaticParameters();
+    RTXDI_LightBufferParameters outLightBufferParams = {};
+    const rtxdi::ReSTIRDIStaticParameters& contextParameters = context.getStaticParameters();
 
     commandList->beginMarker("PrepareLights");
 
@@ -402,8 +402,8 @@ rtxdi::LightBufferParameters PrepareLightsPass::Process(
 
     commandList->writeBuffer(m_GeometryInstanceToLightBuffer, geometryInstanceToLight.data(), geometryInstanceToLight.size() * sizeof(uint32_t));
 
-    outLightBufferParams.firstLocalLight = 0;
-    outLightBufferParams.numLocalLights = lightBufferOffset;
+    outLightBufferParams.localLightBufferRegion.firstLightIndex = 0;
+    outLightBufferParams.localLightBufferRegion.numLights = lightBufferOffset;
 
     auto sortedLights = sceneLights;
     std::sort(sortedLights.begin(), sortedLights.end(), [](const auto& a, const auto& b) 
@@ -447,11 +447,11 @@ rtxdi::LightBufferParameters PrepareLightsPass::Process(
 
     assert(numImportanceSampledEnvironmentLights <= 1);
     
-    outLightBufferParams.numLocalLights += numFinitePrimLights;
-    outLightBufferParams.firstInfiniteLight = outLightBufferParams.numLocalLights;
-    outLightBufferParams.numInfiniteLights = numInfinitePrimLights;
-    outLightBufferParams.environmentLightIndex = outLightBufferParams.firstInfiniteLight + outLightBufferParams.numInfiniteLights;
-    outLightBufferParams.environmentLightPresent = numImportanceSampledEnvironmentLights;
+    outLightBufferParams.localLightBufferRegion.numLights += numFinitePrimLights;
+    outLightBufferParams.infiniteLightBufferRegion.firstLightIndex = outLightBufferParams.localLightBufferRegion.numLights;
+    outLightBufferParams.infiniteLightBufferRegion.numLights = numInfinitePrimLights;
+    outLightBufferParams.environmentLightParams.lightIndex = outLightBufferParams.infiniteLightBufferRegion.firstLightIndex + outLightBufferParams.infiniteLightBufferRegion.numLights;
+    outLightBufferParams.environmentLightParams.lightPresent = numImportanceSampledEnvironmentLights;
     
     commandList->writeBuffer(m_TaskBuffer, tasks.data(), tasks.size() * sizeof(PrepareLightsTask));
 
@@ -483,9 +483,9 @@ rtxdi::LightBufferParameters PrepareLightsPass::Process(
 
     commandList->endMarker();
 
-    outLightBufferParams.firstLocalLight += constants.currentFrameLightOffset;
-    outLightBufferParams.firstInfiniteLight += constants.currentFrameLightOffset;
-    outLightBufferParams.environmentLightIndex += constants.currentFrameLightOffset;
+    outLightBufferParams.localLightBufferRegion.firstLightIndex += constants.currentFrameLightOffset;
+    outLightBufferParams.infiniteLightBufferRegion.firstLightIndex += constants.currentFrameLightOffset;
+    outLightBufferParams.environmentLightParams.lightIndex += constants.currentFrameLightOffset;
 
     m_OddFrame = !m_OddFrame;
     return outLightBufferParams;

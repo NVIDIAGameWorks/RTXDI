@@ -31,7 +31,7 @@ void RTXDI_RandomlySelectLightDataFromRISTile(
 
 RTXDI_RISTileInfo RTXDI_RandomlySelectRISTile(
     inout RAB_RandomSamplerState coherentRng,
-    RTXDI_RISBufferParameters params)
+    RTXDI_RISBufferSegmentParameters params)
 {
     RTXDI_RISTileInfo risTileInfo;
     float tileRnd = RAB_GetNextRandom(coherentRng);

@@ -40,7 +40,7 @@ void RayGen()
 #if !USE_RAY_QUERY
     uint2 GlobalIndex = DispatchRaysIndex().xy;
 #endif
-    uint2 pixelPosition = RTXDI_ReservoirPosToPixelPos(GlobalIndex, g_Const.runtimeParams.resamplingParams);
+    uint2 pixelPosition = RTXDI_ReservoirPosToPixelPos(GlobalIndex, g_Const.runtimeParams.activeCheckerboardField);
 
     if (any(pixelPosition > int2(g_Const.view.viewportSize)))
         return;
@@ -49,7 +49,7 @@ void RayGen()
     RAB_RandomSamplerState tileRng = RAB_InitRandomSampler(GlobalIndex / RTXDI_TILE_SIZE_IN_PIXELS, 1);
 
     const RTXDI_RuntimeParameters params = g_Const.runtimeParams;
-    const uint gbufferIndex = RTXDI_ReservoirPositionToPointer(params.resamplingParams, GlobalIndex, 0);
+    const uint gbufferIndex = RTXDI_ReservoirPositionToPointer(g_Const.restirDI.reservoirBufferParams, GlobalIndex, 0);
 
     RAB_Surface primarySurface = RAB_GetGBufferSurface(pixelPosition, false);
 
@@ -81,18 +81,25 @@ void RayGen()
     if (isValidSecondarySurface && !isEnvironmentMap)
     {
         RTXDI_SampleParameters sampleParams = RTXDI_InitSampleParameters(
-            g_Const.giSamplingConstants.numIndirectLocalLightSamples,
-            g_Const.giSamplingConstants.numIndirectInfiniteLightSamples,
-            g_Const.giSamplingConstants.numIndirectEnvironmentSamples,
+            g_Const.brdfPT.secondarySurfaceReSTIRDIParams.initialSamplingParams.numPrimaryLocalLightSamples,
+            g_Const.brdfPT.secondarySurfaceReSTIRDIParams.initialSamplingParams.numPrimaryInfiniteLightSamples,
+            g_Const.brdfPT.secondarySurfaceReSTIRDIParams.initialSamplingParams.numPrimaryEnvironmentSamples,
             0,      // numBrdfSamples
             0.f,    // brdfCutoff 
             0.f);   // brdfMinRayT
 
         RAB_LightSample lightSample;
         RTXDI_Reservoir reservoir = RTXDI_SampleLightsForSurface(rng, tileRng, secondarySurface,
-            sampleParams, params, lightSample);
+            sampleParams, g_Const.lightBufferParams, g_Const.brdfPT.secondarySurfaceReSTIRDIParams.initialSamplingParams.localLightSamplingMode,
+#if RTXDI_ENABLE_PRESAMPLING
+        g_Const.localLightsRISBufferSegmentParams, g_Const.environmentLightRISBufferSegmentParams,
+#if RTXDI_REGIR_MODE != RTXDI_REGIR_MODE_DISABLED
+        g_Const.regir,
+#endif
+#endif
+        lightSample);
 
-        if (g_Const.giSamplingConstants.numSecondarySamples)
+        if (g_Const.brdfPT.enableSecondaryResampling)
         {
             // Try to find this secondary surface in the G-buffer. If found, resample the lights
             // from that G-buffer surface into the reservoir using the spatial resampling function.
@@ -106,19 +113,19 @@ void RayGen()
                 secondarySurface.viewDepth = secondaryClipPos.w;
 
                 RTXDI_SpatialResamplingParameters sparams;
-                sparams.sourceBufferIndex = g_Const.shadingConstants.shadeInputBufferIndex;
-                sparams.numSamples = g_Const.giSamplingConstants.numSecondarySamples;
+                sparams.sourceBufferIndex = g_Const.restirDI.bufferIndices.shadingInputBufferIndex;
+                sparams.numSamples = g_Const.brdfPT.secondarySurfaceReSTIRDIParams.spatialResamplingParams.numSpatialSamples;
                 sparams.numDisocclusionBoostSamples = 0;
                 sparams.targetHistoryLength = 0;
-                sparams.biasCorrectionMode = g_Const.giSamplingConstants.secondaryBiasCorrection;
-                sparams.samplingRadius = g_Const.giSamplingConstants.secondarySamplingRadius;
-                sparams.depthThreshold = g_Const.giSamplingConstants.secondaryDepthThreshold;
-                sparams.normalThreshold = g_Const.giSamplingConstants.secondaryNormalThreshold;
+                sparams.biasCorrectionMode = g_Const.brdfPT.secondarySurfaceReSTIRDIParams.spatialResamplingParams.spatialBiasCorrection;
+                sparams.samplingRadius = g_Const.brdfPT.secondarySurfaceReSTIRDIParams.spatialResamplingParams.spatialSamplingRadius;
+                sparams.depthThreshold = g_Const.brdfPT.secondarySurfaceReSTIRDIParams.spatialResamplingParams.spatialDepthThreshold;
+                sparams.normalThreshold = g_Const.brdfPT.secondarySurfaceReSTIRDIParams.spatialResamplingParams.spatialNormalThreshold;
                 sparams.enableMaterialSimilarityTest = false;
                 sparams.discountNaiveSamples = false;
 
                 reservoir = RTXDI_SpatialResampling(secondaryPixelPos, secondarySurface, reservoir,
-                    rng, sparams, params.resamplingParams, lightSample);
+                    rng, params, g_Const.restirDI.reservoirBufferParams, sparams, lightSample);
             }
         }
 
@@ -137,7 +144,7 @@ void RayGen()
     }
 
     bool outputShadingResult = true;
-    if (g_Const.giSamplingConstants.enableReSTIRIndirect)
+    if (g_Const.brdfPT.enableReSTIRGI)
     {
         RTXDI_GIReservoir reservoir = RTXDI_EmptyGIReservoir();
 
@@ -151,8 +158,8 @@ void RayGen()
             reservoir = RTXDI_MakeGIReservoir(secondarySurface.worldPos,
                 secondarySurface.normal, radiance, secondaryGBufferData.pdf);
         }
-        uint2 reservoirPosition = RTXDI_PixelPosToReservoirPos(pixelPosition, g_Const.runtimeParams.resamplingParams);
-        RTXDI_StoreGIReservoir(reservoir, g_Const.runtimeParams.resamplingParams, reservoirPosition, g_Const.initialSamplingConstants.initialOutputBufferIndex);
+        uint2 reservoirPosition = RTXDI_PixelPosToReservoirPos(pixelPosition, g_Const.runtimeParams.activeCheckerboardField);
+        RTXDI_StoreGIReservoir(reservoir, g_Const.restirGI.reservoirBufferParams, reservoirPosition, g_Const.restirGI.bufferIndices.secondarySurfaceReSTIRDIOutputBufferIndex);
 
         // Save the initial sample radiance for MIS in the final shading pass
         secondaryGBufferData.emission = outputShadingResult ? 0 : radiance;

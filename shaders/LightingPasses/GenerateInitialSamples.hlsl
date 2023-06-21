@@ -28,7 +28,7 @@ void RayGen()
 
     const RTXDI_RuntimeParameters params = g_Const.runtimeParams;
 
-    uint2 pixelPosition = RTXDI_ReservoirPosToPixelPos(GlobalIndex, params.resamplingParams);
+    uint2 pixelPosition = RTXDI_ReservoirPosToPixelPos(GlobalIndex, params.activeCheckerboardField);
 
     RAB_RandomSamplerState rng = RAB_InitRandomSampler(pixelPosition, 1);
     RAB_RandomSamplerState tileRng = RAB_InitRandomSampler(pixelPosition / RTXDI_TILE_SIZE_IN_PIXELS, 1);
@@ -36,18 +36,25 @@ void RayGen()
     RAB_Surface surface = RAB_GetGBufferSurface(pixelPosition, false);
 
     RTXDI_SampleParameters sampleParams = RTXDI_InitSampleParameters(
-        g_Const.initialSamplingConstants.numPrimaryLocalLightSamples,
-        g_Const.initialSamplingConstants.numPrimaryInfiniteLightSamples,
-        g_Const.initialSamplingConstants.numPrimaryEnvironmentSamples,
-        g_Const.initialSamplingConstants.numPrimaryBrdfSamples,
-        g_Const.initialSamplingConstants.brdfCutoff,
+        g_Const.restirDI.initialSamplingParams.numPrimaryLocalLightSamples,
+        g_Const.restirDI.initialSamplingParams.numPrimaryInfiniteLightSamples,
+        g_Const.restirDI.initialSamplingParams.numPrimaryEnvironmentSamples,
+        g_Const.restirDI.initialSamplingParams.numPrimaryBrdfSamples,
+        g_Const.restirDI.initialSamplingParams.brdfCutoff,
         0.001f);
 
     RAB_LightSample lightSample;
     RTXDI_Reservoir reservoir = RTXDI_SampleLightsForSurface(rng, tileRng, surface,
-        sampleParams, params, lightSample);
+        sampleParams, g_Const.lightBufferParams, g_Const.restirDI.initialSamplingParams.localLightSamplingMode,
+#ifdef RTXDI_ENABLE_PRESAMPLING
+        g_Const.localLightsRISBufferSegmentParams, g_Const.environmentLightRISBufferSegmentParams,
+#if RTXDI_REGIR_MODE != RTXDI_REGIR_MODE_DISABLED
+        g_Const.regir,
+#endif
+#endif
+        lightSample);
 
-    if (g_Const.initialSamplingConstants.enableInitialVisibility && RTXDI_IsValidReservoir(reservoir))
+    if (g_Const.restirDI.initialSamplingParams.enableInitialVisibility && RTXDI_IsValidReservoir(reservoir))
     {
         if (!RAB_GetConservativeVisibility(surface, lightSample))
         {
@@ -55,5 +62,5 @@ void RayGen()
         }
     }
 
-    RTXDI_StoreReservoir(reservoir, params.resamplingParams, GlobalIndex, g_Const.initialSamplingConstants.initialOutputBufferIndex);
+    RTXDI_StoreReservoir(reservoir, g_Const.restirDI.reservoirBufferParams, GlobalIndex, g_Const.restirDI.bufferIndices.initialSamplingOutputBufferIndex);
 }

@@ -10,7 +10,10 @@
 
 #pragma once
 
-#include <rtxdi/RTXDI.h>
+#include <rtxdi/ReSTIRDI.h>
+#include <rtxdi/ReGIRParameters.h>
+#include <rtxdi/ReGIR.h>
+#include <rtxdi/ReSTIRGI.h>
 
 #include <donut/engine/Scene.h>
 #include <donut/render/TemporalAntiAliasingPass.h>
@@ -165,9 +168,11 @@ struct UIData
     bool enableFpsLimit = false;
     uint32_t fpsLimit = 60;
 
-    rtxdi::RTXDIStaticParameters rtxdiContextParams;
+    rtxdi::ReSTIRDIStaticParameters restirDIStaticParams;
+    rtxdi::ReGIRStaticParameters regirStaticParams;
+    rtxdi::ReSTIRGIStaticParameters restirGIStaticParams;
     rtxdi::ReGIRDynamicParameters regirDynamicParameters;
-    bool resetRtxdiContext = false;
+    bool resetReSTIRDIContext = false;
     uint32_t regirLightSlotCount = 0;
     bool freezeRegirPosition = false;
     std::optional<int> animationFrame;
@@ -183,11 +188,25 @@ struct UIData
     GBufferSettings gbufferSettings;
     LightingPasses::RenderSettings lightingSettings;
 
-    rtxdi::InitialSamplingSettings initialSamplingSettings;
-    rtxdi::TemporalResamplingSettings temporalResamplingSettings;
-    rtxdi::BoilingFilterSettings boilingFilterSettings;
-    rtxdi::SpatialResamplingSettings spatialResamplingSettings;
-    rtxdi::ShadingSettings shadingSettings;
+    struct
+    {
+        uint32_t numLocalLightUniformSamples = 8;
+        uint32_t numLocalLightPowerRISSamples = 8;
+        uint32_t numLocalLightReGIRRISSamples = 8;
+        rtxdi::ReSTIRDI_ResamplingMode resamplingMode;
+        ReSTIRDI_InitialSamplingParameters initialSamplingParams;
+        ReSTIRDI_TemporalResamplingParameters temporalResamplingParams;
+        ReSTIRDI_SpatialResamplingParameters spatialResamplingParams;
+        ReSTIRDI_ShadingParameters shadingParams;
+    } restirDI;
+
+    struct
+    {
+        rtxdi::ReSTIRGI_ResamplingMode resamplingMode;
+        ReSTIRGI_TemporalResamplingParameters temporalResamplingParams;
+        ReSTIRGI_SpatialResamplingParameters spatialResamplingParams;
+        ReSTIRGI_FinalShadingParameters finalShadingParams;
+    } restirGI;
 
     donut::render::TemporalAntiAliasingParameters taaParams;
 

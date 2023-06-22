@@ -208,8 +208,9 @@ static bool ConvertLight(const donut::engine::Light& light, PolymorphicLightInfo
         polymorphic.scalars = fp32ToFp16(halfAngularSizeRad) | (fp32ToFp16(solidAngle) << 16);
         return true;
     }
-    case LightType_Spot: {
-        auto& spot = static_cast<const SpotLightWithProfile&>(light);
+    case LightType_Spot:
+    case LightType_SpotProfile: {
+        auto& spot = static_cast<const SpotLight&>(light);
         if (spot.radius == 0.f)
         {
             float3 flux = spot.color * spot.intensity;
@@ -236,10 +237,14 @@ static bool ConvertLight(const donut::engine::Light& light, PolymorphicLightInfo
         polymorphic.cosConeAngleAndSoftness = fp32ToFp16(cosf(dm::radians(spot.outerAngle)));
         polymorphic.cosConeAngleAndSoftness |= fp32ToFp16(softness) << 16;
 
-        if (spot.profileTextureIndex >= 0)
+        if (spot.GetLightType() == LightType_SpotProfile)
         {
-            polymorphic.iesProfileIndex = spot.profileTextureIndex;
-            polymorphic.colorTypeAndFlags |= kPolymorphicLightIesProfileEnableBit;
+            auto& spotWithProfile = static_cast<const SpotLightWithProfile&>(light);
+            if (spotWithProfile.profileTextureIndex >= 0)
+            {
+                polymorphic.iesProfileIndex = spotWithProfile.profileTextureIndex;
+                polymorphic.colorTypeAndFlags |= kPolymorphicLightIesProfileEnableBit;
+            }
         }
 
         return true;

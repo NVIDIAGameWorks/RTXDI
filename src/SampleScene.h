@@ -17,6 +17,7 @@ constexpr int LightType_Environment = 1000;
 constexpr int LightType_Cylinder = 1001;
 constexpr int LightType_Disk = 1002;
 constexpr int LightType_Rect = 1003;
+constexpr int LightType_SpotProfile = 1004;
 
 class SpotLightWithProfile : public donut::engine::SpotLight
 {
@@ -26,6 +27,7 @@ public:
 
     void Load(const Json::Value& node) override;
     void Store(Json::Value& node) const override;
+    [[nodiscard]] int GetLightType() const override { return LightType_SpotProfile; }
     [[nodiscard]] std::shared_ptr<SceneGraphLeaf> Clone() override;
 };
 

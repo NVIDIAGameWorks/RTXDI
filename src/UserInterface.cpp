@@ -1121,38 +1121,43 @@ void UserInterface::SceneSettings()
                 break;
             }
             case LightType_Spot:
+            case LightType_SpotProfile:
             {
-                SpotLightWithProfile& spotLight = static_cast<SpotLightWithProfile&>(*m_SelectedLight);
+                engine::SpotLight& spotLight = static_cast<engine::SpotLight&>(*m_SelectedLight);
                 app::LightEditor_Spot(spotLight);
 
-                ImGui::PushItemWidth(150.f);
-                if (ImGui::BeginCombo("IES Profile", spotLight.profileName.empty() ? "(none)" : spotLight.profileName.c_str()))
+                if (spotLight.GetLightType() == LightType_SpotProfile)
                 {
-                    bool selected = spotLight.profileName.empty();
-                    if (ImGui::Selectable("(none)", &selected) && selected)
+                    SpotLightWithProfile& spotLightProfile = static_cast<SpotLightWithProfile&>(*m_SelectedLight);
+                    ImGui::PushItemWidth(150.f);
+                    if (ImGui::BeginCombo("IES Profile", spotLightProfile.profileName.empty() ? "(none)" : spotLightProfile.profileName.c_str()))
                     {
-                        spotLight.profileName = "";
-                        spotLight.profileTextureIndex = -1;
-                    }
-
-                    for (auto profile : m_ui.resources->iesProfiles)
-                    {
-                        selected = profile->name == spotLight.profileName;
-                        if (ImGui::Selectable(profile->name.c_str(), &selected) && selected)
+                        bool selected = spotLightProfile.profileName.empty();
+                        if (ImGui::Selectable("(none)", &selected) && selected)
                         {
-                            spotLight.profileName = profile->name;
-                            spotLight.profileTextureIndex = -1;
+                            spotLightProfile.profileName = "";
+                            spotLightProfile.profileTextureIndex = -1;
                         }
 
-                        if (selected)
+                        for (auto profile : m_ui.resources->iesProfiles)
                         {
-                            ImGui::SetItemDefaultFocus();
-                        }
-                    }
+                            selected = profile->name == spotLightProfile.profileName;
+                            if (ImGui::Selectable(profile->name.c_str(), &selected) && selected)
+                            {
+                                spotLightProfile.profileName = profile->name;
+                                spotLightProfile.profileTextureIndex = -1;
+                            }
 
-                    ImGui::EndCombo();
+                            if (selected)
+                            {
+                                ImGui::SetItemDefaultFocus();
+                            }
+                        }
+
+                        ImGui::EndCombo();
+                    }
+                    ImGui::PopItemWidth();
                 }
-                ImGui::PopItemWidth();
 
                 if (ImGui::Button("Place Here"))
                 {

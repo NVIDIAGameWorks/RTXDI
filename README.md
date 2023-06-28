@@ -99,6 +99,8 @@ The RTXDI sample applications can run using D3D12 or Vulkan, which is achieved t
 
 By default, the sample apps will run using D3D12 on Windows. To start them in Vulkan mode, add `--vk` to the command line. To compile the sample apps without Vulkan support, set the CMake variable `DONUT_WITH_VULKAN` to `OFF` and re-generate the project.
 
+To enable SPIV-V compileation tests, set the `GLSLANG_PATH` variable in CMake to the path to glslangValidator.exe in your Vulkan installation.
+
 ## Integration
 
 See the [Integration Guide](doc/Integration.md).

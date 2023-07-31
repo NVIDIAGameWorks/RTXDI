@@ -172,7 +172,7 @@ This function implements Algorithm (4) from the ReSTIR paper, "Combining the str
 
 Performs normalization of the reservoir after streaming. After this function is called, the reservoir's `weightSum` field becomes its inverse PDF that can be used for shading or for further reservoir combinations.
 
-The `normalizationNumerator` and `normalizationDenominator` parameters specify the normalization scale for bias correction. Basic applications like streaming of initial light samples will set the numerator to 1.0 and the denominator to M (the number of samples in the reservoir). Spatio-temporal resampling will normally compute the numerator and denominator by weighing the final selected sample against the original surfaces used in resampling.
+The `normalizationNumerator` and `normalizationDenominator` parameters specify the normalization scale for bias correction. Basic applications like streaming of initial light samples will set the numerator to 1.0 and the denominator to M (the number of samples in the reservoir). Spatiotemporal resampling will normally compute the numerator and denominator by weighing the final selected sample against the original surfaces used in resampling.
 
 This function implements Equation (6) from the ReSTIR paper.
 
@@ -450,7 +450,7 @@ For more information on the members of the `RTXDI_SpatialResamplingParameters` s
         out int2 temporalSamplePixelPos,
         inout RAB_LightSample selectedLightSample)
 
-Implements the core functionality of a combined spatio-temporal resampling pass. This is similar to a sequence of `RTXDI_TemporalResampling` and `RTXDI_SpatialResampling`, with the exception that the input reservoirs are all taken from the previous frame. This function is useful for implementing a lighting solution in a single shader, which generates the initial samples, applies spatio-temporal resampling, and shades the final samples.
+Implements the core functionality of a combined spatiotemporal resampling pass. This is similar to a sequence of `RTXDI_TemporalResampling` and `RTXDI_SpatialResampling`, with the exception that the input reservoirs are all taken from the previous frame. This function is useful for implementing a lighting solution in a single shader, which generates the initial samples, applies spatiotemporal resampling, and shades the final samples.
 
 ### `RTXDI_BoilingFilter`
 

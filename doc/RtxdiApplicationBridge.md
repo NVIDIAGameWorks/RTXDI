@@ -164,7 +164,7 @@ This function is used in the spatial resampling functions for ray traced bias co
 
 Same visibility ray tracing as [`RAB_GetConservativeVisibility`](#rab_getconservativevisibility) but for surfaces and light samples originating from the previous frame.
 
-When the previous frame TLAS and BLAS data is available, the implementation should use that previous data and the `previousSurface` parameter. When the previous acceleration structures are not available, the implementation should use the `currentSurface` parameter, but that will make the results temporarily biased and, in some cases, more noisy. Specifically, the fused spatio-temporal resampling algorithm will produce very noisy results on animated objects.
+When the previous frame TLAS and BLAS data is available, the implementation should use that previous data and the `previousSurface` parameter. When the previous acceleration structures are not available, the implementation should use the `currentSurface` parameter, but that will make the results temporarily biased and, in some cases, more noisy. Specifically, the fused spatiotemporal resampling algorithm will produce very noisy results on animated objects.
 
 
 ## BRDF Sampling Related Functions
@@ -183,7 +183,7 @@ Computes the probability of a particular direction being sampled from the enviro
 
 ### `RAB_EvaluateLocalLightSourcePdf`
 
-`float RAB_EvaluateLocalLightSourcePdf(RTXDI_ResamplingRuntimeParameters params, uint lightIndex)`
+`float RAB_EvaluateLocalLightSourcePdf(uint lightIndex)`
 
 Computes the probability of a particular light being sampled from the local light pool with importance sampling, based on the local light PDF texture.
 

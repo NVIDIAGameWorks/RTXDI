@@ -327,7 +327,7 @@ RTXDI_GIReservoir RTXDI_GITemporalResampling(
         {
             float temporalP = RAB_GetGISampleTargetPdfForSurface(curReservoir.position, curReservoir.radiance, temporalSurface);
 
-#if RTXDI_ALLOWED_BIAS_CORRECTION >= RTXDI_BIAS_CORRECTION_RAY_TRACED
+#if RTXDI_GI_ALLOWED_BIAS_CORRECTION >= RTXDI_BIAS_CORRECTION_RAY_TRACED
             if (tparams.biasCorrectionMode == RTXDI_BIAS_CORRECTION_RAY_TRACED && temporalP > 0)
             {
                 if (!RAB_GetTemporalConservativeVisibility(surface, temporalSurface, curReservoir.position))

@@ -54,6 +54,7 @@ void RAB_GetLightDirDistance(RAB_Surface surface, RAB_LightSample lightSample,
     out float3 o_lightDir,
     out float o_lightDistance)
 {
+    o_lightDistance = 0.f;
 }
 
 bool RAB_GetConservativeVisibility(RAB_Surface surface, RAB_LightSample lightSample)
@@ -173,6 +174,7 @@ float2 RAB_GetEnvironmentMapRandXYFromDir(float3 worldDir)
 
 bool RAB_TraceRayForLocalLight(float3 origin, float3 direction, float tMin, float tMax, out uint o_lightIndex, out float2 o_randXY)
 {
+    o_lightIndex = 0;
     return false;
 }
 

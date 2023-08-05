@@ -47,11 +47,69 @@ namespace rtxdi
         CheckerboardMode CheckerboardSamplingMode = CheckerboardMode::Off;
     };
 
-    constexpr ReSTIRDI_BufferIndices getDefaultReSTIRDIBufferIndices();
-    constexpr ReSTIRDI_InitialSamplingParameters getDefaultReSTIRDIInitialSamplingParams();
-    constexpr ReSTIRDI_TemporalResamplingParameters getDefaultReSTIRDITemporalResamplingParams();
-    constexpr ReSTIRDI_SpatialResamplingParameters getDefaultReSTIRDISpatialResamplingParams();
-    constexpr ReSTIRDI_ShadingParameters getDefaultReSTIRDIShadingParams();
+    constexpr ReSTIRDI_BufferIndices getDefaultReSTIRDIBufferIndices()
+    {
+        ReSTIRDI_BufferIndices bufferIndices = {};
+        bufferIndices.initialSamplingOutputBufferIndex = 0;
+        bufferIndices.temporalResamplingInputBufferIndex = 0;
+        bufferIndices.temporalResamplingOutputBufferIndex = 0;
+        bufferIndices.spatialResamplingInputBufferIndex = 0;
+        bufferIndices.spatialResamplingOutputBufferIndex = 0;
+        bufferIndices.shadingInputBufferIndex = 0;
+        return bufferIndices;
+    }
+
+    constexpr ReSTIRDI_InitialSamplingParameters getDefaultReSTIRDIInitialSamplingParams()
+    {
+        ReSTIRDI_InitialSamplingParameters params = {};
+        params.brdfCutoff = 0.0001f;
+        params.enableInitialVisibility = true;
+        params.environmentMapImportanceSampling = 1;
+        params.localLightSamplingMode = ReSTIRDI_LocalLightSamplingMode::Uniform;
+        params.numPrimaryBrdfSamples = 1;
+        params.numPrimaryEnvironmentSamples = 1;
+        params.numPrimaryInfiniteLightSamples = 1;
+        params.numPrimaryLocalLightSamples = 8;
+        return params;
+    }
+
+    constexpr ReSTIRDI_TemporalResamplingParameters getDefaultReSTIRDITemporalResamplingParams()
+    {
+        ReSTIRDI_TemporalResamplingParameters params = {};
+        params.boilingFilterStrength = 0.2f;
+        params.discardInvisibleSamples = false;
+        params.enableBoilingFilter = true;
+        params.enablePermutationSampling = true;
+        params.maxHistoryLength = 20;
+        params.permutationSamplingThreshold = 0.9f;
+        params.temporalBiasCorrection = ReSTIRDI_TemporalBiasCorrectionMode::Basic;
+        params.temporalDepthThreshold = 0.1f;
+        params.temporalNormalThreshold = 0.5f;
+        return params;
+    }
+
+    constexpr ReSTIRDI_SpatialResamplingParameters getDefaultReSTIRDISpatialResamplingParams()
+    {
+        ReSTIRDI_SpatialResamplingParameters params = {};
+        params.numDisocclusionBoostSamples = 8;
+        params.numSpatialSamples = 1;
+        params.spatialBiasCorrection = ReSTIRDI_SpatialBiasCorrectionMode::Basic;
+        params.spatialDepthThreshold = 0.1f;
+        params.spatialNormalThreshold = 0.5f;
+        params.spatialSamplingRadius = 32.0f;
+        return params;
+    }
+
+    constexpr ReSTIRDI_ShadingParameters getDefaultReSTIRDIShadingParams()
+    {
+        ReSTIRDI_ShadingParameters params = {};
+        params.enableDenoiserInputPacking = false;
+        params.enableFinalVisibility = true;
+        params.finalVisibilityMaxAge = 4;
+        params.finalVisibilityMaxDistance = 16.f;
+        params.reuseFinalVisibility = true;
+        return params;
+    }
 
     // Make this constructor take static RTXDI params, update its dynamic ones
     class ReSTIRDIContext

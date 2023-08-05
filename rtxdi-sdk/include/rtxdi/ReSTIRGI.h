@@ -25,10 +25,50 @@ enum class ReSTIRGI_ResamplingMode : uint32_t
     FusedSpatiotemporal = 4,
 };
 
-constexpr ReSTIRGI_BufferIndices getDefaultReSTIRGIBufferIndices();
-constexpr ReSTIRGI_TemporalResamplingParameters getDefaultReSTIRGITemporalResamplingParams();
-constexpr ReSTIRGI_SpatialResamplingParameters getDefaultReSTIRGISpatialResamplingParams();
-constexpr ReSTIRGI_FinalShadingParameters getDefaultReSTIRGIFinalShadingParams();
+constexpr ReSTIRGI_BufferIndices getDefaultReSTIRGIBufferIndices()
+{
+    ReSTIRGI_BufferIndices bufferIndices = {};
+    bufferIndices.secondarySurfaceReSTIRDIOutputBufferIndex = 0;
+    bufferIndices.temporalResamplingInputBufferIndex = 0;
+    bufferIndices.temporalResamplingOutputBufferIndex = 0;
+    bufferIndices.spatialResamplingInputBufferIndex = 0;
+    bufferIndices.spatialResamplingOutputBufferIndex = 0;
+    return bufferIndices;
+}
+
+constexpr ReSTIRGI_TemporalResamplingParameters getDefaultReSTIRGITemporalResamplingParams()
+{
+    ReSTIRGI_TemporalResamplingParameters params = {};
+    params.boilingFilterStrength = 0.2f;
+    params.depthThreshold = 0.1f;
+    params.enableBoilingFilter = true;
+    params.enableFallbackSampling = true;
+    params.enablePermutationSampling = false;
+    params.maxHistoryLength = 8;
+    params.maxReservoirAge = 30;
+    params.normalThreshold = 0.6f;
+    params.temporalBiasCorrectionMode = ResTIRGI_TemporalBiasCorrectionMode::Basic;
+    return params;
+}
+
+constexpr ReSTIRGI_SpatialResamplingParameters getDefaultReSTIRGISpatialResamplingParams()
+{
+    ReSTIRGI_SpatialResamplingParameters params = {};
+    params.numSpatialSamples = 2;
+    params.spatialBiasCorrectionMode = ResTIRGI_SpatialBiasCorrectionMode::Basic;
+    params.spatialDepthThreshold = 0.1f;
+    params.spatialNormalThreshold = 0.6f;
+    params.spatialSamplingRadius = 32.0f;
+    return params;
+}
+
+constexpr ReSTIRGI_FinalShadingParameters getDefaultReSTIRGIFinalShadingParams()
+{
+    ReSTIRGI_FinalShadingParameters params = {};
+    params.enableFinalMIS = true;
+    params.enableFinalVisibility = true;
+    return params;
+}
 
 class ReSTIRGIContext
 {

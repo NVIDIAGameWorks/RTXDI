@@ -3,51 +3,6 @@
 namespace rtxdi
 {
 
-constexpr ReSTIRGI_BufferIndices getDefaultReSTIRGIBufferIndices()
-{
-    ReSTIRGI_BufferIndices bufferIndices = {};
-    bufferIndices.secondarySurfaceReSTIRDIOutputBufferIndex = 0;
-    bufferIndices.temporalResamplingInputBufferIndex = 0;
-    bufferIndices.temporalResamplingOutputBufferIndex = 0;
-    bufferIndices.spatialResamplingInputBufferIndex = 0;
-    bufferIndices.spatialResamplingOutputBufferIndex = 0;
-    return bufferIndices;
-}
-
-constexpr ReSTIRGI_TemporalResamplingParameters getDefaultReSTIRGITemporalResamplingParams()
-{
-    ReSTIRGI_TemporalResamplingParameters params = {};
-    params.boilingFilterStrength = 0.2f;
-    params.depthThreshold = 0.1f;
-    params.enableBoilingFilter = true;
-    params.enableFallbackSampling = true;
-    params.enablePermutationSampling = false;
-    params.maxHistoryLength = 8;
-    params.maxReservoirAge = 30;
-    params.normalThreshold = 0.6f;
-    params.temporalBiasCorrectionMode = ResTIRGI_TemporalBiasCorrectionMode::Basic;
-    return params;
-}
-
-constexpr ReSTIRGI_SpatialResamplingParameters getDefaultReSTIRGISpatialResamplingParams()
-{
-    ReSTIRGI_SpatialResamplingParameters params = {};
-    params.numSpatialSamples = 2;
-    params.spatialBiasCorrectionMode = ResTIRGI_SpatialBiasCorrectionMode::Basic;
-    params.spatialDepthThreshold = 0.1f;
-    params.spatialNormalThreshold = 0.6f;
-    params.spatialSamplingRadius = 32.0f;
-    return params;
-}
-
-constexpr ReSTIRGI_FinalShadingParameters getDefaultReSTIRGIFinalShadingParams()
-{
-    ReSTIRGI_FinalShadingParameters params = {};
-    params.enableFinalMIS = true;
-    params.enableFinalVisibility = true;
-    return params;
-}
-
 ReSTIRGIContext::ReSTIRGIContext(const ReSTIRGIStaticParameters& staticParams) :
     m_frameIndex(0),
     m_reservoirBufferParams(CalculateReservoirBufferParameters(staticParams.RenderWidth, staticParams.RenderHeight, staticParams.CheckerboardSamplingMode)),

@@ -274,11 +274,11 @@ void LightingPasses::ExecuteRayTracingPass(nvrhi::ICommandList* commandList, Ray
     commandList->endMarker();
 }
 
-donut::engine::ShaderMacro LightingPasses::GetRegirMacro(const rtxdi::ReGIRStaticParameters& contextParameters)
+donut::engine::ShaderMacro LightingPasses::GetRegirMacro(const rtxdi::ReGIRStaticParameters& regirStaticParams)
 {
     std::string regirMode;
 
-    switch (contextParameters.Mode)
+    switch (regirStaticParams.Mode)
     {
     case rtxdi::ReGIRMode::Disabled:
         regirMode = "RTXDI_REGIR_DISABLED";

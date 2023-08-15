@@ -183,7 +183,7 @@ public:
     [[nodiscard]] uint32_t GetOutputReservoirBufferIndex() const { return m_CurrentFrameOutputReservoir; }
     [[nodiscard]] uint32_t GetGIOutputReservoirBufferIndex() const { return m_CurrentFrameGIOutputReservoir; }
 
-    static donut::engine::ShaderMacro GetRegirMacro(const rtxdi::ReGIRStaticParameters& contextParameters);
+    static donut::engine::ShaderMacro GetRegirMacro(const rtxdi::ReGIRStaticParameters& regirStaticParams);
 
 private:
     void FillResamplingConstants(

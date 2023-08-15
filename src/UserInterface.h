@@ -172,7 +172,7 @@ struct UIData
     rtxdi::ReGIRStaticParameters regirStaticParams;
     rtxdi::ReSTIRGIStaticParameters restirGIStaticParams;
     rtxdi::ReGIRDynamicParameters regirDynamicParameters;
-    bool resetReSTIRDIContext = false;
+    bool resetISContext = false;
     uint32_t regirLightSlotCount = 0;
     bool freezeRegirPosition = false;
     std::optional<int> animationFrame;

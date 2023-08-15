@@ -200,7 +200,7 @@ void UIData::ApplyPreset()
     if (newCheckerboardMode != restirDIStaticParams.CheckerboardSamplingMode)
     {
         restirDIStaticParams.CheckerboardSamplingMode = newCheckerboardMode;
-        resetReSTIRDIContext = true;
+        resetISContext = true;
     }
 }
 
@@ -341,7 +341,7 @@ void UserInterface::SamplingSettings()
         if (ImGui::TreeNode("RTXDI Context"))
         {
             if (ImGui::Button("Apply Settings"))
-                m_ui.resetReSTIRDIContext = true;
+                m_ui.resetISContext = true;
 
             // TODO: Pull this out of ReSTIRDIContext and make it global to both ReSTIRDI and ReSTIRGI
             bool enableCheckerboardSampling = (m_ui.restirDIStaticParams.CheckerboardSamplingMode != rtxdi::CheckerboardMode::Off);
@@ -354,7 +354,7 @@ void UserInterface::SamplingSettings()
         if (ImGui::TreeNode("ReGIR Context"))
         {
             if (ImGui::Button("Apply Settings"))
-                m_ui.resetReSTIRDIContext = true;
+                m_ui.resetISContext = true;
 
             ImGui::DragInt("Lights per Cell", (int*)&m_ui.regirStaticParams.LightsPerCell, 1, 32, 8192);
 
@@ -794,7 +794,7 @@ void UserInterface::SamplingSettings()
                     static const std::array<ResTIRGI_SpatialBiasCorrectionMode, 3> index2mode = {ResTIRGI_SpatialBiasCorrectionMode::Off,
                                                                                                  ResTIRGI_SpatialBiasCorrectionMode::Basic,
                                                                                                  ResTIRGI_SpatialBiasCorrectionMode::Raytraced };
-                    const const char* currentSpatialResamplingModeOption = spatialResamplingOptions[mode2index.at(m_ui.restirGI.spatialResamplingParams.spatialBiasCorrectionMode)];
+                    const char* currentSpatialResamplingModeOption = spatialResamplingOptions[mode2index.at(m_ui.restirGI.spatialResamplingParams.spatialBiasCorrectionMode)];
                     if(ImGui::BeginCombo("Spatial Bias Correction Mode", currentSpatialResamplingModeOption))
                     {
                         for (int i = 0; i < sizeof(spatialResamplingOptions) / sizeof(spatialResamplingOptions[0]); i++)

@@ -624,6 +624,7 @@ public:
             isStaticParams.CheckerboardSamplingMode = m_ui.restirDIStaticParams.CheckerboardSamplingMode;
             isStaticParams.renderHeight = renderHeight;
             isStaticParams.renderWidth = renderWidth;
+            isStaticParams.regirStaticParams = m_ui.regirStaticParams;
 
             m_isContext = std::make_unique<rtxdi::ImportanceSamplingContext>(isStaticParams);
 
@@ -965,13 +966,13 @@ public:
             m_NRD = nullptr; // need to create a new one
 #endif
 
-        if (m_ui.resetReSTIRDIContext)
+        if (m_ui.resetISContext)
         {
             GetDevice()->waitForIdle();
 
             m_isContext = nullptr;
             m_RtxdiResources = nullptr;
-            m_ui.resetReSTIRDIContext = false;
+            m_ui.resetISContext = false;
         }
 
         if (m_ui.environmentMapDirty == 2)

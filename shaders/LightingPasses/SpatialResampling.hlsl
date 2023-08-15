@@ -39,7 +39,7 @@ void RayGen()
     if (RAB_IsSurfaceValid(surface))
     {
         RTXDI_Reservoir centerSample = RTXDI_LoadReservoir(g_Const.restirDI.reservoirBufferParams,
-            GlobalIndex, g_Const.restirDI.bufferIndices.temporalResamplingOutputBufferIndex);
+            GlobalIndex, g_Const.restirDI.bufferIndices.spatialResamplingInputBufferIndex);
 
         RTXDI_SpatialResamplingParameters sparams;
         sparams.sourceBufferIndex = g_Const.restirDI.bufferIndices.spatialResamplingInputBufferIndex;

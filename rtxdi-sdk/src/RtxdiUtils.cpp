@@ -1,3 +1,13 @@
+/***************************************************************************
+ # Copyright (c) 2020-2023, NVIDIA CORPORATION.  All rights reserved.
+ #
+ # NVIDIA CORPORATION and its licensors retain all intellectual property
+ # and proprietary rights in and to this software, related documentation
+ # and any modifications thereto.  Any use, reproduction, disclosure or
+ # distribution of this software and related documentation without an express
+ # license agreement from NVIDIA CORPORATION is strictly prohibited.
+ **************************************************************************/
+
 #include <rtxdi/RtxdiUtils.h>
 
 #include <algorithm>
@@ -5,14 +15,14 @@
 namespace rtxdi
 {
 
-RTXDI_ReservoirBufferParameters CalculateReservoirBufferParameters(uint32_t renderWidth, uint32_t renderHeight, CheckerboardMode checkerboardMode)
+RTXDI_DIReservoirBufferParameters CalculateReservoirBufferParameters(uint32_t renderWidth, uint32_t renderHeight, CheckerboardMode checkerboardMode)
 {
     renderWidth = (checkerboardMode == CheckerboardMode::Off)
         ? renderWidth
         : (renderWidth + 1) / 2;
     uint32_t renderWidthBlocks = (renderWidth + RTXDI_RESERVOIR_BLOCK_SIZE - 1) / RTXDI_RESERVOIR_BLOCK_SIZE;
     uint32_t renderHeightBlocks = (renderHeight + RTXDI_RESERVOIR_BLOCK_SIZE - 1) / RTXDI_RESERVOIR_BLOCK_SIZE;
-    RTXDI_ReservoirBufferParameters params;
+    RTXDI_DIReservoirBufferParameters params;
     params.reservoirBlockRowPitch = renderWidthBlocks * (RTXDI_RESERVOIR_BLOCK_SIZE * RTXDI_RESERVOIR_BLOCK_SIZE);
     params.reservoirArrayPitch = params.reservoirBlockRowPitch * renderHeightBlocks;
     return params;

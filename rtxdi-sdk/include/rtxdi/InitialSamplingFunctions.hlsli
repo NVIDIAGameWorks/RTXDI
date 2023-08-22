@@ -12,10 +12,13 @@
 #define INITIAL_SAMPLING_FUNCTIONS_HLSLI
 
 #include "rtxdi/ReSTIRDIParameters.h"
-#include "rtxdi/Reservoir.hlsli"
+#include "rtxdi/DIReservoir.hlsli"
 #include "rtxdi/LocalLightSelection.hlsli"
 #ifdef RTXDI_RIS_BUFFER_HLSLI
 #include "rtxdi/RISBuffer.hlsli"
+#if RTXDI_REGIR_MODE != RTXDI_REGIR_DISABLED
+#include "rtxdi/ReGIRSampling.hlsli"
+#endif
 #endif // RTXDI_RIS_BUFFER_HLSLI
 #include "rtxdi/UniformSampling.hlsli"
 
@@ -131,7 +134,7 @@ bool RTXDI_StreamLocalLightAtUVIntoReservoir(
     float2 uv,
     float invSourcePdf,
     RAB_LightInfo lightInfo,
-    inout RTXDI_Reservoir state,
+    inout RTXDI_DIReservoir state,
     inout RAB_LightSample o_selectedSample)
 {
     RAB_LightSample candidateSample = RAB_SamplePolymorphicLight(lightInfo, surface, uv);
@@ -255,7 +258,7 @@ RTXDI_LocalLightSelectionContext RTXDI_InitializeLocalLightSelectionContext(
     return ctx;
 }
 
-RTXDI_Reservoir RTXDI_SampleLocalLightsInternal(
+RTXDI_DIReservoir RTXDI_SampleLocalLightsInternal(
     inout RAB_RandomSamplerState rng,
     inout RAB_RandomSamplerState coherentRng,
     RAB_Surface surface,
@@ -270,7 +273,7 @@ RTXDI_Reservoir RTXDI_SampleLocalLightsInternal(
 #endif
     out RAB_LightSample o_selectedSample)
 {
-    RTXDI_Reservoir state = RTXDI_EmptyReservoir();
+    RTXDI_DIReservoir state = RTXDI_EmptyDIReservoir();
 
     RTXDI_LocalLightSelectionContext lightSelectionContext = RTXDI_InitializeLocalLightSelectionContext(coherentRng, localLightSamplingMode, localLightBufferRegion
 #if RTXDI_ENABLE_PRESAMPLING
@@ -306,7 +309,7 @@ RTXDI_Reservoir RTXDI_SampleLocalLightsInternal(
 // Local light sampling
 //
 
-RTXDI_Reservoir RTXDI_SampleLocalLights(
+RTXDI_DIReservoir RTXDI_SampleLocalLights(
     inout RAB_RandomSamplerState rng,
     inout RAB_RandomSamplerState coherentRng,
     RAB_Surface surface,
@@ -324,10 +327,10 @@ RTXDI_Reservoir RTXDI_SampleLocalLights(
     o_selectedSample = RAB_EmptyLightSample();
 
     if (localLightBufferRegion.numLights == 0)
-        return RTXDI_EmptyReservoir();
+        return RTXDI_EmptyDIReservoir();
 
     if (sampleParams.numLocalLightSamples == 0)
-        return RTXDI_EmptyReservoir();
+        return RTXDI_EmptyDIReservoir();
 
     return RTXDI_SampleLocalLightsInternal(rng, coherentRng, surface, sampleParams, localLightSamplingMode, localLightBufferRegion,
 #if RTXDI_ENABLE_PRESAMPLING
@@ -358,7 +361,7 @@ void RTXDI_StreamInfiniteLightAtUVIntoReservoir(
     uint lightIndex,
     float2 uv,
     float invSourcePdf,
-    inout RTXDI_Reservoir state,
+    inout RTXDI_DIReservoir state,
     inout RAB_LightSample o_selectedSample)
 {
     RAB_LightSample candidateSample = RAB_SamplePolymorphicLight(lightInfo, surface, uv);
@@ -372,14 +375,14 @@ void RTXDI_StreamInfiniteLightAtUVIntoReservoir(
     }
 }
 
-RTXDI_Reservoir RTXDI_SampleInfiniteLights(
+RTXDI_DIReservoir RTXDI_SampleInfiniteLights(
     inout RAB_RandomSamplerState rng,
     RAB_Surface surface,
     uint numSamples,
     RTXDI_LightBufferRegion infiniteLightBufferRegion,
     inout RAB_LightSample o_selectedSample)
 {
-    RTXDI_Reservoir state = RTXDI_EmptyReservoir();
+    RTXDI_DIReservoir state = RTXDI_EmptyDIReservoir();
     o_selectedSample = RAB_EmptyLightSample();
 
     if (infiniteLightBufferRegion.numLights == 0)
@@ -443,7 +446,7 @@ void RTXDI_StreamEnvironmentLightAtUVIntoReservoir(
     uint environmentLightIndex,
     float2 uv,
     float invSourcePdf,
-    inout RTXDI_Reservoir state,
+    inout RTXDI_DIReservoir state,
     inout RAB_LightSample o_selectedSample)
 {
     RAB_LightSample candidateSample = RAB_SamplePolymorphicLight(lightInfo, surface, uv);
@@ -459,7 +462,7 @@ void RTXDI_StreamEnvironmentLightAtUVIntoReservoir(
     }
 }
 
-RTXDI_Reservoir RTXDI_SampleEnvironmentMap(
+RTXDI_DIReservoir RTXDI_SampleEnvironmentMap(
     inout RAB_RandomSamplerState rng,
     inout RAB_RandomSamplerState coherentRng,
     RAB_Surface surface,
@@ -468,7 +471,7 @@ RTXDI_Reservoir RTXDI_SampleEnvironmentMap(
     RTXDI_RISBufferSegmentParameters risBufferSegmentParams,
     out RAB_LightSample o_selectedSample)
 {
-    RTXDI_Reservoir state = RTXDI_EmptyReservoir();
+    RTXDI_DIReservoir state = RTXDI_EmptyDIReservoir();
     o_selectedSample = RAB_EmptyLightSample();
 
     if (params.lightPresent == 0)
@@ -501,14 +504,14 @@ RTXDI_Reservoir RTXDI_SampleEnvironmentMap(
 // BRDF sampling: Samples from the BRDF defined by the given surface
 //
 
-RTXDI_Reservoir RTXDI_SampleBrdf(
+RTXDI_DIReservoir RTXDI_SampleBrdf(
     inout RAB_RandomSamplerState rng,
     RAB_Surface surface,
     RTXDI_SampleParameters sampleParams,
     RTXDI_LightBufferParameters lightBufferParams,
     out RAB_LightSample o_selectedSample)
 {
-    RTXDI_Reservoir state = RTXDI_EmptyReservoir();
+    RTXDI_DIReservoir state = RTXDI_EmptyDIReservoir();
     
     for (uint i = 0; i < sampleParams.numBrdfSamples; ++i)
     {
@@ -588,7 +591,7 @@ RTXDI_Reservoir RTXDI_SampleBrdf(
 }
 
 // Samples the local, infinite, and environment lights for a given surface
-RTXDI_Reservoir RTXDI_SampleLightsForSurface(
+RTXDI_DIReservoir RTXDI_SampleLightsForSurface(
     inout RAB_RandomSamplerState rng,
     inout RAB_RandomSamplerState coherentRng,
     RAB_Surface surface,
@@ -606,7 +609,7 @@ RTXDI_Reservoir RTXDI_SampleLightsForSurface(
 {
     o_lightSample = RAB_EmptyLightSample();
 
-    RTXDI_Reservoir localReservoir;
+    RTXDI_DIReservoir localReservoir;
     RAB_LightSample localSample = RAB_EmptyLightSample();
 
     localReservoir = RTXDI_SampleLocalLights(rng, coherentRng, surface,
@@ -620,25 +623,25 @@ RTXDI_Reservoir RTXDI_SampleLightsForSurface(
 localSample);
 
     RAB_LightSample infiniteSample = RAB_EmptyLightSample();  
-    RTXDI_Reservoir infiniteReservoir = RTXDI_SampleInfiniteLights(rng, surface,
+    RTXDI_DIReservoir infiniteReservoir = RTXDI_SampleInfiniteLights(rng, surface,
         sampleParams.numInfiniteLightSamples, lightBufferParams.infiniteLightBufferRegion, infiniteSample);
 
 #if RTXDI_ENABLE_PRESAMPLING
     RAB_LightSample environmentSample = RAB_EmptyLightSample();
-    RTXDI_Reservoir environmentReservoir = RTXDI_SampleEnvironmentMap(rng, coherentRng, surface,
+    RTXDI_DIReservoir environmentReservoir = RTXDI_SampleEnvironmentMap(rng, coherentRng, surface,
         sampleParams, lightBufferParams.environmentLightParams, environmentLightRISBufferSegmentParams, environmentSample);
 #endif // RTXDI_ENABLE_PRESAMPLING
 
     RAB_LightSample brdfSample = RAB_EmptyLightSample();
-    RTXDI_Reservoir brdfReservoir = RTXDI_SampleBrdf(rng, surface, sampleParams, lightBufferParams, brdfSample);
+    RTXDI_DIReservoir brdfReservoir = RTXDI_SampleBrdf(rng, surface, sampleParams, lightBufferParams, brdfSample);
 
-    RTXDI_Reservoir state = RTXDI_EmptyReservoir();
-    RTXDI_CombineReservoirs(state, localReservoir, 0.5, localReservoir.targetPdf);
-    bool selectInfinite = RTXDI_CombineReservoirs(state, infiniteReservoir, RAB_GetNextRandom(rng), infiniteReservoir.targetPdf);
+    RTXDI_DIReservoir state = RTXDI_EmptyDIReservoir();
+    RTXDI_CombineDIReservoirs(state, localReservoir, 0.5, localReservoir.targetPdf);
+    bool selectInfinite = RTXDI_CombineDIReservoirs(state, infiniteReservoir, RAB_GetNextRandom(rng), infiniteReservoir.targetPdf);
 #if RTXDI_ENABLE_PRESAMPLING
-    bool selectEnvironment = RTXDI_CombineReservoirs(state, environmentReservoir, RAB_GetNextRandom(rng), environmentReservoir.targetPdf);
+    bool selectEnvironment = RTXDI_CombineDIReservoirs(state, environmentReservoir, RAB_GetNextRandom(rng), environmentReservoir.targetPdf);
 #endif // RTXDI_ENABLE_PRESAMPLING
-    bool selectBrdf = RTXDI_CombineReservoirs(state, brdfReservoir, RAB_GetNextRandom(rng), brdfReservoir.targetPdf);
+    bool selectBrdf = RTXDI_CombineDIReservoirs(state, brdfReservoir, RAB_GetNextRandom(rng), brdfReservoir.targetPdf);
     
     RTXDI_FinalizeResampling(state, 1.0, 1.0);
     state.M = 1;

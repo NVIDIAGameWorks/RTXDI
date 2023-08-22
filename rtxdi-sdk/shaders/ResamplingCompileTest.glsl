@@ -219,7 +219,7 @@ layout(set = 0, binding = 0) buffer RIS_BUFFER {
 };
 
 layout(set = 0, binding = 1) buffer LIGHT_RESERVOIR_BUFFER {
-    RTXDI_PackedReservoir u_LightReservoirs[];
+    RTXDI_PackedDIReservoir u_LightReservoirs[];
 };
 
 layout(set = 0, binding = 2) readonly buffer NEIGHBOR_OFFSET_BUFFER {
@@ -237,7 +237,7 @@ layout(set = 0, binding = 3) buffer GI_RESERVOIR_BUFFER {
 
 #include "rtxdi/PresamplingFunctions.hlsli"
 #include "rtxdi/InitialSamplingFunctions.hlsli"
-#include "rtxdi/ResamplingFunctions.hlsli"
+#include "rtxdi/DIResamplingFunctions.hlsli"
 
 layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
 

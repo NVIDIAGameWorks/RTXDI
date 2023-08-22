@@ -207,7 +207,7 @@ bool RAB_GetTemporalConservativeVisibility(RAB_Surface currentSurface, RAB_Surfa
 #define RTXDI_BOILING_FILTER_GROUP_SIZE 16
 
 RWBuffer<uint2> u_RisBuffer;
-RWStructuredBuffer<RTXDI_PackedReservoir> u_LightReservoirs;
+RWStructuredBuffer<RTXDI_PackedDIReservoir> u_LightReservoirs;
 RWStructuredBuffer<RTXDI_PackedGIReservoir> u_GIReservoirs;
 Buffer<float2> t_NeighborOffsets;
 
@@ -218,7 +218,7 @@ Buffer<float2> t_NeighborOffsets;
 
 #include <rtxdi/PresamplingFunctions.hlsli>
 #include <rtxdi/InitialSamplingFunctions.hlsli>
-#include <rtxdi/ResamplingFunctions.hlsli>
+#include <rtxdi/DIResamplingFunctions.hlsli>
 
 [numthreads(1, 1, 1)]
 void main()

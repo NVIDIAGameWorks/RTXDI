@@ -11,10 +11,10 @@
 #ifndef SHADING_HELPERS_HLSLI
 #define SHADING_HELPERS_HLSLI
 
-#ifdef RESERVOIR_HLSLI
+#ifdef RTXDI_DIRESERVOIR_HLSLI
 
 bool ShadeSurfaceWithLightSample(
-    inout RTXDI_Reservoir reservoir,
+    inout RTXDI_DIReservoir reservoir,
     RAB_Surface surface,
     RAB_LightSample lightSample,
     bool previousFrameTLAS,
@@ -42,7 +42,7 @@ bool ShadeSurfaceWithLightSample(
             rparams.maxAge = g_Const.restirDI.shadingParams.finalVisibilityMaxAge;
             rparams.maxDistance = g_Const.restirDI.shadingParams.finalVisibilityMaxDistance;
 
-            visibilityReused = RTXDI_GetReservoirVisibility(reservoir, rparams, visibility);
+            visibilityReused = RTXDI_GetDIReservoirVisibility(reservoir, rparams, visibility);
         }
 
         if (!visibilityReused)
@@ -51,14 +51,14 @@ bool ShadeSurfaceWithLightSample(
                 visibility = GetFinalVisibility(PrevSceneBVH, surface, lightSample.position);
             else
                 visibility = GetFinalVisibility(SceneBVH, surface, lightSample.position);
-            RTXDI_StoreVisibilityInReservoir(reservoir, visibility, g_Const.restirDI.temporalResamplingParams.discardInvisibleSamples);
+            RTXDI_StoreVisibilityInDIReservoir(reservoir, visibility, g_Const.restirDI.temporalResamplingParams.discardInvisibleSamples);
             needToStore = true;
         }
 
         lightSample.radiance *= visibility;
     }
 
-    lightSample.radiance *= RTXDI_GetReservoirInvPdf(reservoir) / lightSample.solidAnglePdf;
+    lightSample.radiance *= RTXDI_GetDIReservoirInvPdf(reservoir) / lightSample.solidAnglePdf;
 
     if (any(lightSample.radiance > 0))
     {
@@ -73,7 +73,7 @@ bool ShadeSurfaceWithLightSample(
     return needToStore;
 }
 
-#endif // RESERVOIR_HLSLI
+#endif // RTXDI_DIRESERVOIR_HLSLI
 
 float3 DemodulateSpecular(float3 surfaceSpecularF0, float3 specular)
 {

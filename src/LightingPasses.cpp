@@ -541,13 +541,13 @@ void LightingPasses::RenderDirectLighting(
     // because NVRHI misses them, as the binding sets are exactly the same between these passes.
     // That equality makes NVRHI take a shortcut for performance and it doesn't look at bindings at all.
 
-    ExecuteRayTracingPass(commandList, m_GenerateInitialSamplesPass, localSettings.enableRayCounts, "GenerateInitialSamples", dispatchSize, ProfilerSection::InitialSamples);
+    ExecuteRayTracingPass(commandList, m_GenerateInitialSamplesPass, localSettings.enableRayCounts, "DIGenerateInitialSamples", dispatchSize, ProfilerSection::InitialSamples);
 
     if (context.getResamplingMode() == rtxdi::ReSTIRDI_ResamplingMode::FusedSpatiotemporal)
     {
         nvrhi::utils::BufferUavBarrier(commandList, m_LightReservoirBuffer);
 
-        ExecuteRayTracingPass(commandList, m_FusedResamplingPass, localSettings.enableRayCounts, "FusedResampling", dispatchSize, ProfilerSection::Shading);
+        ExecuteRayTracingPass(commandList, m_FusedResamplingPass, localSettings.enableRayCounts, "DIFusedResampling", dispatchSize, ProfilerSection::Shading);
     }
     else
     {
@@ -555,26 +555,26 @@ void LightingPasses::RenderDirectLighting(
         {
             nvrhi::utils::BufferUavBarrier(commandList, m_LightReservoirBuffer);
 
-            ExecuteRayTracingPass(commandList, m_TemporalResamplingPass, localSettings.enableRayCounts, "TemporalResampling", dispatchSize, ProfilerSection::TemporalResampling);
+            ExecuteRayTracingPass(commandList, m_TemporalResamplingPass, localSettings.enableRayCounts, "DITemporalResampling", dispatchSize, ProfilerSection::TemporalResampling);
         }
 
         if (context.getResamplingMode() == rtxdi::ReSTIRDI_ResamplingMode::Spatial || context.getResamplingMode() == rtxdi::ReSTIRDI_ResamplingMode::TemporalAndSpatial)
         {
             nvrhi::utils::BufferUavBarrier(commandList, m_LightReservoirBuffer);
 
-            ExecuteRayTracingPass(commandList, m_SpatialResamplingPass, localSettings.enableRayCounts, "SpatialResampling", dispatchSize, ProfilerSection::SpatialResampling);
+            ExecuteRayTracingPass(commandList, m_SpatialResamplingPass, localSettings.enableRayCounts, "DISpatialResampling", dispatchSize, ProfilerSection::SpatialResampling);
         }
 
         nvrhi::utils::BufferUavBarrier(commandList, m_LightReservoirBuffer);
 
-        ExecuteRayTracingPass(commandList, m_ShadeSamplesPass, localSettings.enableRayCounts, "ShadeSamples", dispatchSize, ProfilerSection::Shading);
+        ExecuteRayTracingPass(commandList, m_ShadeSamplesPass, localSettings.enableRayCounts, "DIShadeSamples", dispatchSize, ProfilerSection::Shading);
     }
     
     if (localSettings.enableGradients)
     {
         nvrhi::utils::BufferUavBarrier(commandList, m_LightReservoirBuffer);
 
-        ExecuteRayTracingPass(commandList, m_GradientsPass, localSettings.enableRayCounts, "Gradients", (dispatchSize + RTXDI_GRAD_FACTOR - 1) / RTXDI_GRAD_FACTOR, ProfilerSection::Gradients);
+        ExecuteRayTracingPass(commandList, m_GradientsPass, localSettings.enableRayCounts, "DIGradients", (dispatchSize + RTXDI_GRAD_FACTOR - 1) / RTXDI_GRAD_FACTOR, ProfilerSection::Gradients);
     }
 }
 

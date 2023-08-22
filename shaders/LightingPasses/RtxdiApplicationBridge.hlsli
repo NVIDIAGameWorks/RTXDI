@@ -1,5 +1,5 @@
 /***************************************************************************
- # Copyright (c) 2020-2022, NVIDIA CORPORATION.  All rights reserved.
+ # Copyright (c) 2020-2023, NVIDIA CORPORATION.  All rights reserved.
  #
  # NVIDIA CORPORATION and its licensors retain all intellectual property
  # and proprietary rights in and to this software, related documentation
@@ -67,7 +67,7 @@ Texture2D t_LocalLightPdfTexture : register(t24);
 StructuredBuffer<uint> t_GeometryInstanceToLight : register(t25);
 
 // Screen-sized UAVs
-RWStructuredBuffer<RTXDI_PackedReservoir> u_LightReservoirs : register(u0);
+RWStructuredBuffer<RTXDI_PackedDIReservoir> u_LightReservoirs : register(u0);
 RWTexture2D<float4> u_DiffuseLighting : register(u1);
 RWTexture2D<float4> u_SpecularLighting : register(u2);
 RWTexture2D<int2> u_TemporalSamplePositions : register(u3);

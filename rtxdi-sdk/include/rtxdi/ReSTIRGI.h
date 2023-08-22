@@ -1,3 +1,13 @@
+/***************************************************************************
+ # Copyright (c) 2020-2023, NVIDIA CORPORATION.  All rights reserved.
+ #
+ # NVIDIA CORPORATION and its licensors retain all intellectual property
+ # and proprietary rights in and to this software, related documentation
+ # and any modifications thereto.  Any use, reproduction, disclosure or
+ # distribution of this software and related documentation without an express
+ # license agreement from NVIDIA CORPORATION is strictly prohibited.
+ **************************************************************************/
+
 #pragma once
 
 #include <stdint.h>
@@ -78,7 +88,7 @@ public:
     ReSTIRGIStaticParameters getStaticParams() const;
 
     uint32_t getFrameIndex() const;
-    RTXDI_ReservoirBufferParameters getReservoirBufferParameters() const;
+    RTXDI_DIReservoirBufferParameters getReservoirBufferParameters() const;
     ReSTIRGI_ResamplingMode getResamplingMode() const;
     ReSTIRGI_BufferIndices getBufferIndices() const;
     ReSTIRGI_TemporalResamplingParameters getTemporalResamplingParameters() const;
@@ -97,7 +107,7 @@ private:
     ReSTIRGIStaticParameters m_staticParams;
 
     uint32_t m_frameIndex;
-    RTXDI_ReservoirBufferParameters m_reservoirBufferParams;
+    RTXDI_DIReservoirBufferParameters m_reservoirBufferParams;
     ReSTIRGI_ResamplingMode m_resamplingMode;
     ReSTIRGI_BufferIndices m_bufferIndices;
     ReSTIRGI_TemporalResamplingParameters m_temporalResamplingParams;

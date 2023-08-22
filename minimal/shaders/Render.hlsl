@@ -1,5 +1,5 @@
 /***************************************************************************
- # Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+ # Copyright (c) 2021-2023, NVIDIA CORPORATION.  All rights reserved.
  #
  # NVIDIA CORPORATION and its licensors retain all intellectual property
  # and proprietary rights in and to this software, related documentation
@@ -14,7 +14,7 @@
 #include "RtxdiApplicationBridge.hlsli"
 
 #include <rtxdi/InitialSamplingFunctions.hlsli>
-#include <rtxdi/ResamplingFunctions.hlsli>
+#include <rtxdi/DIResamplingFunctions.hlsli>
 
 #include "PrimaryRays.hlsli"
 
@@ -33,7 +33,7 @@ void main(uint2 pixelPosition : SV_DispatchThreadID)
     u_GBufferDiffuseAlbedo[pixelPosition] = Pack_R11G11B10_UFLOAT(primary.surface.diffuseAlbedo);
     u_GBufferSpecularRough[pixelPosition] = Pack_R8G8B8A8_Gamma_UFLOAT(float4(primary.surface.specularF0, primary.surface.roughness));
     
-    RTXDI_Reservoir reservoir = RTXDI_EmptyReservoir();
+    RTXDI_DIReservoir reservoir = RTXDI_EmptyDIReservoir();
 
     if (RAB_IsSurfaceValid(primary.surface))
     {
@@ -50,14 +50,14 @@ void main(uint2 pixelPosition : SV_DispatchThreadID)
 
         // Generate the initial sample
         RAB_LightSample lightSample = RAB_EmptyLightSample();
-        RTXDI_Reservoir localReservoir = RTXDI_SampleLocalLights(rng, rng, primary.surface,
+        RTXDI_DIReservoir localReservoir = RTXDI_SampleLocalLights(rng, rng, primary.surface,
             sampleParams, ReSTIRDI_LocalLightSamplingMode_UNIFORM, lightBufferParams.localLightBufferRegion, lightSample);
-        RTXDI_CombineReservoirs(reservoir, localReservoir, 0.5, localReservoir.targetPdf);
+        RTXDI_CombineDIReservoirs(reservoir, localReservoir, 0.5, localReservoir.targetPdf);
 
         // Resample BRDF samples.
         RAB_LightSample brdfSample = RAB_EmptyLightSample();
-        RTXDI_Reservoir brdfReservoir = RTXDI_SampleBrdf(rng, primary.surface, sampleParams, lightBufferParams, brdfSample);
-        bool selectBrdf = RTXDI_CombineReservoirs(reservoir, brdfReservoir, RAB_GetNextRandom(rng), brdfReservoir.targetPdf);
+        RTXDI_DIReservoir brdfReservoir = RTXDI_SampleBrdf(rng, primary.surface, sampleParams, lightBufferParams, brdfSample);
+        bool selectBrdf = RTXDI_CombineDIReservoirs(reservoir, brdfReservoir, RAB_GetNextRandom(rng), brdfReservoir.targetPdf);
         if (selectBrdf)
         {
             lightSample = brdfSample;
@@ -67,13 +67,13 @@ void main(uint2 pixelPosition : SV_DispatchThreadID)
         reservoir.M = 1;
          
         // BRDF was generated with a trace so no need to trace visibility again
-        if (RTXDI_IsValidReservoir(reservoir) && !selectBrdf)
+        if (RTXDI_IsValidDIReservoir(reservoir) && !selectBrdf)
         {
             // See if the initial sample is visible from the surface
             if (!RAB_GetConservativeVisibility(primary.surface, lightSample))
             {
                 // If not visible, discard the sample (but keep the M)
-                RTXDI_StoreVisibilityInReservoir(reservoir, 0, true);
+                RTXDI_StoreVisibilityInDIReservoir(reservoir, 0, true);
             }
         }
 
@@ -107,11 +107,11 @@ void main(uint2 pixelPosition : SV_DispatchThreadID)
         float3 shadingOutput = 0;
 
         // Shade the surface with the selected light sample
-        if (RTXDI_IsValidReservoir(reservoir))
+        if (RTXDI_IsValidDIReservoir(reservoir))
         {
             // Compute the correctly weighted reflected radiance
             shadingOutput = ShadeSurfaceWithLightSample(lightSample, primary.surface)
-                          * RTXDI_GetReservoirInvPdf(reservoir);
+                          * RTXDI_GetDIReservoirInvPdf(reservoir);
 
             // Test if the selected light is visible from the surface
             bool visibility = RAB_GetConservativeVisibility(primary.surface, lightSample);
@@ -120,7 +120,7 @@ void main(uint2 pixelPosition : SV_DispatchThreadID)
             if (!visibility)
             {
                 shadingOutput = 0;
-                RTXDI_StoreVisibilityInReservoir(reservoir, 0, true);
+                RTXDI_StoreVisibilityInDIReservoir(reservoir, 0, true);
             }
         }
 
@@ -136,5 +136,5 @@ void main(uint2 pixelPosition : SV_DispatchThreadID)
         u_ShadingOutput[pixelPosition] = 0;
     }
 
-    RTXDI_StoreReservoir(reservoir, g_Const.restirDIReservoirBufferParams, pixelPosition, g_Const.outputBufferIndex);
+    RTXDI_StoreDIReservoir(reservoir, g_Const.restirDIReservoirBufferParams, pixelPosition, g_Const.outputBufferIndex);
 }

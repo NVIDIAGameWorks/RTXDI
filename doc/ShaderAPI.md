@@ -1,6 +1,6 @@
 # RTXDI Shader API
 
-Most of the RTXDI functionality is implemented in shaders. To use this functionality, include the [`ResamplingFunctions.hlsli`](../rtxdi-sdk/include/rtxdi/ResamplingFunctions.hlsli) file into your shader source code, after defining (or at least declaring) the [bridge functions](RtxdiApplicationBridge.md).
+Most of the RTXDI functionality is implemented in shaders. To use this functionality, include the [`DIResamplingFunctions.hlsli`](../rtxdi-sdk/include/rtxdi/DIResamplingFunctions.hlsli) file into your shader source code, after defining (or at least declaring) the [bridge functions](RtxdiApplicationBridge.md).
 
 Below is the list of shader structures and functions provided by RTXDI that can be useful to applications. Some internal functions are not shown.
 
@@ -21,11 +21,11 @@ Define this macro to `0` in order to disable the pre-sampling features and requi
 
 ### `RTXDI_ENABLE_STORE_RESERVOIR`
 
-Define this macro to `0` in order to remove the `RTXDI_StoreReservoir` function. This is useful in shaders that have read-only access to the light reservoir buffer, e.g. for debugging purposes.
+Define this macro to `0` in order to remove the `RTXDI_StoreDIReservoir` function. This is useful in shaders that have read-only access to the light reservoir buffer, e.g. for debugging purposes.
 
 ### `RTXDI_LIGHT_RESERVOIR_BUFFER`
 
-Define this macro to a resource name for the reservoir buffer, which should have HLSL type `RWStructuredBuffer<RTXDI_PackedReservoir>`.
+Define this macro to a resource name for the reservoir buffer, which should have HLSL type `RWStructuredBuffer<RTXDI_PackedDIReservoir>`.
 
 ### `RTXDI_NEIGHBOR_OFFSETS_BUFFER`
 
@@ -41,17 +41,13 @@ Define this macro to a resource name for the RIS buffer, which should have HLSL 
 
 ## Structures
 
-### `RTXDI_ResamplingRuntimeParameters`
-
-This structure contains runtime parameters that are accepted by most functions. It can be passed from the CPU side directly through a constant buffer. It is declared in [`RtxdiParameters.h`](../rtxdi-sdk/include/rtxdi/RtxdiParameters.h), which can be included into shader code as well as host-side C++ code. To fill an instance of `RTXDI_ResamplingRuntimeParameters` with valid data, call the `rtxdi::Context::FillRuntimeParameters(...)` function on every frame.
-
-### `RTXDI_PackedReservoir`
+### `RTXDI_PackedDIReservoir`
 
 A compact representation of a single light reservoir that should be stored in a structured buffer.
 
-### `RTXDI_Reservoir`
+### `RTXDI_DIReservoir`
 
-This structure represents a single light reservoir that stores the weights, the sample ref, sample count (M), and visibility for reuse. It can be serialized into `RTXDI_PackedReservoir` for storage using the `RTXDI_PackReservoir` function, and deserialized from that representation using the `RTXDI_UnpackReservoir` function.
+This structure represents a single light reservoir that stores the weights, the sample ref, sample count (M), and visibility for reuse. It can be serialized into `RTXDI_PackedDIReservoir` for storage using the `RTXDI_PackDIReservoir` function, and deserialized from that representation using the `RTXDI_UnpackDIReservoir` function.
 
 ### `RTXDI_SampleParameters`
 
@@ -60,73 +56,73 @@ A collection of parameters describing the overall sampling algorithm, i.e. how m
 
 ## Reservoir Functions
 
-### `RTXDI_EmptyReservoir`
+### `RTXDI_EmptyDIReservoir`
 
-    RTXDI_Reservoir RTXDI_EmptyReservoir()
+    RTXDI_DIReservoir RTXDI_EmptyDIReservoir()
 
 Returns an empty reservoir object.
 
-### `RTXDI_IsValidReservoir`
+### `RTXDI_IsValidDIReservoir`
 
-    bool RTXDI_IsValidReservoir(const RTXDI_Reservoir reservoir)
+    bool RTXDI_IsValidDIReservoir(const RTXDI_DIReservoir reservoir)
 
 Returns `true` if the provided reservoir contains a valid light sample.
 
-### `RTXDI_GetReservoirLightIndex`
+### `RTXDI_GetDIReservoirLightIndex`
 
-    uint RTXDI_GetReservoirLightIndex(const RTXDI_Reservoir reservoir)
+    uint RTXDI_GetDIReservoirLightIndex(const RTXDI_DIReservoir reservoir)
 
-Returns the light index stored in the reservoir. For empty reservoirs it will return 0, which could be a valid light index, so a call to `RTXDI_IsValidReservoir` is necessary to determine if the reservoir is empty or not.
+Returns the light index stored in the reservoir. For empty reservoirs it will return 0, which could be a valid light index, so a call to `RTXDI_IsValidDIReservoir` is necessary to determine if the reservoir is empty or not.
 
-### `RTXDI_GetReservoirSampleUV`
+### `RTXDI_GetDIReservoirSampleUV`
 
-    float2 RTXDI_GetReservoirSampleUV(const RTXDI_Reservoir reservoir)
+    float2 RTXDI_GetDIReservoirSampleUV(const RTXDI_DIReservoir reservoir)
 
 Returns the sample UV stored in the reservoir.
 
-### `RTXDI_GetReservoirInvPdf`
+### `RTXDI_GetDIReservoirInvPdf`
 
-    float RTXDI_GetReservoirInvPdf(const RTXDI_Reservoir reservoir)
+    float RTXDI_GetDIReservoirInvPdf(const RTXDI_DIReservoir reservoir)
 
 Returns the inverse PDF of the reservoir. This value should be used to scale the results of surface shading using the reservoir.
 
-### `RTXDI_LoadReservoir`
+### `RTXDI_LoadDIReservoir`
 
-    RTXDI_Reservoir RTXDI_LoadReservoir(
-        RTXDI_ResamplingRuntimeParameters params,
+    RTXDI_DIReservoir RTXDI_LoadDIReservoir(
+        RTXDI_DIReservoirBufferParameters params,
         uint2 reservoirPosition,
         uint reservoirArrayIndex)
 
 Loads and unpacks a reservoir from the provided reservoir storage buffer. The buffer normally contains multiple 2D arrays of reservoirs, corresponding to screen pixels, so the function takes the reservoir position and array index and translates those to the buffer index. 
 
-### `RTXDI_StoreReservoir`
+### `RTXDI_StoreDIReservoir`
 
-    void RTXDI_StoreReservoir(
-        const RTXDI_Reservoir reservoir,
-        RTXDI_ResamplingRuntimeParameters params,
+    void RTXDI_StoreDIReservoir(
+        const RTXDI_DIReservoir reservoir,
+        RTXDI_DIReservoirBufferParameters params,
         uint2 reservoirPosition,
         uint reservoirArrayIndex)
 
-Packs and stores the reservoir into the provided reservoir storage buffer. Buffer addressing works similar to `RTXDI_LoadReservoir`.
+Packs and stores the reservoir into the provided reservoir storage buffer. Buffer addressing works similar to `RTXDI_LoadDIReservoir`.
 
-### `RTXDI_StoreVisibilityInReservoir`
+### `RTXDI_StoreVisibilityInDIReservoir`
 
-    void RTXDI_StoreVisibilityInReservoir(
-        inout RTXDI_Reservoir reservoir,
+    void RTXDI_StoreVisibilityInDIReservoir(
+        inout RTXDI_DIReservoir reservoir,
         float3 visibility,
         bool discardIfInvisible)
 
 Stores the visibility term in a compressed form in the reservoir. This function should be called when a shadow ray is cast between a surface and a light sample in the initial or final shading passes. The `discardIfInvisible` parameter controls whether the reservoir should be reset to an invalid state if the visibility is zero, which reduces noise; it's safe to use that for the initial samples, but discarding samples when their final visibility is zero may result in darkening bias.
 
-### `RTXDI_GetReservoirVisibility`
+### `RTXDI_GetDIReservoirVisibility`
 
     struct RTXDI_VisibilityReuseParameters
     {
         uint maxAge;
         float maxDistance;
     };
-    bool RTXDI_GetReservoirVisibility(
-        const RTXDI_Reservoir reservoir,
+    bool RTXDI_GetDIReservoirVisibility(
+        const RTXDI_DIReservoir reservoir,
         const RTXDI_VisibilityReuseParameters params,
         out float3 o_visibility)
 
@@ -140,7 +136,7 @@ Using higher threshold values for distance and age result in a higher degree of 
 ### `RTXDI_StreamSample`
 
     bool RTXDI_StreamSample(
-        inout RTXDI_Reservoir reservoir,
+        inout RTXDI_DIReservoir reservoir,
         uint lightIndex,
         float2 uv,
         float random,
@@ -151,11 +147,11 @@ Adds one light sample to the reservoir. Returns `true` if the sample was selecte
 
 This function implements Algorithm (3) from the ReSTIR paper, "Streaming RIS using weighted reservoir sampling".
 
-### `RTXDI_CombineReservoirs`
+### `RTXDI_CombineDIReservoirs`
 
     bool RTXDI_CombineReservoirs(
-        inout RTXDI_Reservoir reservoir,
-        const RTXDI_Reservoir newReservoir,
+        inout RTXDI_DIReservoir reservoir,
+        const RTXDI_DIReservoir newReservoir,
         float random,
         float targetPdf)
 
@@ -166,7 +162,7 @@ This function implements Algorithm (4) from the ReSTIR paper, "Combining the str
 ### `RTXDI_FinalizeResampling`
 
     void RTXDI_FinalizeResampling(
-        inout RTXDI_Reservoir reservoir,
+        inout RTXDI_DIReservoir reservoir,
         float normalizationNumerator,
         float normalizationDenominator)
 
@@ -179,8 +175,8 @@ This function implements Equation (6) from the ReSTIR paper.
 ### `RTXDI_InternalSimpleResample`
 ```
 bool RTXDI_InternalSimpleResample(
-    inout RTXDI_Reservoir reservoir,
-    const RTXDI_Reservoir newReservoir,
+    inout RTXDI_DIReservoir reservoir,
+    const RTXDI_DIReservoir newReservoir,
     float random,
     float targetPdf = 1.0,
     float sampleNormalization = 1.0,
@@ -246,7 +242,7 @@ The weights of lights relative to ReGIR cells are computed using the [`RAB_GetLi
 
 ### `RTXDI_SampleLocalLights`
 
-    RTXDI_Reservoir RTXDI_SampleLocalLights(
+    RTXDI_DIReservoir RTXDI_SampleLocalLights(
         inout RAB_RandomSamplerState rng, 
         inout RAB_RandomSamplerState coherentRng,
         RAB_Surface surface, 
@@ -260,7 +256,7 @@ The proposals are picked from a RIS buffer tile that's picked using `coherentRng
 
 ### `RTXDI_SampleLocalLightsFromReGIR`
 
-    RTXDI_Reservoir RTXDI_SampleLocalLightsFromReGIR(
+    RTXDI_DIReservoir RTXDI_SampleLocalLightsFromReGIR(
         inout RAB_RandomSamplerState rng,
         inout RAB_RandomSamplerState coherentRng,
         RAB_Surface surface,
@@ -275,7 +271,7 @@ The ReGIR cells are matched to the surface with jitter applied, and the magnitud
 
 ### `RTXDI_SampleInfiniteLights`
 
-    RTXDI_Reservoir RTXDI_SampleInfiniteLights(
+    RTXDI_DIReservoir RTXDI_SampleInfiniteLights(
         inout RAB_RandomSamplerState rng, 
         RAB_Surface surface, 
         uint numSamples,
@@ -286,7 +282,7 @@ Selects one infinite light sample using RIS with `numSamples` proposals weighted
 
 ### `RTXDI_SampleEnvironmentMap`
 
-    RTXDI_Reservoir RTXDI_SampleEnvironmentMap(
+    RTXDI_DIReservoir RTXDI_SampleEnvironmentMap(
         inout RAB_RandomSamplerState rng, 
         inout RAB_RandomSamplerState coherentRng,
         RAB_Surface surface, 
@@ -301,7 +297,7 @@ The proposals are picked from a RIS buffer tile, similar to [`RTXDI_SampleLocalL
 ### `RTXDI_SampleBrdf`
 
 ```
-    RTXDI_Reservoir RTXDI_SampleBrdf(
+    RTXDI_DIReservoir RTXDI_SampleBrdf(
         inout RAB_RandomSamplerState rng,
         RAB_Surface surface,
         RTXDI_SampleParameters sampleParams,
@@ -317,11 +313,11 @@ Depending on the application provided ray trace function, if a local light is hi
 ### `RTXDI_StreamNeighborWithPairwiseMIS`
 
 ```
-    bool RTXDI_StreamNeighborWithPairwiseMIS(inout RTXDI_Reservoir reservoir,
+    bool RTXDI_StreamNeighborWithPairwiseMIS(inout RTXDI_DIReservoir reservoir,
         float random,
-        const RTXDI_Reservoir neighborReservoir,
+        const RTXDI_DIReservoir neighborReservoir,
         const RAB_Surface neighborSurface,
-        const RTXDI_Reservoir canonicalReservor,
+        const RTXDI_DIReservoir canonicalReservoir,
         const RAB_Surface canonicalSurface,
         const uint numberOfNeighborsInStream) 
 ```
@@ -338,9 +334,9 @@ See Chapter 9.1 of https://digitalcommons.dartmouth.edu/dissertations/77/, espec
 ### `RTXDI_StreamCanonicalWithPairwiseStep`
 
 ```
-    bool RTXDI_StreamCanonicalWithPairwiseStep(inout RTXDI_Reservoir reservoir,
+    bool RTXDI_StreamCanonicalWithPairwiseStep(inout RTXDI_DIReservoir reservoir,
         float random,
-        const RTXDI_Reservoir canonicalReservoir,
+        const RTXDI_DIReservoir canonicalReservoir,
         const RAB_Surface canonicalSurface)
 ```
 
@@ -355,7 +351,7 @@ compensates for this overweighting, but it can only happen after all neighbors h
 ### `RTXDI_SampleLightsForSurface`
 
 ```
-    RTXDI_Reservoir RTXDI_SampleLightsForSurface(
+    RTXDI_DIReservoir RTXDI_SampleLightsForSurface(
         inout RAB_RandomSamplerState rng,
         inout RAB_RandomSamplerState coherentRng,
         RAB_Surface surface,
@@ -379,10 +375,10 @@ This function is a combination of `RTXDI_SampleLocalLightsFromReGIR` (or `RTXDI_
         bool enableVisibilityShortcut;
         bool enablePermutationSampling;
     };
-    RTXDI_Reservoir RTXDI_TemporalResampling(
+    RTXDI_DIReservoir RTXDI_TemporalResampling(
         uint2 pixelPosition,
         RAB_Surface surface,
-        RTXDI_Reservoir curSample,
+        RTXDI_DIReservoir curSample,
         RAB_RandomSamplerState rng,
         RTXDI_TemporalResamplingParameters tparams,
         RTXDI_ResamplingRuntimeParameters params,
@@ -408,10 +404,10 @@ For more information on the members of the `RTXDI_TemporalResamplingParameters` 
         float depthThreshold;
         float normalThreshold;
     };
-    RTXDI_Reservoir RTXDI_SpatialResampling(
+    RTXDI_DIReservoir RTXDI_SpatialResampling(
         uint2 pixelPosition,
         RAB_Surface centerSurface,
-        RTXDI_Reservoir centerSample,
+        RTXDI_DIReservoir centerSample,
         RAB_RandomSamplerState rng,
         RTXDI_SpatialResamplingParameters sparams,
         RTXDI_ResamplingRuntimeParameters params,
@@ -440,10 +436,10 @@ For more information on the members of the `RTXDI_SpatialResamplingParameters` s
         bool enableVisibilityShortcut;
         bool enablePermutationSampling;
     };
-    RTXDI_Reservoir RTXDI_SpatioTemporalResampling(
+    RTXDI_DIReservoir RTXDI_SpatioTemporalResampling(
         uint2 pixelPosition,
         RAB_Surface surface,
-        RTXDI_Reservoir curSample,
+        RTXDI_DIReservoir curSample,
         RAB_RandomSamplerState rng,
         RTXDI_SpatioTemporalResamplingParameters stparams,
         RTXDI_ResamplingRuntimeParameters params,
@@ -458,7 +454,7 @@ Implements the core functionality of a combined spatiotemporal resampling pass. 
         uint2 LocalIndex,
         float filterStrength,
         RTXDI_ResamplingRuntimeParameters params,
-        inout RTXDI_Reservoir state)
+        inout RTXDI_DIReservoir state)
 
 Applies a boiling filter over all threads in the compute shader thread group. This filter attempts to reduce boiling by removing reservoirs whose weight is significantly higher than the weights of their neighbors. Essentially, when some lights are important for a surface but they are also unlikely to be located in the initial sampling pass, ReSTIR will try to hold on to these lights by spreading them around, and if such important lights are sufficiently rare, the result will look like light bubbles appearing and growing, then fading. This filter attempts to detect and remove such rare lights, trading boiling for bias.
 

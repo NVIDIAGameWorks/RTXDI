@@ -1,3 +1,13 @@
+/***************************************************************************
+ # Copyright (c) 2020-2023, NVIDIA CORPORATION.  All rights reserved.
+ #
+ # NVIDIA CORPORATION and its licensors retain all intellectual property
+ # and proprietary rights in and to this software, related documentation
+ # and any modifications thereto.  Any use, reproduction, disclosure or
+ # distribution of this software and related documentation without an express
+ # license agreement from NVIDIA CORPORATION is strictly prohibited.
+ **************************************************************************/
+
 #include "rtxdi/ReSTIRGI.h"
 
 namespace rtxdi
@@ -25,7 +35,7 @@ uint32_t ReSTIRGIContext::getFrameIndex() const
     return m_frameIndex;
 }
 
-RTXDI_ReservoirBufferParameters ReSTIRGIContext::getReservoirBufferParameters() const
+RTXDI_DIReservoirBufferParameters ReSTIRGIContext::getReservoirBufferParameters() const
 {
     return m_reservoirBufferParams;
 }

@@ -1,5 +1,5 @@
 /***************************************************************************
- # Copyright (c) 2020-2021, NVIDIA CORPORATION.  All rights reserved.
+ # Copyright (c) 2020-2023, NVIDIA CORPORATION.  All rights reserved.
  #
  # NVIDIA CORPORATION and its licensors retain all intellectual property
  # and proprietary rights in and to this software, related documentation
@@ -117,7 +117,7 @@ namespace rtxdi
     public:
         ReSTIRDIContext(const ReSTIRDIStaticParameters& params);
 
-        RTXDI_ReservoirBufferParameters getReservoirBufferParameters() const;
+        RTXDI_DIReservoirBufferParameters getReservoirBufferParameters() const;
         ReSTIRDI_ResamplingMode getResamplingMode() const;
         RTXDI_RuntimeParameters getRuntimeParams() const;
         ReSTIRDI_BufferIndices getBufferIndices() const;
@@ -147,7 +147,7 @@ namespace rtxdi
         ReSTIRDIStaticParameters m_staticParams;
 
         ReSTIRDI_ResamplingMode m_resamplingMode;
-        RTXDI_ReservoirBufferParameters m_reservoirBufferParams;
+        RTXDI_DIReservoirBufferParameters m_reservoirBufferParams;
         RTXDI_RuntimeParameters m_runtimeParams;
         ReSTIRDI_BufferIndices m_bufferIndices;
         

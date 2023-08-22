@@ -8,25 +8,25 @@
  # license agreement from NVIDIA CORPORATION is strictly prohibited.
  **************************************************************************/
 
-#ifndef RESERVOIR_HLSLI
-#define RESERVOIR_HLSLI
+#ifndef RTXDI_DIRESERVOIR_HLSLI
+#define RTXDI_DIRESERVOIR_HLSLI
 
 #include "RtxdiParameters.h"
 #include "RtxdiHelpers.hlsli"
 
 #ifndef RTXDI_LIGHT_RESERVOIR_BUFFER
-#error "RTXDI_LIGHT_RESERVOIR_BUFFER must be defined to point to a RWStructuredBuffer<RTXDI_PackedReservoir> type resource"
+#error "RTXDI_LIGHT_RESERVOIR_BUFFER must be defined to point to a RWStructuredBuffer<RTXDI_PackedDIReservoir> type resource"
 #endif
 
 // Define this macro to 0 if your shader needs read-only access to the reservoirs, 
-// to avoid compile errors in the RTXDI_StoreReservoir function
+// to avoid compile errors in the RTXDI_StoreDIReservoir function
 #ifndef RTXDI_ENABLE_STORE_RESERVOIR
 #define RTXDI_ENABLE_STORE_RESERVOIR 1
 #endif
 
 // This structure represents a single light reservoir that stores the weights, the sample ref,
-// sample count (M), and visibility for reuse. It can be serialized into RTXDI_PackedReservoir for storage.
-struct RTXDI_Reservoir
+// sample count (M), and visibility for reuse. It can be serialized into RTXDI_PackedDIReservoir for storage.
+struct RTXDI_DIReservoir
 {
     // Light index (bits 0..30) and validity bit (31)
     uint lightData;     
@@ -59,42 +59,42 @@ struct RTXDI_Reservoir
     float canonicalWeight;
 };
 
-// Encoding helper constants for RTXDI_PackedReservoir.mVisibility
-static const uint RTXDI_PackedReservoir_VisibilityMask = 0x3ffff;
-static const uint RTXDI_PackedReservoir_VisibilityChannelMax = 0x3f;
-static const uint RTXDI_PackedReservoir_VisibilityChannelShift = 6;
-static const uint RTXDI_PackedReservoir_MShift = 18;
-static const uint RTXDI_PackedReservoir_MaxM = 0x3fff;
+// Encoding helper constants for RTXDI_PackedDIReservoir.mVisibility
+static const uint RTXDI_PackedDIReservoir_VisibilityMask = 0x3ffff;
+static const uint RTXDI_PackedDIReservoir_VisibilityChannelMax = 0x3f;
+static const uint RTXDI_PackedDIReservoir_VisibilityChannelShift = 6;
+static const uint RTXDI_PackedDIReservoir_MShift = 18;
+static const uint RTXDI_PackedDIReservoir_MaxM = 0x3fff;
 
-// Encoding helper constants for RTXDI_PackedReservoir.distanceAge
-static const uint RTXDI_PackedReservoir_DistanceChannelBits = 8;
-static const uint RTXDI_PackedReservoir_DistanceXShift = 0;
-static const uint RTXDI_PackedReservoir_DistanceYShift = 8;
-static const uint RTXDI_PackedReservoir_AgeShift = 16;
-static const uint RTXDI_PackedReservoir_MaxAge = 0xff;
-static const uint RTXDI_PackedReservoir_DistanceMask = (1u << RTXDI_PackedReservoir_DistanceChannelBits) - 1;
-static const  int RTXDI_PackedReservoir_MaxDistance = int((1u << (RTXDI_PackedReservoir_DistanceChannelBits - 1)) - 1);
+// Encoding helper constants for RTXDI_PackedDIReservoir.distanceAge
+static const uint RTXDI_PackedDIReservoir_DistanceChannelBits = 8;
+static const uint RTXDI_PackedDIReservoir_DistanceXShift = 0;
+static const uint RTXDI_PackedDIReservoir_DistanceYShift = 8;
+static const uint RTXDI_PackedDIReservoir_AgeShift = 16;
+static const uint RTXDI_PackedDIReservoir_MaxAge = 0xff;
+static const uint RTXDI_PackedDIReservoir_DistanceMask = (1u << RTXDI_PackedDIReservoir_DistanceChannelBits) - 1;
+static const  int RTXDI_PackedDIReservoir_MaxDistance = int((1u << (RTXDI_PackedDIReservoir_DistanceChannelBits - 1)) - 1);
 
 // Light index helpers
-static const uint RTXDI_Reservoir_LightValidBit = 0x80000000;
-static const uint RTXDI_Reservoir_LightIndexMask = 0x7FFFFFFF;
+static const uint RTXDI_DIReservoir_LightValidBit = 0x80000000;
+static const uint RTXDI_DIReservoir_LightIndexMask = 0x7FFFFFFF;
 
-RTXDI_PackedReservoir RTXDI_PackReservoir(const RTXDI_Reservoir reservoir)
+RTXDI_PackedDIReservoir RTXDI_PackDIReservoir(const RTXDI_DIReservoir reservoir)
 {
-    int2 clampedSpatialDistance = clamp(reservoir.spatialDistance, -RTXDI_PackedReservoir_MaxDistance, RTXDI_PackedReservoir_MaxDistance);
-    uint clampedAge = clamp(reservoir.age, 0, RTXDI_PackedReservoir_MaxAge);
+    int2 clampedSpatialDistance = clamp(reservoir.spatialDistance, -RTXDI_PackedDIReservoir_MaxDistance, RTXDI_PackedDIReservoir_MaxDistance);
+    uint clampedAge = clamp(reservoir.age, 0, RTXDI_PackedDIReservoir_MaxAge);
 
-    RTXDI_PackedReservoir data;
+    RTXDI_PackedDIReservoir data;
     data.lightData = reservoir.lightData;
     data.uvData = reservoir.uvData;
 
     data.mVisibility = reservoir.packedVisibility
-        | (min(uint(reservoir.M), RTXDI_PackedReservoir_MaxM) << RTXDI_PackedReservoir_MShift);
+        | (min(uint(reservoir.M), RTXDI_PackedDIReservoir_MaxM) << RTXDI_PackedDIReservoir_MShift);
 
     data.distanceAge = 
-          ((clampedSpatialDistance.x & RTXDI_PackedReservoir_DistanceMask) << RTXDI_PackedReservoir_DistanceXShift) 
-        | ((clampedSpatialDistance.y & RTXDI_PackedReservoir_DistanceMask) << RTXDI_PackedReservoir_DistanceYShift) 
-        | (clampedAge << RTXDI_PackedReservoir_AgeShift);
+          ((clampedSpatialDistance.x & RTXDI_PackedDIReservoir_DistanceMask) << RTXDI_PackedDIReservoir_DistanceXShift) 
+        | ((clampedSpatialDistance.y & RTXDI_PackedDIReservoir_DistanceMask) << RTXDI_PackedDIReservoir_DistanceYShift) 
+        | (clampedAge << RTXDI_PackedDIReservoir_AgeShift);
 
     data.targetPdf = reservoir.targetPdf;
     data.weight = reservoir.weightSum;
@@ -103,20 +103,20 @@ RTXDI_PackedReservoir RTXDI_PackReservoir(const RTXDI_Reservoir reservoir)
 }
 
 #if RTXDI_ENABLE_STORE_RESERVOIR
-void RTXDI_StoreReservoir(
-    const RTXDI_Reservoir reservoir,
-    RTXDI_ReservoirBufferParameters reservoirParams,
+void RTXDI_StoreDIReservoir(
+    const RTXDI_DIReservoir reservoir,
+    RTXDI_DIReservoirBufferParameters reservoirParams,
     uint2 reservoirPosition,
     uint reservoirArrayIndex)
 {
-    uint pointer = RTXDI_ReservoirPositionToPointer(reservoirParams, reservoirPosition, reservoirArrayIndex);
-    RTXDI_LIGHT_RESERVOIR_BUFFER[pointer] = RTXDI_PackReservoir(reservoir);
+    uint pointer = RTXDI_DIReservoirPositionToPointer(reservoirParams, reservoirPosition, reservoirArrayIndex);
+    RTXDI_LIGHT_RESERVOIR_BUFFER[pointer] = RTXDI_PackDIReservoir(reservoir);
 }
 #endif // RTXDI_ENABLE_STORE_RESERVOIR
 
-RTXDI_Reservoir RTXDI_EmptyReservoir()
+RTXDI_DIReservoir RTXDI_EmptyDIReservoir()
 {
-    RTXDI_Reservoir s;
+    RTXDI_DIReservoir s;
     s.lightData = 0;
     s.uvData = 0;
     s.targetPdf = 0;
@@ -129,46 +129,46 @@ RTXDI_Reservoir RTXDI_EmptyReservoir()
     return s;
 }
 
-RTXDI_Reservoir RTXDI_UnpackReservoir(RTXDI_PackedReservoir data)
+RTXDI_DIReservoir RTXDI_UnpackDIReservoir(RTXDI_PackedDIReservoir data)
 {
-    RTXDI_Reservoir res;
+    RTXDI_DIReservoir res;
     res.lightData = data.lightData;
     res.uvData = data.uvData;
     res.targetPdf = data.targetPdf;
     res.weightSum = data.weight;
-    res.M = (data.mVisibility >> RTXDI_PackedReservoir_MShift) & RTXDI_PackedReservoir_MaxM;
-    res.packedVisibility = data.mVisibility & RTXDI_PackedReservoir_VisibilityMask;
+    res.M = (data.mVisibility >> RTXDI_PackedDIReservoir_MShift) & RTXDI_PackedDIReservoir_MaxM;
+    res.packedVisibility = data.mVisibility & RTXDI_PackedDIReservoir_VisibilityMask;
     // Sign extend the shift values
-    res.spatialDistance.x = int(data.distanceAge << (32 - RTXDI_PackedReservoir_DistanceXShift - RTXDI_PackedReservoir_DistanceChannelBits)) >> (32 - RTXDI_PackedReservoir_DistanceChannelBits);
-    res.spatialDistance.y = int(data.distanceAge << (32 - RTXDI_PackedReservoir_DistanceYShift - RTXDI_PackedReservoir_DistanceChannelBits)) >> (32 - RTXDI_PackedReservoir_DistanceChannelBits);
-    res.age = (data.distanceAge >> RTXDI_PackedReservoir_AgeShift) & RTXDI_PackedReservoir_MaxAge;
+    res.spatialDistance.x = int(data.distanceAge << (32 - RTXDI_PackedDIReservoir_DistanceXShift - RTXDI_PackedDIReservoir_DistanceChannelBits)) >> (32 - RTXDI_PackedDIReservoir_DistanceChannelBits);
+    res.spatialDistance.y = int(data.distanceAge << (32 - RTXDI_PackedDIReservoir_DistanceYShift - RTXDI_PackedDIReservoir_DistanceChannelBits)) >> (32 - RTXDI_PackedDIReservoir_DistanceChannelBits);
+    res.age = (data.distanceAge >> RTXDI_PackedDIReservoir_AgeShift) & RTXDI_PackedDIReservoir_MaxAge;
     res.canonicalWeight = 0.0f;
 
     // Discard reservoirs that have Inf/NaN
     if (isinf(res.weightSum) || isnan(res.weightSum)) {
-        res = RTXDI_EmptyReservoir();
+        res = RTXDI_EmptyDIReservoir();
     }
 
     return res;
 }
 
-RTXDI_Reservoir RTXDI_LoadReservoir(
-    RTXDI_ReservoirBufferParameters reservoirParams,
+RTXDI_DIReservoir RTXDI_LoadDIReservoir(
+    RTXDI_DIReservoirBufferParameters reservoirParams,
     uint2 reservoirPosition,
     uint reservoirArrayIndex)
 {
-    uint pointer = RTXDI_ReservoirPositionToPointer(reservoirParams, reservoirPosition, reservoirArrayIndex);
-    return RTXDI_UnpackReservoir(RTXDI_LIGHT_RESERVOIR_BUFFER[pointer]);
+    uint pointer = RTXDI_DIReservoirPositionToPointer(reservoirParams, reservoirPosition, reservoirArrayIndex);
+    return RTXDI_UnpackDIReservoir(RTXDI_LIGHT_RESERVOIR_BUFFER[pointer]);
 }
 
-void RTXDI_StoreVisibilityInReservoir(
-    inout RTXDI_Reservoir reservoir,
+void RTXDI_StoreVisibilityInDIReservoir(
+    inout RTXDI_DIReservoir reservoir,
     float3 visibility,
     bool discardIfInvisible)
 {
-    reservoir.packedVisibility = uint(saturate(visibility.x) * RTXDI_PackedReservoir_VisibilityChannelMax) 
-        | (uint(saturate(visibility.y) * RTXDI_PackedReservoir_VisibilityChannelMax)) << RTXDI_PackedReservoir_VisibilityChannelShift
-        | (uint(saturate(visibility.z) * RTXDI_PackedReservoir_VisibilityChannelMax)) << (RTXDI_PackedReservoir_VisibilityChannelShift * 2);
+    reservoir.packedVisibility = uint(saturate(visibility.x) * RTXDI_PackedDIReservoir_VisibilityChannelMax) 
+        | (uint(saturate(visibility.y) * RTXDI_PackedDIReservoir_VisibilityChannelMax)) << RTXDI_PackedDIReservoir_VisibilityChannelShift
+        | (uint(saturate(visibility.z) * RTXDI_PackedDIReservoir_VisibilityChannelMax)) << (RTXDI_PackedDIReservoir_VisibilityChannelShift * 2);
 
     reservoir.spatialDistance = int2(0, 0);
     reservoir.age = 0;
@@ -196,8 +196,8 @@ struct RTXDI_VisibilityReuseParameters
     float maxDistance;
 };
 
-bool RTXDI_GetReservoirVisibility(
-    const RTXDI_Reservoir reservoir,
+bool RTXDI_GetDIReservoirVisibility(
+    const RTXDI_DIReservoir reservoir,
     const RTXDI_VisibilityReuseParameters params,
     out float3 o_visibility)
 {
@@ -205,9 +205,9 @@ bool RTXDI_GetReservoirVisibility(
         reservoir.age <= params.maxAge &&
         length(float2(reservoir.spatialDistance)) < params.maxDistance)
     {
-        o_visibility.x = float(reservoir.packedVisibility & RTXDI_PackedReservoir_VisibilityChannelMax) / RTXDI_PackedReservoir_VisibilityChannelMax;
-        o_visibility.y = float((reservoir.packedVisibility >> RTXDI_PackedReservoir_VisibilityChannelShift) & RTXDI_PackedReservoir_VisibilityChannelMax) / RTXDI_PackedReservoir_VisibilityChannelMax;
-        o_visibility.z = float((reservoir.packedVisibility >> (RTXDI_PackedReservoir_VisibilityChannelShift * 2)) & RTXDI_PackedReservoir_VisibilityChannelMax) / RTXDI_PackedReservoir_VisibilityChannelMax;
+        o_visibility.x = float(reservoir.packedVisibility & RTXDI_PackedDIReservoir_VisibilityChannelMax) / RTXDI_PackedDIReservoir_VisibilityChannelMax;
+        o_visibility.y = float((reservoir.packedVisibility >> RTXDI_PackedDIReservoir_VisibilityChannelShift) & RTXDI_PackedDIReservoir_VisibilityChannelMax) / RTXDI_PackedDIReservoir_VisibilityChannelMax;
+        o_visibility.z = float((reservoir.packedVisibility >> (RTXDI_PackedDIReservoir_VisibilityChannelShift * 2)) & RTXDI_PackedDIReservoir_VisibilityChannelMax) / RTXDI_PackedDIReservoir_VisibilityChannelMax;
 
         return true;
     }
@@ -216,22 +216,22 @@ bool RTXDI_GetReservoirVisibility(
     return false;
 }
 
-bool RTXDI_IsValidReservoir(const RTXDI_Reservoir reservoir)
+bool RTXDI_IsValidDIReservoir(const RTXDI_DIReservoir reservoir)
 {
     return reservoir.lightData != 0;
 }
 
-uint RTXDI_GetReservoirLightIndex(const RTXDI_Reservoir reservoir)
+uint RTXDI_GetDIReservoirLightIndex(const RTXDI_DIReservoir reservoir)
 {
-    return reservoir.lightData & RTXDI_Reservoir_LightIndexMask;
+    return reservoir.lightData & RTXDI_DIReservoir_LightIndexMask;
 }
 
-float2 RTXDI_GetReservoirSampleUV(const RTXDI_Reservoir reservoir)
+float2 RTXDI_GetDIReservoirSampleUV(const RTXDI_DIReservoir reservoir)
 {
     return float2(reservoir.uvData & 0xffff, reservoir.uvData >> 16) / float(0xffff);
 }
 
-float RTXDI_GetReservoirInvPdf(const RTXDI_Reservoir reservoir)
+float RTXDI_GetDIReservoirInvPdf(const RTXDI_DIReservoir reservoir)
 {
     return reservoir.weightSum;
 }
@@ -239,7 +239,7 @@ float RTXDI_GetReservoirInvPdf(const RTXDI_Reservoir reservoir)
 // Adds a new, non-reservoir light sample into the reservoir, returns true if this sample was selected.
 // Algorithm (3) from the ReSTIR paper, Streaming RIS using weighted reservoir sampling.
 bool RTXDI_StreamSample(
-    inout RTXDI_Reservoir reservoir,
+    inout RTXDI_DIReservoir reservoir,
     uint lightIndex,
     float2 uv,
     float random,
@@ -262,7 +262,7 @@ bool RTXDI_StreamSample(
     // New samples don't have visibility or age information, we can skip that.
     if (selectSample)
     {
-        reservoir.lightData = lightIndex | RTXDI_Reservoir_LightValidBit;
+        reservoir.lightData = lightIndex | RTXDI_DIReservoir_LightValidBit;
         reservoir.uvData = uint(saturate(uv.x) * 0xffff) | (uint(saturate(uv.y) * 0xffff) << 16);
         reservoir.targetPdf = targetPdf;
     }
@@ -273,10 +273,10 @@ bool RTXDI_StreamSample(
 // Adds `newReservoir` into `reservoir`, returns true if the new reservoir's sample was selected.
 // This is a very general form, allowing input parameters to specfiy normalization and targetPdf
 // rather than computing them from `newReservoir`.  Named "internal" since these parameters take
-// different meanings (e.g., in RTXDI_CombineReservoirs() or RTXDI_StreamNeighborWithPairwiseMIS())
+// different meanings (e.g., in RTXDI_CombineDIReservoirs() or RTXDI_StreamNeighborWithPairwiseMIS())
 bool RTXDI_InternalSimpleResample(
-    inout RTXDI_Reservoir reservoir,
-    const RTXDI_Reservoir newReservoir,
+    inout RTXDI_DIReservoir reservoir,
+    const RTXDI_DIReservoir newReservoir,
     float random,
     float targetPdf RTXDI_DEFAULT(1.0f),            // Usually closely related to the sample normalization, 
     float sampleNormalization RTXDI_DEFAULT(1.0f),  //     typically off by some multiplicative factor 
@@ -312,9 +312,9 @@ bool RTXDI_InternalSimpleResample(
 // Adds `newReservoir` into `reservoir`, returns true if the new reservoir's sample was selected.
 // Algorithm (4) from the ReSTIR paper, Combining the streams of multiple reservoirs.
 // Normalization - Equation (6) - is postponed until all reservoirs are combined.
-bool RTXDI_CombineReservoirs(
-    inout RTXDI_Reservoir reservoir,
-    const RTXDI_Reservoir newReservoir,
+bool RTXDI_CombineDIReservoirs(
+    inout RTXDI_DIReservoir reservoir,
+    const RTXDI_DIReservoir newReservoir,
     float random,
     float targetPdf)
 {
@@ -330,7 +330,7 @@ bool RTXDI_CombineReservoirs(
 
 // Performs normalization of the reservoir after streaming. Equation (6) from the ReSTIR paper.
 void RTXDI_FinalizeResampling(
-    inout RTXDI_Reservoir reservoir,
+    inout RTXDI_DIReservoir reservoir,
     float normalizationNumerator,
     float normalizationDenominator)
 {
@@ -339,4 +339,4 @@ void RTXDI_FinalizeResampling(
     reservoir.weightSum = (denominator == 0.0) ? 0.0 : (reservoir.weightSum * normalizationNumerator) / denominator;
 }
 
-#endif // RESERVOIR_HLSLI
+#endif // RTXDI_DIRESERVOIR_HLSLI

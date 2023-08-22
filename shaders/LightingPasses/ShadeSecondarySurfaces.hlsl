@@ -17,7 +17,7 @@
 #include "RtxdiApplicationBridge.hlsli"
 
 #include <rtxdi/InitialSamplingFunctions.hlsli>
-#include <rtxdi/ResamplingFunctions.hlsli>
+#include <rtxdi/DIResamplingFunctions.hlsli>
 #include <rtxdi/GIResamplingFunctions.hlsli>
 
 #ifdef WITH_NRD
@@ -40,7 +40,7 @@ void RayGen()
 #if !USE_RAY_QUERY
     uint2 GlobalIndex = DispatchRaysIndex().xy;
 #endif
-    uint2 pixelPosition = RTXDI_ReservoirPosToPixelPos(GlobalIndex, g_Const.runtimeParams.activeCheckerboardField);
+    uint2 pixelPosition = RTXDI_DIReservoirPosToPixelPos(GlobalIndex, g_Const.runtimeParams.activeCheckerboardField);
 
     if (any(pixelPosition > int2(g_Const.view.viewportSize)))
         return;
@@ -49,7 +49,7 @@ void RayGen()
     RAB_RandomSamplerState tileRng = RAB_InitRandomSampler(GlobalIndex / RTXDI_TILE_SIZE_IN_PIXELS, 1);
 
     const RTXDI_RuntimeParameters params = g_Const.runtimeParams;
-    const uint gbufferIndex = RTXDI_ReservoirPositionToPointer(g_Const.restirDI.reservoirBufferParams, GlobalIndex, 0);
+    const uint gbufferIndex = RTXDI_DIReservoirPositionToPointer(g_Const.restirDI.reservoirBufferParams, GlobalIndex, 0);
 
     RAB_Surface primarySurface = RAB_GetGBufferSurface(pixelPosition, false);
 
@@ -89,7 +89,7 @@ void RayGen()
             0.f);   // brdfMinRayT
 
         RAB_LightSample lightSample;
-        RTXDI_Reservoir reservoir = RTXDI_SampleLightsForSurface(rng, tileRng, secondarySurface,
+        RTXDI_DIReservoir reservoir = RTXDI_SampleLightsForSurface(rng, tileRng, secondarySurface,
             sampleParams, g_Const.lightBufferParams, g_Const.brdfPT.secondarySurfaceReSTIRDIParams.initialSamplingParams.localLightSamplingMode,
 #if RTXDI_ENABLE_PRESAMPLING
         g_Const.localLightsRISBufferSegmentParams, g_Const.environmentLightRISBufferSegmentParams,

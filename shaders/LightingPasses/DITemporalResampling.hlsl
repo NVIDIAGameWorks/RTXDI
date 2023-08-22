@@ -18,7 +18,7 @@
 
 #include "RtxdiApplicationBridge.hlsli"
 
-#include <rtxdi/ResamplingFunctions.hlsli>
+#include <rtxdi/DIResamplingFunctions.hlsli>
 
 #if USE_RAY_QUERY
 [numthreads(RTXDI_SCREEN_SPACE_GROUP_SIZE, RTXDI_SCREEN_SPACE_GROUP_SIZE, 1)] 
@@ -34,7 +34,7 @@ void RayGen()
 
     const RTXDI_RuntimeParameters params = g_Const.runtimeParams;
 
-    uint2 pixelPosition = RTXDI_ReservoirPosToPixelPos(GlobalIndex, params.activeCheckerboardField);
+    uint2 pixelPosition = RTXDI_DIReservoirPosToPixelPos(GlobalIndex, params.activeCheckerboardField);
 
     RAB_RandomSamplerState rng = RAB_InitRandomSampler(pixelPosition, 2);
 
@@ -47,12 +47,12 @@ void RayGen()
         usePermutationSampling = !IsComplexSurface(pixelPosition, surface);
     }
 
-    RTXDI_Reservoir temporalResult = RTXDI_EmptyReservoir();
+    RTXDI_DIReservoir temporalResult = RTXDI_EmptyDIReservoir();
     int2 temporalSamplePixelPos = -1;
     
     if (RAB_IsSurfaceValid(surface))
     {
-        RTXDI_Reservoir curSample = RTXDI_LoadReservoir(g_Const.restirDI.reservoirBufferParams,
+        RTXDI_DIReservoir curSample = RTXDI_LoadDIReservoir(g_Const.restirDI.reservoirBufferParams,
             GlobalIndex, g_Const.restirDI.bufferIndices.initialSamplingOutputBufferIndex);
 
         float3 motionVector = t_MotionVectors[pixelPosition].xyz;
@@ -84,5 +84,5 @@ void RayGen()
 
     u_TemporalSamplePositions[GlobalIndex] = temporalSamplePixelPos;
     
-    RTXDI_StoreReservoir(temporalResult, g_Const.restirDI.reservoirBufferParams, GlobalIndex, g_Const.restirDI.bufferIndices.temporalResamplingOutputBufferIndex);
+    RTXDI_StoreDIReservoir(temporalResult, g_Const.restirDI.reservoirBufferParams, GlobalIndex, g_Const.restirDI.bufferIndices.temporalResamplingOutputBufferIndex);
 }

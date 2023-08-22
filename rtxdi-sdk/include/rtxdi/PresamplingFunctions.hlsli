@@ -15,6 +15,9 @@
 #include "rtxdi/RtxdiMath.hlsli"
 #include "rtxdi/RtxdiHelpers.hlsli"
 #include "rtxdi/LocalLightSelection.hlsli"
+#if RTXDI_REGIR_MODE != RTXDI_REGIR_DISABLED
+#include "rtxdi/ReGIRSampling.hlsli"
+#endif
 
 #if RTXDI_ENABLE_PRESAMPLING && !defined(RTXDI_RIS_BUFFER)
 #error "RTXDI_RIS_BUFFER must be defined to point to a RWBuffer<uint2> type resource"

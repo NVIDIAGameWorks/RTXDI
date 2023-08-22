@@ -40,7 +40,7 @@ Buffer<float2> t_NeighborOffsets : register(t21);
 StructuredBuffer<uint> t_GeometryInstanceToLight : register(t22);
 
 // Screen-sized UAVs
-RWStructuredBuffer<RTXDI_PackedReservoir> u_LightReservoirs : register(u0);
+RWStructuredBuffer<RTXDI_PackedDIReservoir> u_LightReservoirs : register(u0);
 RWTexture2D<float4> u_ShadingOutput : register(u1);
 RWTexture2D<float> u_GBufferDepth : register(u2);
 RWTexture2D<uint> u_GBufferNormals : register(u3);

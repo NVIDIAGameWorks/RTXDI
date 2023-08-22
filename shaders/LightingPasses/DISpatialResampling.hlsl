@@ -12,7 +12,7 @@
 
 #include "RtxdiApplicationBridge.hlsli"
 
-#include <rtxdi/ResamplingFunctions.hlsli>
+#include <rtxdi/DIResamplingFunctions.hlsli>
 
 #if USE_RAY_QUERY
 [numthreads(RTXDI_SCREEN_SPACE_GROUP_SIZE, RTXDI_SCREEN_SPACE_GROUP_SIZE, 1)]
@@ -28,17 +28,17 @@ void RayGen()
 
     const RTXDI_RuntimeParameters params = g_Const.runtimeParams;
 
-    uint2 pixelPosition = RTXDI_ReservoirPosToPixelPos(GlobalIndex, params.activeCheckerboardField);
+    uint2 pixelPosition = RTXDI_DIReservoirPosToPixelPos(GlobalIndex, params.activeCheckerboardField);
 
     RAB_RandomSamplerState rng = RAB_InitRandomSampler(pixelPosition, 3);
 
     RAB_Surface surface = RAB_GetGBufferSurface(pixelPosition, false);
 
-    RTXDI_Reservoir spatialResult = RTXDI_EmptyReservoir();
+    RTXDI_DIReservoir spatialResult = RTXDI_EmptyDIReservoir();
     
     if (RAB_IsSurfaceValid(surface))
     {
-        RTXDI_Reservoir centerSample = RTXDI_LoadReservoir(g_Const.restirDI.reservoirBufferParams,
+        RTXDI_DIReservoir centerSample = RTXDI_LoadDIReservoir(g_Const.restirDI.reservoirBufferParams,
             GlobalIndex, g_Const.restirDI.bufferIndices.spatialResamplingInputBufferIndex);
 
         RTXDI_SpatialResamplingParameters sparams;
@@ -58,5 +58,5 @@ void RayGen()
              rng, params, g_Const.restirDI.reservoirBufferParams, sparams, lightSample);
     }
 
-    RTXDI_StoreReservoir(spatialResult, g_Const.restirDI.reservoirBufferParams, GlobalIndex, g_Const.restirDI.bufferIndices.spatialResamplingOutputBufferIndex);
+    RTXDI_StoreDIReservoir(spatialResult, g_Const.restirDI.reservoirBufferParams, GlobalIndex, g_Const.restirDI.bufferIndices.spatialResamplingOutputBufferIndex);
 }

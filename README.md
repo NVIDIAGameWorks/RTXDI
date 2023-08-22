@@ -18,7 +18,7 @@ For more information about RTXDI, see the [NVIDIA Developer Page](https://develo
 [`rtxdi-sdk`](rtxdi-sdk) contains the SDK source code files that are meant to be included into the application build:
 
 - [`rtxdi-sdk/include`](rtxdi-sdk/include) has the include files, both for host code and for shaders
-- [`rtxdi-sdk/include/rtxdi/ResamplingFunctions.hlsli`](rtxdi-sdk/include/rtxdi/ResamplingFunctions.hlsli) is the main shader include file that contains the resampling implementation
+- [`rtxdi-sdk/include/rtxdi/DIResamplingFunctions.hlsli`](rtxdi-sdk/include/rtxdi/DIResamplingFunctions.hlsli) is the main shader include file that contains the resampling implementation
 - [`rtxdi-sdk/shaders`](rtxdi-sdk/shaders) has the shader files that are supposed to be compiled through whatever means the application normally uses
 - [`rtxdi-sdk/src`](rtxdi-sdk/src) has the host code with various utility functions for setting up the parameters and resources for resampling
 

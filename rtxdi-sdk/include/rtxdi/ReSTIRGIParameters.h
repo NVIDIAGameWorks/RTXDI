@@ -1,3 +1,13 @@
+/***************************************************************************
+ # Copyright (c) 2020-2023, NVIDIA CORPORATION.  All rights reserved.
+ #
+ # NVIDIA CORPORATION and its licensors retain all intellectual property
+ # and proprietary rights in and to this software, related documentation
+ # and any modifications thereto.  Any use, reproduction, disclosure or
+ # distribution of this software and related documentation without an express
+ # license agreement from NVIDIA CORPORATION is strictly prohibited.
+ **************************************************************************/
+
 #ifndef RTXDI_RESTIRGI_PARAMETERS_H
 #define RTXDI_RESTIRGI_PARAMETERS_H
 
@@ -105,7 +115,7 @@ struct ReSTIRGI_BufferIndices
 
 struct ReSTIRGI_Parameters
 {
-    RTXDI_ReservoirBufferParameters reservoirBufferParams;
+    RTXDI_DIReservoirBufferParameters reservoirBufferParams;
     ReSTIRGI_BufferIndices bufferIndices;
     ReSTIRGI_TemporalResamplingParameters temporalResamplingParams;
     ReSTIRGI_SpatialResamplingParameters spatialResamplingParams;

@@ -86,7 +86,7 @@ struct RTXDI_LightBufferParameters
     RTXDI_EnvironmentLightBufferParameters environmentLightParams;
 };
 
-struct RTXDI_ReservoirBufferParameters
+struct RTXDI_DIReservoirBufferParameters
 {
     uint32_t reservoirBlockRowPitch;
     uint32_t reservoirArrayPitch;
@@ -94,7 +94,7 @@ struct RTXDI_ReservoirBufferParameters
     uint32_t pad2;
 };
 
-struct RTXDI_PackedReservoir
+struct RTXDI_PackedDIReservoir
 {
     uint32_t lightData;
     uint32_t uvData;

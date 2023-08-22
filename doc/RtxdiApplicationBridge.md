@@ -1,7 +1,7 @@
 
 # RTXDI Application Bridge
 
-The application must implement a number of structures and functions on the shader side that are necessary for the RTXDI resampling functions to operate. These structures and functions must be declared before including the main RTXDI header file, [`ResamplingFunctions.hlsli`](../rtxdi-sdk/include/rtxdi/ResamplingFunctions.hlsli).
+The application must implement a number of structures and functions on the shader side that are necessary for the RTXDI resampling functions to operate. These structures and functions must be declared before including the main RTXDI header file, [`DIResamplingFunctions.hlsli`](../rtxdi-sdk/include/rtxdi/DIResamplingFunctions.hlsli).
 
 A reference implementation of the bridge functions and structures with support for multiple light types and fractional visibility (translucency) can be found in [`RtxdiApplicationBridge.hlsli`](../shaders/LightingPasses/RtxdiApplicationBridge.hlsli). This implementation uses some functionality defined in other header files, most notably, polymorphic lights are implemented in [`PolymorphicLight.hlsli`](../shaders/PolymorphicLight.hlsli).
 

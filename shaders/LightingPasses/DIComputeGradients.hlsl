@@ -12,7 +12,7 @@
 
 #include "RtxdiApplicationBridge.hlsli"
 
-#include <rtxdi/ResamplingFunctions.hlsli>
+#include <rtxdi/DIResamplingFunctions.hlsli>
 
 #ifdef WITH_NRD
 #undef WITH_NRD
@@ -51,7 +51,7 @@ void RayGen()
     {
         // Translate the gradient stratum index (GlobalIndex) into reservoir and pixel positions.
         int2 srcReservoirPos = GlobalIndex * RTXDI_GRAD_FACTOR + int2(xx, yy);
-        int2 srcPixelPos = RTXDI_ReservoirPosToPixelPos(srcReservoirPos, params.activeCheckerboardField);
+        int2 srcPixelPos = RTXDI_DIReservoirPosToPixelPos(srcReservoirPos, params.activeCheckerboardField);
 
         if (any(srcPixelPos >= int2(g_Const.view.viewportSize)))
             continue;
@@ -101,12 +101,12 @@ void RayGen()
         int2 selectedCurrentOrPrevReservoirPos = RTXDI_PixelPosToReservoirPos(selectedCurrentOrPrevPixelPos, params.activeCheckerboardField);
 
         // Load the reservoir that was selected for gradient evaluation, either from the current or the previous frame.
-        RTXDI_Reservoir selectedReservoir = RTXDI_LoadReservoir(g_Const.restirDI.reservoirBufferParams,
+        RTXDI_DIReservoir selectedReservoir = RTXDI_LoadDIReservoir(g_Const.restirDI.reservoirBufferParams,
             selectedCurrentOrPrevReservoirPos,
             usePrevSample ? g_Const.restirDI.bufferIndices.temporalResamplingInputBufferIndex : g_Const.restirDI.bufferIndices.shadingInputBufferIndex);
 
         // Map the reservoir's light index into the other frame (previous or current)
-        int selectedMappedLightIndex = RAB_TranslateLightIndex(RTXDI_GetReservoirLightIndex(selectedReservoir), !usePrevSample);
+        int selectedMappedLightIndex = RAB_TranslateLightIndex(RTXDI_GetDIReservoirLightIndex(selectedReservoir), !usePrevSample);
         
         if (selectedMappedLightIndex >= 0)
         {
@@ -142,7 +142,7 @@ void RayGen()
             // Reconstruct the light sample
             RAB_LightInfo lightInfo = RAB_LoadLightInfo(selectedMappedLightIndex, !usePrevSample);
             RAB_LightSample lightSample = RAB_SamplePolymorphicLight(lightInfo,
-                surface, RTXDI_GetReservoirSampleUV(selectedReservoir));
+                surface, RTXDI_GetDIReservoirSampleUV(selectedReservoir));
 
             // Shade the other (previous or current) surface using the other light sample
             float3 diffuse = 0;

@@ -115,7 +115,7 @@ void RTXDI_BoilingFilter(
 #endif // RTXDI_ENABLE_BOILING_FILTER
 
 // A structure that groups the application-provided settings for temporal resampling.
-struct RTXDI_TemporalResamplingParameters
+struct RTXDI_DITemporalResamplingParameters
 {
     // Screen-space motion vector, computed as (previousPosition - currentPosition).
     // The X and Y components are measured in pixels.
@@ -167,14 +167,14 @@ struct RTXDI_TemporalResamplingParameters
 // can also use the current frame BVH if the previous is not available - that will produce more bias.
 // The selectedLightSample parameter is used to update and return the selected sample; it's optional,
 // and it's safe to pass a null structure there and ignore the result.
-RTXDI_DIReservoir RTXDI_TemporalResampling(
+RTXDI_DIReservoir RTXDI_DITemporalResampling(
     uint2 pixelPosition,
     RAB_Surface surface,
     RTXDI_DIReservoir curSample,
     inout RAB_RandomSamplerState rng,
     RTXDI_RuntimeParameters params,
     RTXDI_DIReservoirBufferParameters reservoirParams,
-    RTXDI_TemporalResamplingParameters tparams,
+    RTXDI_DITemporalResamplingParameters tparams,
     out int2 temporalSamplePixelPos,
     inout RAB_LightSample selectedLightSample)
 {
@@ -360,7 +360,7 @@ RTXDI_DIReservoir RTXDI_TemporalResampling(
 }
 
 // A structure that groups the application-provided settings for spatial resampling.
-struct RTXDI_SpatialResamplingParameters
+struct RTXDI_DISpatialResamplingParameters
 {
     // The index of the reservoir buffer to pull the spatial samples from.
     uint sourceBufferIndex;
@@ -406,14 +406,14 @@ struct RTXDI_SpatialResamplingParameters
 // Inputs and outputs equivalent to RTXDI_SpatialResampling(), but only uses pairwise MIS.
 // Can call this directly, or call RTXDI_SpatialResampling() with sparams.biasCorrectionMode 
 // set to RTXDI_BIAS_CORRECTION_PAIRWISE, which simply calls this function.
-RTXDI_DIReservoir RTXDI_SpatialResamplingWithPairwiseMIS(
+RTXDI_DIReservoir RTXDI_DISpatialResamplingWithPairwiseMIS(
     uint2 pixelPosition,
     RAB_Surface centerSurface,
     RTXDI_DIReservoir centerSample,
     inout RAB_RandomSamplerState rng,
     RTXDI_RuntimeParameters params,
     RTXDI_DIReservoirBufferParameters reservoirParams,
-    RTXDI_SpatialResamplingParameters sparams,
+    RTXDI_DISpatialResamplingParameters sparams,
     inout RAB_LightSample selectedLightSample)
 {
     // Initialize the output reservoir
@@ -498,19 +498,19 @@ RTXDI_DIReservoir RTXDI_SpatialResamplingWithPairwiseMIS(
 // Optionally, one visibility ray is traced for each neighbor being considered, to reduce bias.
 // The selectedLightSample parameter is used to update and return the selected sample; it's optional,
 // and it's safe to pass a null structure there and ignore the result.
-RTXDI_DIReservoir RTXDI_SpatialResampling(
+RTXDI_DIReservoir RTXDI_DISpatialResampling(
     uint2 pixelPosition,
     RAB_Surface centerSurface,
     RTXDI_DIReservoir centerSample,
     inout RAB_RandomSamplerState rng,
     RTXDI_RuntimeParameters params,
     RTXDI_DIReservoirBufferParameters reservoirParams,
-    RTXDI_SpatialResamplingParameters sparams,
+    RTXDI_DISpatialResamplingParameters sparams,
     inout RAB_LightSample selectedLightSample)
 {
     if (sparams.biasCorrectionMode == RTXDI_BIAS_CORRECTION_PAIRWISE)
     {
-        return RTXDI_SpatialResamplingWithPairwiseMIS(pixelPosition, centerSurface, 
+        return RTXDI_DISpatialResamplingWithPairwiseMIS(pixelPosition, centerSurface, 
             centerSample, rng, params, reservoirParams, sparams, selectedLightSample);
     }
 
@@ -675,7 +675,7 @@ RTXDI_DIReservoir RTXDI_SpatialResampling(
 
 
 // A structure that groups the application-provided settings for spatio-temporal resampling.
-struct RTXDI_SpatioTemporalResamplingParameters
+struct RTXDI_DISpatioTemporalResamplingParameters
 {
     // Screen-space motion vector, computed as (previousPosition - currentPosition).
     // The X and Y components are measured in pixels.
@@ -737,14 +737,14 @@ struct RTXDI_SpatioTemporalResamplingParameters
 // Inputs and outputs equivalent to RTXDI_SpatioTemporalResampling(), but only uses pairwise MIS.
 // Can call this directly, or call RTXDI_SpatioTemporalResampling() with sparams.biasCorrectionMode 
 // set to RTXDI_BIAS_CORRECTION_PAIRWISE, which simply calls this function.
-RTXDI_DIReservoir RTXDI_SpatioTemporalResamplingWithPairwiseMIS(
+RTXDI_DIReservoir RTXDI_DISpatioTemporalResamplingWithPairwiseMIS(
     uint2 pixelPosition,
     RAB_Surface surface,
     RTXDI_DIReservoir curSample,
     inout RAB_RandomSamplerState rng,
     RTXDI_RuntimeParameters params,
     RTXDI_DIReservoirBufferParameters reservoirParams,
-    RTXDI_SpatioTemporalResamplingParameters stparams,
+    RTXDI_DISpatioTemporalResamplingParameters stparams,
     out int2 temporalSamplePixelPos,
     inout RAB_LightSample selectedLightSample)
 {
@@ -919,20 +919,20 @@ RTXDI_DIReservoir RTXDI_SpatioTemporalResamplingWithPairwiseMIS(
 // A combination of the temporal and spatial passes that operates only on the previous frame reservoirs.
 // The selectedLightSample parameter is used to update and return the selected sample; it's optional,
 // and it's safe to pass a null structure there and ignore the result.
-RTXDI_DIReservoir RTXDI_SpatioTemporalResampling(
+RTXDI_DIReservoir RTXDI_DISpatioTemporalResampling(
     uint2 pixelPosition,
     RAB_Surface surface,
     RTXDI_DIReservoir curSample,
     inout RAB_RandomSamplerState rng,
     RTXDI_RuntimeParameters params,
     RTXDI_DIReservoirBufferParameters reservoirParams,
-    RTXDI_SpatioTemporalResamplingParameters stparams,
+    RTXDI_DISpatioTemporalResamplingParameters stparams,
     out int2 temporalSamplePixelPos,
     inout RAB_LightSample selectedLightSample)
 {
     if (stparams.biasCorrectionMode == RTXDI_BIAS_CORRECTION_PAIRWISE)
     {
-        return RTXDI_SpatioTemporalResamplingWithPairwiseMIS(pixelPosition, surface,
+        return RTXDI_DISpatioTemporalResamplingWithPairwiseMIS(pixelPosition, surface,
             curSample, rng, params, reservoirParams, stparams, temporalSamplePixelPos, selectedLightSample);
     }
 

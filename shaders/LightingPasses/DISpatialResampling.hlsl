@@ -41,7 +41,7 @@ void RayGen()
         RTXDI_DIReservoir centerSample = RTXDI_LoadDIReservoir(g_Const.restirDI.reservoirBufferParams,
             GlobalIndex, g_Const.restirDI.bufferIndices.spatialResamplingInputBufferIndex);
 
-        RTXDI_SpatialResamplingParameters sparams;
+        RTXDI_DISpatialResamplingParameters sparams;
         sparams.sourceBufferIndex = g_Const.restirDI.bufferIndices.spatialResamplingInputBufferIndex;
         sparams.numSamples = g_Const.restirDI.spatialResamplingParams.numSpatialSamples;
         sparams.numDisocclusionBoostSamples = g_Const.restirDI.spatialResamplingParams.numDisocclusionBoostSamples;
@@ -54,7 +54,7 @@ void RayGen()
         sparams.discountNaiveSamples = g_Const.restirDI.spatialResamplingParams.discountNaiveSamples;
 
         RAB_LightSample lightSample = (RAB_LightSample)0;
-        spatialResult = RTXDI_SpatialResampling(pixelPosition, surface, centerSample, 
+        spatialResult = RTXDI_DISpatialResampling(pixelPosition, surface, centerSample, 
              rng, params, g_Const.restirDI.reservoirBufferParams, sparams, lightSample);
     }
 

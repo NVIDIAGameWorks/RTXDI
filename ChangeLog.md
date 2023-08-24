@@ -6,7 +6,7 @@
 **Release highlights:**
 
 - Major refactor of C++ API that separates the ReSTIR DI, ReGIR, and ReSTIR GI algorithms into distinct contexts.
-- Shader functions and structs updated to reflect partition of algorithms.
+- Shader functions and structs renamed to reflect partition of algorithms.
 - Added `ImportanceSamplingContext` class that collects all 3 algorithms into a central class to ensure shared state is properly managed.
 - UI redone for the rtxdi-sample project's ReSTIR DI, ReGIR, and ReSTIR GI sections.
 
@@ -14,15 +14,17 @@
 
 - C++ API changed completely. Algorithms are now organized by a single context each.
 - ReSTIR DI reservoir struct renamed from RTXDI_Reservoir to RTXDI_DIReservoir, with corresponding changes to DI reservoir functions.
+- ReSTIR DI resampling functions renamed to have a DI infix to distinguish them from their GI counterparts.
+- Shader headers broken down into more files.
 
 **Fixed issued:**
 
-- SPIR-V compiler fixes
-- UI reorganized to reflect algorithm/code path
+- Fixed SPIR-V compiler issues.
+- Reorganized UI to reflect algorithm/code path.
 
 **Misc improvements:**
 
-- Decoupled boiling filter, bias correction, and several other settings in ReSTIR DI and ReSTIR GI.
+- Decoupled boiling filter, bias correction, and several other settings for ReSTIR DI and ReSTIR GI.
 - Broke down ReSTIR DI local light sampling code into smaller functions for easier reuse and expansion.
 
 ## 2.0.0

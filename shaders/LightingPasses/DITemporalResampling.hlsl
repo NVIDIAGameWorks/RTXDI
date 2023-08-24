@@ -58,7 +58,7 @@ void RayGen()
         float3 motionVector = t_MotionVectors[pixelPosition].xyz;
         motionVector = convertMotionVectorToPixelSpace(g_Const.view, g_Const.prevView, pixelPosition, motionVector);
 
-        RTXDI_TemporalResamplingParameters tparams;
+        RTXDI_DITemporalResamplingParameters tparams;
         tparams.screenSpaceMotion = motionVector;
         tparams.sourceBufferIndex = g_Const.restirDI.bufferIndices.temporalResamplingInputBufferIndex;
         tparams.maxHistoryLength = g_Const.restirDI.temporalResamplingParams.maxHistoryLength;
@@ -71,7 +71,7 @@ void RayGen()
 
         RAB_LightSample selectedLightSample = (RAB_LightSample)0;
         
-        temporalResult = RTXDI_TemporalResampling(pixelPosition, surface, curSample,
+        temporalResult = RTXDI_DITemporalResampling(pixelPosition, surface, curSample,
             rng, params, g_Const.restirDI.reservoirBufferParams, tparams, temporalSamplePixelPos, selectedLightSample);
     }
 

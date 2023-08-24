@@ -112,7 +112,7 @@ void RayGen()
                 int2 secondaryPixelPos = int2(secondaryClipPos.xy * g_Const.view.clipToWindowScale + g_Const.view.clipToWindowBias);
                 secondarySurface.viewDepth = secondaryClipPos.w;
 
-                RTXDI_SpatialResamplingParameters sparams;
+                RTXDI_DISpatialResamplingParameters sparams;
                 sparams.sourceBufferIndex = g_Const.restirDI.bufferIndices.shadingInputBufferIndex;
                 sparams.numSamples = g_Const.brdfPT.secondarySurfaceReSTIRDIParams.spatialResamplingParams.numSpatialSamples;
                 sparams.numDisocclusionBoostSamples = 0;
@@ -124,7 +124,7 @@ void RayGen()
                 sparams.enableMaterialSimilarityTest = false;
                 sparams.discountNaiveSamples = false;
 
-                reservoir = RTXDI_SpatialResampling(secondaryPixelPos, secondarySurface, reservoir,
+                reservoir = RTXDI_DISpatialResampling(secondaryPixelPos, secondarySurface, reservoir,
                     rng, params, g_Const.restirDI.reservoirBufferParams, sparams, lightSample);
             }
         }

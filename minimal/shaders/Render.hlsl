@@ -82,7 +82,7 @@ void main(uint2 pixelPosition : SV_DispatchThreadID)
         {
             // Fill out the parameter structure.
             // Mostly use literal constants for simplicity.
-            RTXDI_SpatioTemporalResamplingParameters stparams;
+            RTXDI_DISpatioTemporalResamplingParameters stparams;
             stparams.screenSpaceMotion = primary.motionVector;
             stparams.sourceBufferIndex = g_Const.inputBufferIndex;
             stparams.maxHistoryLength = 20;
@@ -100,7 +100,7 @@ void main(uint2 pixelPosition : SV_DispatchThreadID)
             int2 temporalSamplePixelPos = -1;
 
             // Call the resampling function, update the reservoir and lightSample variables
-            reservoir = RTXDI_SpatioTemporalResampling(pixelPosition, primary.surface, reservoir,
+            reservoir = RTXDI_DISpatioTemporalResampling(pixelPosition, primary.surface, reservoir,
                     rng, g_Const.runtimeParams, g_Const.restirDIReservoirBufferParams, stparams, temporalSamplePixelPos, lightSample);
         }
 

@@ -63,7 +63,7 @@ void RayGen()
         usePermutationSampling = !IsComplexSurface(pixelPosition, surface);
     }
 
-    RTXDI_SpatioTemporalResamplingParameters stparams;
+    RTXDI_DISpatioTemporalResamplingParameters stparams;
     stparams.screenSpaceMotion = motionVector;
     stparams.sourceBufferIndex = g_Const.restirDI.bufferIndices.temporalResamplingInputBufferIndex;
     stparams.maxHistoryLength = g_Const.restirDI.temporalResamplingParams.maxHistoryLength;
@@ -79,7 +79,7 @@ void RayGen()
     stparams.uniformRandomNumber = g_Const.restirDI.temporalResamplingParams.uniformRandomNumber;
 
     RAB_LightSample lightSample;
-    reservoir = RTXDI_SpatioTemporalResampling(pixelPosition, surface, reservoir,
+    reservoir = RTXDI_DISpatioTemporalResampling(pixelPosition, surface, reservoir,
             rng, params, g_Const.restirDI.reservoirBufferParams, stparams, temporalSamplePixelPos, lightSample);
 
     u_TemporalSamplePositions[GlobalIndex] = temporalSamplePixelPos;

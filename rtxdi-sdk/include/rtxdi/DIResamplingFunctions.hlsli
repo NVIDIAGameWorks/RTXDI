@@ -458,8 +458,11 @@ RTXDI_DIReservoir RTXDI_DISpatialResamplingWithPairwiseMIS(
             RTXDI_PixelPosToReservoirPos(idx, params.activeCheckerboardField), sparams.sourceBufferIndex);
         neighborSample.spatialDistance += spatialOffset;
 
-        if (sparams.discountNaiveSamples && neighborSample.M <= RTXDI_NAIVE_SAMPLING_M_THRESHOLD)
-            continue;
+        if (RTXDI_IsValidDIReservoir(neighborSample))
+        {
+            if (sparams.discountNaiveSamples && neighborSample.M <= RTXDI_NAIVE_SAMPLING_M_THRESHOLD)
+                continue;
+        }
 
         validSpatialSamples++;
 
@@ -729,6 +732,9 @@ struct RTXDI_DISpatioTemporalResamplingParameters
     // Enables the comparison of surface materials before taking a surface into resampling.
     bool enableMaterialSimilarityTest;
 
+    // Prevents samples which are from the current frame or have no reasonable temporal history merged being spread to neighbors
+    bool discountNaiveSamples;
+
     // Random number for permutation sampling that is the same for all pixels in the frame
     uint uniformRandomNumber;
 };
@@ -873,6 +879,13 @@ RTXDI_DIReservoir RTXDI_DISpatioTemporalResamplingWithPairwiseMIS(
         // The surfaces are similar enough so we *can* reuse a neighbor from this pixel, so load it.
         RTXDI_DIReservoir neighborSample = RTXDI_LoadDIReservoir(reservoirParams,
             RTXDI_PixelPosToReservoirPos(idx, params.activeCheckerboardField), stparams.sourceBufferIndex);
+
+        if (RTXDI_IsValidDIReservoir(prevSample))
+        {
+            if (stparams.discountNaiveSamples && neighborSample.M <= RTXDI_NAIVE_SAMPLING_M_THRESHOLD)
+                continue;
+        }
+
         neighborSample.M = min(neighborSample.M, historyLimit);
         neighborSample.spatialDistance += spatialOffset;
         neighborSample.age += 1;
@@ -1064,6 +1077,12 @@ RTXDI_DIReservoir RTXDI_DISpatioTemporalResampling(
 
         RTXDI_DIReservoir prevSample = RTXDI_LoadDIReservoir(reservoirParams,
             neighborReservoirPos, stparams.sourceBufferIndex);
+
+        if (RTXDI_IsValidDIReservoir(prevSample))
+        {
+            if (stparams.discountNaiveSamples && prevSample.M <= RTXDI_NAIVE_SAMPLING_M_THRESHOLD)
+                continue;
+        }
 
         prevSample.M = min(prevSample.M, historyLimit);
         prevSample.spatialDistance += spatialOffset;

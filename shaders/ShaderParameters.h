@@ -217,11 +217,12 @@ struct ResamplingConstants
     uint frameIndex;
     uint enablePreviousTLAS;
     uint denoiserMode;
+    uint discountNaiveSamples;
+    
     uint enableBrdfIndirect;
-
     uint enableBrdfAdditiveBlend;    
     uint enableAccumulation; // StoreShadingOutput
-    uint2 pad1;
+    uint pad1;
 
     SceneConstants sceneConstants;
 

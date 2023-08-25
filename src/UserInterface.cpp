@@ -623,6 +623,12 @@ void UserInterface::SamplingSettings()
 					ShowHelpMarker("Prevents samples which are from the current frame or have no reasonable temporal history merged being spread to neighbors.");
                 }
 
+                if (m_showAdvancedSamplingSettings && m_ui.restirDI.resamplingMode != rtxdi::ReSTIRDI_ResamplingMode::Temporal)
+                {
+					samplingSettingsChanged |= ImGui::Checkbox("Discount Naive Samples", (bool*)&m_ui.restirDI.spatialResamplingParams.discountNaiveSamples);
+					ShowHelpMarker("Prevents samples which are from the current frame or have no reasonable temporal history merged being spread to neighbors.");
+                }
+
                 ImGui::TreePop();
             }
 

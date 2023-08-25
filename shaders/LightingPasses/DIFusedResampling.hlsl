@@ -77,6 +77,7 @@ void RayGen()
     stparams.enablePermutationSampling = usePermutationSampling;
     stparams.enableMaterialSimilarityTest = true;
     stparams.uniformRandomNumber = g_Const.restirDI.temporalResamplingParams.uniformRandomNumber;
+    stparams.discountNaiveSamples = g_Const.discountNaiveSamples;
 
     RAB_LightSample lightSample;
     reservoir = RTXDI_DISpatioTemporalResampling(pixelPosition, surface, reservoir,

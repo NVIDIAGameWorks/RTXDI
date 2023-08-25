@@ -1,5 +1,5 @@
 /***************************************************************************
- # Copyright (c) 2020-2022, NVIDIA CORPORATION.  All rights reserved.
+ # Copyright (c) 2020-2023, NVIDIA CORPORATION.  All rights reserved.
  #
  # NVIDIA CORPORATION and its licensors retain all intellectual property
  # and proprietary rights in and to this software, related documentation
@@ -12,16 +12,13 @@
 
 #include "RtxdiApplicationBridge.hlsli"
 
-#include <rtxdi/ResamplingFunctions.hlsli>
+#include <rtxdi/PresamplingFunctions.hlsli>
 
 [numthreads(256, 1, 1)]
 void main(uint GlobalIndex : SV_DispatchThreadID)
 {
-    const RTXDI_ResamplingRuntimeParameters params = g_Const.runtimeParams;
-    
     RAB_RandomSamplerState rng = RAB_InitRandomSampler(uint2(GlobalIndex & 0xfff, GlobalIndex >> 12), 1);
     RAB_RandomSamplerState coherentRng = RAB_InitRandomSampler(uint2(GlobalIndex >> 8, 0), 1);
 
-    RTXDI_PresampleLocalLightsForReGIR(rng, coherentRng, GlobalIndex, 
-        g_Const.numRegirBuildSamples, params);
+    RTXDI_PresampleLocalLightsForReGIR(rng, coherentRng, GlobalIndex, g_Const.lightBufferParams.localLightBufferRegion, g_Const.localLightsRISBufferSegmentParams, g_Const.regir);
 }

@@ -25,13 +25,13 @@ Texture2D<float4> t_Specular : register(t4);
 Texture2D<float4> t_DenoisedDiffuse : register(t5);
 Texture2D<float4> t_DenoisedSpecular : register(t6);
 Texture2D<float4> t_Gradients : register(t7);
-StructuredBuffer<RTXDI_PackedReservoir> t_Reservoirs : register(t8);
+StructuredBuffer<RTXDI_PackedDIReservoir> t_Reservoirs : register(t8);
 StructuredBuffer<RTXDI_PackedGIReservoir> t_GIReservoirs : register(t9);
 
 #define RTXDI_LIGHT_RESERVOIR_BUFFER t_Reservoirs
 #define RTXDI_GI_RESERVOIR_BUFFER t_GIReservoirs
 #define RTXDI_ENABLE_STORE_RESERVOIR 0
-#include <rtxdi/Reservoir.hlsli>
+#include <rtxdi/DIReservoir.hlsli>
 #include <rtxdi/GIReservoir.hlsli>
 
 float4 blend(float4 top, float4 bottom)
@@ -51,7 +51,7 @@ float4 main(float4 i_position : SV_Position) : SV_Target
         resolutionScale = 1.0;
 
     int2 inputPos = int2(pixelPos.x * resolutionScale.x, g_Const.outputSize.y * resolutionScale.y * 0.5);
-    int2 reservoirPos = RTXDI_PixelPosToReservoirPos(inputPos, g_Const.runtimeParams);
+    int2 reservoirPos = RTXDI_PixelPosToReservoirPos(inputPos, g_Const.runtimeParams.activeCheckerboardField);
     float input = 0;
 
     switch(g_Const.visualizationMode)
@@ -84,13 +84,13 @@ float4 main(float4 i_position : SV_Position) : SV_Target
         break;
         
     case VIS_MODE_RESERVOIR_WEIGHT: {
-        RTXDI_Reservoir reservoir = RTXDI_LoadReservoir(g_Const.runtimeParams, reservoirPos, g_Const.inputBufferIndex);
+        RTXDI_DIReservoir reservoir = RTXDI_LoadDIReservoir(g_Const.restirDIReservoirBufferParams, reservoirPos, g_Const.inputBufferIndex);
         input = reservoir.weightSum;
         break;
     }
 
     case VIS_MODE_RESERVOIR_M: {
-        RTXDI_Reservoir reservoir = RTXDI_LoadReservoir(g_Const.runtimeParams, reservoirPos, g_Const.inputBufferIndex);
+        RTXDI_DIReservoir reservoir = RTXDI_LoadDIReservoir(g_Const.restirDIReservoirBufferParams, reservoirPos, g_Const.inputBufferIndex);
         input = reservoir.M;
         break;
     }
@@ -108,13 +108,13 @@ float4 main(float4 i_position : SV_Position) : SV_Target
     }
                                    
     case VIS_MODE_GI_WEIGHT: {
-        RTXDI_GIReservoir reservoir = RTXDI_LoadGIReservoir(g_Const.runtimeParams, reservoirPos, g_Const.inputBufferIndex);
+        RTXDI_GIReservoir reservoir = RTXDI_LoadGIReservoir(g_Const.restirGIReservoirBufferParams, reservoirPos, g_Const.inputBufferIndex);
         input = reservoir.weightSum;
         break;
     }
 
     case VIS_MODE_GI_M: {
-        RTXDI_GIReservoir reservoir = RTXDI_LoadGIReservoir(g_Const.runtimeParams, reservoirPos, g_Const.inputBufferIndex);
+        RTXDI_GIReservoir reservoir = RTXDI_LoadGIReservoir(g_Const.restirGIReservoirBufferParams, reservoirPos, g_Const.inputBufferIndex);
         input = reservoir.M;
         break;
     }

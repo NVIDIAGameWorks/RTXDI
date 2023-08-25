@@ -9,7 +9,7 @@
  **************************************************************************/
 
 // Include this first just to test the cleanliness
-#include <rtxdi/RTXDI.h>
+#include <rtxdi/ReSTIRDI.h>
 
 #include <donut/app/ApplicationBase.h>
 #include <donut/app/Camera.h>
@@ -63,7 +63,7 @@ private:
     engine::PlanarView m_ViewPrevious;
     engine::BindingCache m_BindingCache;
 
-    std::unique_ptr<rtxdi::Context> m_RtxdiContext;
+    std::unique_ptr<rtxdi::ReSTIRDIContext> m_restirDIContext;
     std::unique_ptr<PrepareLightsPass> m_PrepareLightsPass;
     std::unique_ptr<RenderPass> m_RenderPass;
     std::unique_ptr<RtxdiResources> m_RtxdiResources;
@@ -236,7 +236,7 @@ public:
 
         m_BindingCache.Clear();
         m_RenderTargets = nullptr;
-        m_RtxdiContext = nullptr;
+        m_restirDIContext = nullptr;
         m_RtxdiResources = nullptr;
     }
     
@@ -272,13 +272,13 @@ public:
         bool renderTargetsCreated = false;
         bool rtxdiResourcesCreated = false;
         
-        if (!m_RtxdiContext)
+        if (!m_restirDIContext)
         {
-            rtxdi::ContextParameters contextParams;
+            rtxdi::ReSTIRDIStaticParameters contextParams;
             contextParams.RenderWidth = fbinfo.width;
             contextParams.RenderHeight = fbinfo.height;
 
-            m_RtxdiContext = std::make_unique<rtxdi::Context>(contextParams);
+            m_restirDIContext = std::make_unique<rtxdi::ReSTIRDIContext>(contextParams);
         }
 
         if (!m_RenderTargets)
@@ -294,7 +294,7 @@ public:
             m_PrepareLightsPass->CountLightsInScene(numEmissiveMeshes, numEmissiveTriangles);
             uint32_t numGeometryInstances = uint32_t(m_Scene->GetSceneGraph()->GetGeometryInstancesCount());
 
-            m_RtxdiResources = std::make_unique<RtxdiResources>(GetDevice(), *m_RtxdiContext,
+            m_RtxdiResources = std::make_unique<RtxdiResources>(GetDevice(), *m_restirDIContext,
                 numEmissiveMeshes, numEmissiveTriangles, numGeometryInstances);
 
             m_PrepareLightsPass->CreateBindingSet(*m_RtxdiResources);
@@ -335,22 +335,21 @@ public:
         m_Scene->Refresh(m_CommandList, GetFrameIndex());
 
         // Write the neighbor offset buffer data (only happens once)
-        m_RtxdiResources->InitializeNeighborOffsets(m_CommandList, *m_RtxdiContext);
+        m_RtxdiResources->InitializeNeighborOffsets(m_CommandList, m_restirDIContext->getStaticParameters().NeighborOffsetCount);
         
-        rtxdi::FrameParameters frameParameters;
         // The light indexing members of frameParameters are written by PrepareLightsPass below
-        frameParameters.frameIndex = GetFrameIndex();
+        m_restirDIContext->setFrameIndex(GetFrameIndex());
 
         // When the lights are static, there is no need to update them on every frame,
         // but it's simpler to do so.
-        m_PrepareLightsPass->Process(m_CommandList, frameParameters);
+        RTXDI_LightBufferParameters lightBufferParams = m_PrepareLightsPass->Process(m_CommandList);
 
         // Call the rendering pass - this includes primary rays, fused resampling, and shading
         m_RenderPass->Render(m_CommandList,
-            *m_RtxdiContext,
+            *m_restirDIContext,
             m_View, m_ViewPrevious,
             m_ui.lightingSettings,
-            frameParameters);
+            lightBufferParams);
 
         // Copy the render pass output to the swap chain
         m_CommonPasses->BlitTexture(m_CommandList, framebuffer, m_RenderTargets->HdrColor, &m_BindingCache);

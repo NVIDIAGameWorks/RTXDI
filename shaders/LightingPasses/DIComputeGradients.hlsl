@@ -12,7 +12,7 @@
 
 #include "RtxdiApplicationBridge.hlsli"
 
-#include <rtxdi/ResamplingFunctions.hlsli>
+#include <rtxdi/DIResamplingFunctions.hlsli>
 
 #ifdef WITH_NRD
 #undef WITH_NRD
@@ -32,7 +32,7 @@ void RayGen()
     uint2 GlobalIndex = DispatchRaysIndex().xy;
 #endif
 
-    const RTXDI_ResamplingRuntimeParameters params = g_Const.runtimeParams;
+    const RTXDI_RuntimeParameters params = g_Const.runtimeParams;
 
     // This shader runs one thread per image stratum, i.e. a square of pixels
     // (RTXDI_GRAD_FACTOR x RTXDI_GRAD_FACTOR) in size. One pixel is selected to
@@ -51,7 +51,7 @@ void RayGen()
     {
         // Translate the gradient stratum index (GlobalIndex) into reservoir and pixel positions.
         int2 srcReservoirPos = GlobalIndex * RTXDI_GRAD_FACTOR + int2(xx, yy);
-        int2 srcPixelPos = RTXDI_ReservoirPosToPixelPos(srcReservoirPos, g_Const.runtimeParams);
+        int2 srcPixelPos = RTXDI_DIReservoirPosToPixelPos(srcReservoirPos, params.activeCheckerboardField);
 
         if (any(srcPixelPos >= int2(g_Const.view.viewportSize)))
             continue;
@@ -59,7 +59,7 @@ void RayGen()
         // Find the matching pixel in the previous frame - that information is produced
         // by the temporal resampling or fused resampling shaders.
         int2 temporalPixelPos = u_TemporalSamplePositions[srcReservoirPos];
-        int2 temporalReservoirPos = RTXDI_PixelPosToReservoirPos(temporalPixelPos, g_Const.runtimeParams);
+        int2 temporalReservoirPos = RTXDI_PixelPosToReservoirPos(temporalPixelPos, params.activeCheckerboardField);
 
         // Load the previous frame sampled lighting luminance.
         // For invalid gradients, temporalPixelPos is negative, and prevLuminance will be 0
@@ -98,15 +98,15 @@ void RayGen()
 
         // Translate the pixel pos into reservoir pos - the math the same for both current and prev frames,
         // unlike the reverse translation that has to take the active checkerboard field into account.
-        int2 selectedCurrentOrPrevReservoirPos = RTXDI_PixelPosToReservoirPos(selectedCurrentOrPrevPixelPos, g_Const.runtimeParams);
+        int2 selectedCurrentOrPrevReservoirPos = RTXDI_PixelPosToReservoirPos(selectedCurrentOrPrevPixelPos, params.activeCheckerboardField);
 
         // Load the reservoir that was selected for gradient evaluation, either from the current or the previous frame.
-        RTXDI_Reservoir selectedReservoir = RTXDI_LoadReservoir(params,
+        RTXDI_DIReservoir selectedReservoir = RTXDI_LoadDIReservoir(g_Const.restirDI.reservoirBufferParams,
             selectedCurrentOrPrevReservoirPos,
-            usePrevSample ? g_Const.temporalInputBufferIndex : g_Const.shadeInputBufferIndex);
+            usePrevSample ? g_Const.restirDI.bufferIndices.temporalResamplingInputBufferIndex : g_Const.restirDI.bufferIndices.shadingInputBufferIndex);
 
         // Map the reservoir's light index into the other frame (previous or current)
-        int selectedMappedLightIndex = RAB_TranslateLightIndex(RTXDI_GetReservoirLightIndex(selectedReservoir), !usePrevSample);
+        int selectedMappedLightIndex = RAB_TranslateLightIndex(RTXDI_GetDIReservoirLightIndex(selectedReservoir), !usePrevSample);
         
         if (selectedMappedLightIndex >= 0)
         {
@@ -142,7 +142,7 @@ void RayGen()
             // Reconstruct the light sample
             RAB_LightInfo lightInfo = RAB_LoadLightInfo(selectedMappedLightIndex, !usePrevSample);
             RAB_LightSample lightSample = RAB_SamplePolymorphicLight(lightInfo,
-                surface, RTXDI_GetReservoirSampleUV(selectedReservoir));
+                surface, RTXDI_GetDIReservoirSampleUV(selectedReservoir));
 
             // Shade the other (previous or current) surface using the other light sample
             float3 diffuse = 0;

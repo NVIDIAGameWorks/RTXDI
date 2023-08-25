@@ -11,11 +11,11 @@
 #ifndef GI_RESERVOIR_HLSLI
 #define GI_RESERVOIR_HLSLI
 
-#include "RtxdiParameters.h"
+#include "ReSTIRGIParameters.h"
 #include "RtxdiHelpers.hlsli"
 
 // Define this macro to 0 if your shader needs read-only access to the reservoirs, 
-// to avoid compile errors in the RTXDI_StoreReservoir function
+// to avoid compile errors in the RTXDI_StoreDIReservoir function
 #ifndef RTXDI_ENABLE_STORE_RESERVOIR
 #define RTXDI_ENABLE_STORE_RESERVOIR 1
 #endif
@@ -112,21 +112,21 @@ RTXDI_GIReservoir RTXDI_UnpackGIReservoir(RTXDI_PackedGIReservoir data)
 }
 
 RTXDI_GIReservoir RTXDI_LoadGIReservoir(
-    RTXDI_ResamplingRuntimeParameters params,
+    RTXDI_DIReservoirBufferParameters reservoirParams,
     uint2 reservoirPosition,
     uint reservoirArrayIndex)
 {
-    uint pointer = RTXDI_ReservoirPositionToPointer(params, reservoirPosition, reservoirArrayIndex);
+    uint pointer = RTXDI_DIReservoirPositionToPointer(reservoirParams, reservoirPosition, reservoirArrayIndex);
     return RTXDI_UnpackGIReservoir(RTXDI_GI_RESERVOIR_BUFFER[pointer]);
 }
 
 RTXDI_GIReservoir RTXDI_LoadGIReservoir(
-    RTXDI_ResamplingRuntimeParameters params,
+    RTXDI_DIReservoirBufferParameters reservoirParams,
     uint2 reservoirPosition,
     uint reservoirArrayIndex,
     out uint miscFlags)
 {
-    uint pointer = RTXDI_ReservoirPositionToPointer(params, reservoirPosition, reservoirArrayIndex);
+    uint pointer = RTXDI_DIReservoirPositionToPointer(reservoirParams, reservoirPosition, reservoirArrayIndex);
     return RTXDI_UnpackGIReservoir(RTXDI_GI_RESERVOIR_BUFFER[pointer], miscFlags);
 }
 
@@ -134,33 +134,33 @@ RTXDI_GIReservoir RTXDI_LoadGIReservoir(
 
 void RTXDI_StorePackedGIReservoir(
     const RTXDI_PackedGIReservoir packedGIReservoir,
-    RTXDI_ResamplingRuntimeParameters params,
+    ReSTIRGI_ReservoirBufferParameters reservoirParams,
     uint2 reservoirPosition,
     uint reservoirArrayIndex)
 {
-    uint pointer = RTXDI_ReservoirPositionToPointer(params, reservoirPosition, reservoirArrayIndex);
+    uint pointer = RTXDI_DIReservoirPositionToPointer(reservoirParams, reservoirPosition, reservoirArrayIndex);
     RTXDI_GI_RESERVOIR_BUFFER[pointer] = packedGIReservoir;
 }
 
 void RTXDI_StoreGIReservoir(
     const RTXDI_GIReservoir reservoir,
-    RTXDI_ResamplingRuntimeParameters params,
+    ReSTIRGI_ReservoirBufferParameters reservoirParams,
     uint2 reservoirPosition,
     uint reservoirArrayIndex)
 {
     RTXDI_StorePackedGIReservoir(
-        RTXDI_PackGIReservoir(reservoir, 0), params, reservoirPosition, reservoirArrayIndex);
+        RTXDI_PackGIReservoir(reservoir, 0), reservoirParams, reservoirPosition, reservoirArrayIndex);
 }
 
 void RTXDI_StoreGIReservoir(
     const RTXDI_GIReservoir reservoir,
     const uint miscFlags,
-    RTXDI_ResamplingRuntimeParameters params,
+    ReSTIRGI_ReservoirBufferParameters reservoirParams,
     uint2 reservoirPosition,
     uint reservoirArrayIndex)
 {
     RTXDI_StorePackedGIReservoir(
-        RTXDI_PackGIReservoir(reservoir, miscFlags), params, reservoirPosition, reservoirArrayIndex);
+        RTXDI_PackGIReservoir(reservoir, miscFlags), reservoirParams, reservoirPosition, reservoirArrayIndex);
 }
 
 #endif // RTXDI_ENABLE_STORE_RESERVOIR

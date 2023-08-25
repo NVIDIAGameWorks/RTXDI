@@ -9,7 +9,9 @@
  **************************************************************************/
 
 #include "RtxdiResources.h"
-#include <rtxdi/RTXDI.h>
+#include <rtxdi/ReSTIRDI.h>
+#include <rtxdi/ReSTIRGI.h>
+#include <rtxdi/RISBufferSegmentAllocator.h>
 
 #include <donut/core/math/math.h>
 
@@ -18,7 +20,8 @@ using namespace dm;
 
 RtxdiResources::RtxdiResources(
     nvrhi::IDevice* device, 
-    const rtxdi::Context& context,
+    const rtxdi::ReSTIRDIContext& context,
+    const rtxdi::RISBufferSegmentAllocator& risBufferSegmentAllocator,
     uint32_t maxEmissiveMeshes,
     uint32_t maxEmissiveTriangles,
     uint32_t maxPrimitiveLights,
@@ -50,7 +53,7 @@ RtxdiResources::RtxdiResources(
 
 
     nvrhi::BufferDesc risBufferDesc;
-    risBufferDesc.byteSize = sizeof(uint32_t) * 2 * std::max(context.GetRisBufferElementCount(), 1u); // RG32_UINT per element
+    risBufferDesc.byteSize = sizeof(uint32_t) * 2 * std::max(risBufferSegmentAllocator.getTotalSizeInElements(), 1u); // RG32_UINT per element
     risBufferDesc.format = nvrhi::Format::RG32_UINT;
     risBufferDesc.canHaveTypedViews = true;
     risBufferDesc.initialState = nvrhi::ResourceStates::ShaderResource;
@@ -60,7 +63,7 @@ RtxdiResources::RtxdiResources(
     RisBuffer = device->createBuffer(risBufferDesc);
 
 
-    risBufferDesc.byteSize = sizeof(uint32_t) * 8 * std::max(context.GetRisBufferElementCount(), 1u); // RGBA32_UINT x 2 per element
+    risBufferDesc.byteSize = sizeof(uint32_t) * 8 * std::max(risBufferSegmentAllocator.getTotalSizeInElements(), 1u); // RGBA32_UINT x 2 per element
     risBufferDesc.format = nvrhi::Format::RGBA32_UINT;
     risBufferDesc.debugName = "RisLightDataBuffer";
     RisLightDataBuffer = device->createBuffer(risBufferDesc);
@@ -100,7 +103,7 @@ RtxdiResources::RtxdiResources(
     
 
     nvrhi::BufferDesc neighborOffsetBufferDesc;
-    neighborOffsetBufferDesc.byteSize = context.GetParameters().NeighborOffsetCount * 2;
+    neighborOffsetBufferDesc.byteSize = context.getStaticParameters().NeighborOffsetCount * 2;
     neighborOffsetBufferDesc.format = nvrhi::Format::RG8_SNORM;
     neighborOffsetBufferDesc.canHaveTypedViews = true;
     neighborOffsetBufferDesc.debugName = "NeighborOffsets";
@@ -110,8 +113,8 @@ RtxdiResources::RtxdiResources(
 
 
     nvrhi::BufferDesc lightReservoirBufferDesc;
-    lightReservoirBufferDesc.byteSize = sizeof(RTXDI_PackedReservoir) * context.GetReservoirBufferElementCount() * c_NumReservoirBuffers;
-    lightReservoirBufferDesc.structStride = sizeof(RTXDI_PackedReservoir);
+    lightReservoirBufferDesc.byteSize = sizeof(RTXDI_PackedDIReservoir) * context.getReservoirBufferParameters().reservoirArrayPitch * rtxdi::c_NumReSTIRDIReservoirBuffers;
+    lightReservoirBufferDesc.structStride = sizeof(RTXDI_PackedDIReservoir);
     lightReservoirBufferDesc.initialState = nvrhi::ResourceStates::UnorderedAccess;
     lightReservoirBufferDesc.keepInitialState = true;
     lightReservoirBufferDesc.debugName = "LightReservoirBuffer";
@@ -120,7 +123,7 @@ RtxdiResources::RtxdiResources(
 
 
     nvrhi::BufferDesc secondaryGBufferDesc;
-    secondaryGBufferDesc.byteSize = sizeof(SecondaryGBufferData) * context.GetReservoirBufferElementCount();
+    secondaryGBufferDesc.byteSize = sizeof(SecondaryGBufferData) * context.getReservoirBufferParameters().reservoirArrayPitch;
     secondaryGBufferDesc.structStride = sizeof(SecondaryGBufferData);
     secondaryGBufferDesc.initialState = nvrhi::ResourceStates::UnorderedAccess;
     secondaryGBufferDesc.keepInitialState = true;
@@ -151,7 +154,7 @@ RtxdiResources::RtxdiResources(
     LocalLightPdfTexture = device->createTexture(localLightPdfDesc);
     
     nvrhi::BufferDesc giReservoirBufferDesc;
-    giReservoirBufferDesc.byteSize = sizeof(RTXDI_PackedGIReservoir) * context.GetReservoirBufferElementCount() * c_NumGIReservoirBuffers;
+    giReservoirBufferDesc.byteSize = sizeof(RTXDI_PackedGIReservoir) * context.getReservoirBufferParameters().reservoirArrayPitch * rtxdi::c_NumReSTIRGIReservoirBuffers;
     giReservoirBufferDesc.structStride = sizeof(RTXDI_PackedGIReservoir);
     giReservoirBufferDesc.initialState = nvrhi::ResourceStates::UnorderedAccess;
     giReservoirBufferDesc.keepInitialState = true;
@@ -160,15 +163,15 @@ RtxdiResources::RtxdiResources(
     GIReservoirBuffer = device->createBuffer(giReservoirBufferDesc);
 }
 
-void RtxdiResources::InitializeNeighborOffsets(nvrhi::ICommandList* commandList, const rtxdi::Context& context)
+void RtxdiResources::InitializeNeighborOffsets(nvrhi::ICommandList* commandList, uint32_t neighborOffsetCount)
 {
     if (m_NeighborOffsetsInitialized)
         return;
 
     std::vector<uint8_t> offsets;
-    offsets.resize(context.GetParameters().NeighborOffsetCount* 2);
+    offsets.resize(neighborOffsetCount * 2);
 
-    context.FillNeighborOffsetBuffer(offsets.data());
+    rtxdi::FillNeighborOffsetBuffer(offsets.data(), neighborOffsetCount);
 
     commandList->writeBuffer(NeighborOffsetsBuffer, offsets.data(), offsets.size());
 

@@ -1,5 +1,5 @@
 /***************************************************************************
- # Copyright (c) 2020-2021, NVIDIA CORPORATION.  All rights reserved.
+ # Copyright (c) 2020-2023, NVIDIA CORPORATION.  All rights reserved.
  #
  # NVIDIA CORPORATION and its licensors retain all intellectual property
  # and proprietary rights in and to this software, related documentation
@@ -12,7 +12,7 @@
 
 #include <donut/engine/SceneGraph.h>
 #include <nvrhi/nvrhi.h>
-#include <rtxdi/RTXDI.h>
+#include <rtxdi/ReSTIRDI.h>
 #include <memory>
 #include <unordered_map>
 
@@ -66,10 +66,9 @@ public:
     void CreateBindingSet(RtxdiResources& resources);
     void CountLightsInScene(uint32_t& numEmissiveMeshes, uint32_t& numEmissiveTriangles);
     
-    void Process(
+    RTXDI_LightBufferParameters Process(
         nvrhi::ICommandList* commandList, 
-        const rtxdi::Context& context, 
+        const rtxdi::ReSTIRDIContext& context, 
         const std::vector<std::shared_ptr<donut::engine::Light>>& sceneLights,
-        bool enableImportanceSampledEnvironmentLight,
-        rtxdi::FrameParameters& outFrameParameters);
+        bool enableImportanceSampledEnvironmentLight);
 };

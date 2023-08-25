@@ -17,7 +17,9 @@
 #include <nvrhi/nvrhi.h>
 #include <memory>
 
-#include <rtxdi/RtxdiParameters.h>
+#include <rtxdi/ReSTIRDIParameters.h>
+#include <rtxdi/ReSTIRGIParameters.h>
+#include "../shaders/BRDFPTParameters.h"
 
 namespace donut::engine
 {
@@ -30,10 +32,9 @@ namespace donut::engine
 
 namespace rtxdi
 {
-    struct FrameParameters;
-    class Context;
-    struct ResamplingSettings;
-    struct ContextParameters;
+    class ReSTIRDIContext;
+    struct ReGIRStaticParameters;
+    class ImportanceSamplingContext;
 }
 
 class RenderTargets;
@@ -51,35 +52,9 @@ namespace nrd
 // A 32-bit bool type to directly use from the command line parser.
 typedef int ibool;
 
-enum class ResamplingMode : uint32_t
-{
-    None                = 0,
-    Temporal            = 1,
-    Spatial             = 2,
-    TemporalAndSpatial  = 3,
-    FusedSpatiotemporal = 4,
-};
-
-struct ReStirGIParameters
-{
-    ResamplingMode  resamplingMode = ResamplingMode::TemporalAndSpatial;
-    float           depthThreshold = 0.1f;
-    float           normalThreshold = 0.6f;
-    uint32_t        maxReservoirAge = 30;
-    uint32_t        maxHistoryLength = 8;
-    float           samplingRadius = 30.f;
-    uint32_t        numSpatialSamples = 2;
-
-    ibool           enableBoilingFilter = true;
-    float           boilingFilterStrength = 0.2f;
-    
-    uint32_t        temporalBiasCorrection = RTXDI_BIAS_CORRECTION_BASIC;
-    uint32_t        spatialBiasCorrection = RTXDI_BIAS_CORRECTION_BASIC;
-    ibool           enablePermutationSampling = false;
-    ibool           enableFinalVisibility = true;
-    ibool           enableFallbackSampling = true;
-    ibool           enableFinalMIS = true;
-};
+BRDFPathTracing_MaterialOverrideParameters getDefaultBRDFPathTracingMaterialOverrideParams();
+BRDFPathTracing_SecondarySurfaceReSTIRDIParameters getDefaultBRDFPathTracingSecondarySurfaceReSTIRDIParams();
+BRDFPathTracing_Parameters getDefaultBRDFPathTracingParams();
 
 class LightingPasses
 {
@@ -132,81 +107,28 @@ private:
     void ExecuteRayTracingPass(nvrhi::ICommandList* commandList, RayTracingPass& pass, bool enableRayCounts, const char* passName, dm::int2 dispatchSize, ProfilerSection::Enum profilerSection, nvrhi::IBindingSet* extraBindingSet = nullptr);
 
 public:
+
     struct RenderSettings
     {
-        ResamplingMode resamplingMode = ResamplingMode::TemporalAndSpatial;
         uint32_t denoiserMode = 0;
-        bool enableDenoiserInputPacking = false;
 
         ibool enablePreviousTLAS = true;
         ibool enableAlphaTestedGeometry = true;
         ibool enableTransparentGeometry = true;
-        ibool enableInitialVisibility = true;
-        ibool enableFinalVisibility = true;
         ibool enableRayCounts = true;
-        ibool enablePermutationSampling = true;
         ibool visualizeRegirCells = false;
-
-        uint32_t numPrimaryRegirSamples = 8;
-        uint32_t numPrimaryLocalLightSamples = 8;
-        uint32_t numPrimaryBrdfSamples = 1;
-        float brdfCutoff = 0;
-        uint32_t numPrimaryInfiniteLightSamples = 1;
-        uint32_t numPrimaryEnvironmentSamples = 1;
-        uint32_t numIndirectRegirSamples = 2;
-        uint32_t numIndirectLocalLightSamples = 2;
-        uint32_t numIndirectInfiniteLightSamples = 1;
-        uint32_t numIndirectEnvironmentSamples = 1;
-        
-        float temporalNormalThreshold = 0.5f;
-        float temporalDepthThreshold = 0.1f;
-        uint32_t maxHistoryLength = 20;
-        uint32_t temporalBiasCorrection = RTXDI_BIAS_CORRECTION_BASIC;
-        float permutationSamplingThreshold = 0.9f;
-
-        ibool enableBoilingFilter = true;
-        float boilingFilterStrength = 0.2f;
-        
-        uint32_t numSpatialSamples = 1;
-        uint32_t numDisocclusionBoostSamples = 8;
-        float spatialSamplingRadius = 32.f;
-        float spatialNormalThreshold = 0.5f;
-        float spatialDepthThreshold = 0.1f;
-        uint32_t spatialBiasCorrection = RTXDI_BIAS_CORRECTION_BASIC;
-
-        ibool reuseFinalVisibility = true;
-        uint32_t finalVisibilityMaxAge = 4;
-        float finalVisibilityMaxDistance = 16.f;
-
-        ibool enableSecondaryResampling = true;
-        uint32_t numSecondarySamples = 1;
-        float secondarySamplingRadius = 4.f;
-        float secondaryNormalThreshold = 0.9f;
-        float secondaryDepthThreshold = 0.1f;
-        uint32_t secondaryBiasCorrection = RTXDI_BIAS_CORRECTION_BASIC;
-
-        // Roughness of secondary surfaces is clamped to suppress caustics.
-        float minSecondaryRoughness = 0.5f;
-        
-        // Enables discarding the reservoirs if their lights turn out to be occluded in the final pass.
-        // This mode significantly reduces the noise in the penumbra but introduces bias. That bias can be 
-        // corrected by setting 'enableSpatialBiasCorrection' and 'enableTemporalBiasCorrection' to true.
-        ibool discardInvisibleSamples = false;
-        
-        ibool enableReGIR = true;
-        uint32_t numRegirBuildSamples = 8;
         
         ibool enableGradients = true;
         float gradientLogDarknessBias = -12.f;
         float gradientSensitivity = 8.f;
         float confidenceHistoryLength = 0.75f;
+
+        BRDFPathTracing_Parameters brdfptParams = getDefaultBRDFPathTracingParams();
         
 #if WITH_NRD
         const nrd::HitDistanceParameters* reblurDiffHitDistanceParams = nullptr;
         const nrd::HitDistanceParameters* reblurSpecHitDistanceParams = nullptr;
 #endif
-        
-        ReStirGIParameters reStirGI;
     };
 
     LightingPasses(
@@ -217,7 +139,7 @@ public:
         std::shared_ptr<Profiler> profiler,
         nvrhi::IBindingLayout* bindlessLayout);
 
-    void CreatePipelines(const rtxdi::ContextParameters& contextParameters, bool useRayQuery);
+    void CreatePipelines(const rtxdi::ReGIRStaticParameters& regirStaticParams, bool useRayQuery);
 
     void CreateBindingSet(
         nvrhi::rt::IAccelStruct* topLevelAS,
@@ -227,27 +149,25 @@ public:
 
     void PrepareForLightSampling(
         nvrhi::ICommandList* commandList,
-        rtxdi::Context& context,
+        rtxdi::ImportanceSamplingContext& context,
         const donut::engine::IView& view,
         const donut::engine::IView& previousView,
         const RenderSettings& localSettings,
-        const rtxdi::FrameParameters& frameParameters,
         bool enableAccumulation);
 
     void RenderDirectLighting(
         nvrhi::ICommandList* commandList,
-        rtxdi::Context& context,
+        rtxdi::ReSTIRDIContext& context,
         const donut::engine::IView& view,
         const RenderSettings& localSettings);
 
     void RenderBrdfRays(
         nvrhi::ICommandList* commandList,
-        rtxdi::Context& context,
+        rtxdi::ImportanceSamplingContext& isContext,
         const donut::engine::IView& view,
         const donut::engine::IView& previousView,
         const RenderSettings& localSettings,
         const GBufferSettings& gbufferSettings,
-        const rtxdi::FrameParameters& frameParameters,
         const EnvironmentLight& environmentLight,
         bool enableIndirect,
         bool enableAdditiveBlend,
@@ -263,11 +183,16 @@ public:
     [[nodiscard]] uint32_t GetOutputReservoirBufferIndex() const { return m_CurrentFrameOutputReservoir; }
     [[nodiscard]] uint32_t GetGIOutputReservoirBufferIndex() const { return m_CurrentFrameGIOutputReservoir; }
 
-    static donut::engine::ShaderMacro GetRegirMacro(const rtxdi::ContextParameters& contextParameters);
+    static donut::engine::ShaderMacro GetRegirMacro(const rtxdi::ReGIRStaticParameters& regirStaticParams);
 
 private:
     void FillResamplingConstants(
         ResamplingConstants& constants,
         const RenderSettings& lightingSettings,
-        const rtxdi::FrameParameters& frameParameters);
+        const rtxdi::ImportanceSamplingContext& isContext);
+
+    void createPresamplingPipelines();
+    void createReGIRPipeline(const rtxdi::ReGIRStaticParameters& regirStaticParams, const std::vector<donut::engine::ShaderMacro>& regirMacros);
+    void createReSTIRDIPipelines(const std::vector<donut::engine::ShaderMacro>& regirMacros, bool useRayQuery);
+    void createReSTIRGIPipelines(bool useRayQuery);
 };

@@ -14,7 +14,11 @@
 #include <donut/shaders/view_cb.h>
 #include <donut/shaders/sky_cb.h>
 
-#include <rtxdi/RtxdiParameters.h>
+#include <rtxdi/ReSTIRDIParameters.h>
+#include <rtxdi/ReGIRParameters.h>
+#include <rtxdi/ReSTIRGIParameters.h>
+
+#include "BRDFPTParameters.h"
 
 #define TASK_PRIMITIVE_LIGHT_BIT 0x80000000u
 
@@ -177,7 +181,9 @@ struct ConfidenceConstants
 
 struct VisualizationConstants
 {
-    RTXDI_ResamplingRuntimeParameters runtimeParams;
+    RTXDI_RuntimeParameters runtimeParams;
+    RTXDI_DIReservoirBufferParameters restirDIReservoirBufferParams;
+    RTXDI_DIReservoirBufferParameters restirGIReservoirBufferParams;
 
     int2 outputSize;
     float2 resolutionScale;
@@ -187,11 +193,23 @@ struct VisualizationConstants
     uint enableAccumulation;
 };
 
+struct SceneConstants
+{
+    uint enableEnvironmentMap; // Global. Affects BRDFRayTracing's GI code, plus RTXDI, ReGIR, etc.
+    uint environmentMapTextureIndex; // Global
+    float environmentScale;
+    float environmentRotation;
+
+    uint enableAlphaTestedGeometry;
+    uint enableTransparentGeometry;
+    uint2 pad1;
+};
+
 struct ResamplingConstants
 {
     PlanarViewConstants view;
     PlanarViewConstants prevView;
-    RTXDI_ResamplingRuntimeParameters runtimeParams;
+    RTXDI_RuntimeParameters runtimeParams;
     
     float4 reblurDiffHitDistParams;
     float4 reblurSpecHitDistParams;
@@ -199,88 +217,31 @@ struct ResamplingConstants
     uint frameIndex;
     uint enablePreviousTLAS;
     uint denoiserMode;
-    uint pad;
+    uint discountNaiveSamples;
     
     uint enableBrdfIndirect;
-    uint enableBrdfAdditiveBlend;
-    uint enableAlphaTestedGeometry;
-    uint enableReSTIRIndirect;
-    
-    uint enableTransparentGeometry;
-    uint enableDenoiserInputPacking;
+    uint enableBrdfAdditiveBlend;    
+    uint enableAccumulation; // StoreShadingOutput
+    uint pad1;
+
+    SceneConstants sceneConstants;
+
+    // Common buffer params
+    RTXDI_LightBufferParameters lightBufferParams;
+    RTXDI_RISBufferSegmentParameters localLightsRISBufferSegmentParams;
+    RTXDI_RISBufferSegmentParameters environmentLightRISBufferSegmentParams;
+
+    // Algo-specific params
+    ReSTIRDI_Parameters restirDI;
+    ReGIR_Parameters regir;
+    ReSTIRGI_Parameters restirGI;
+    BRDFPathTracing_Parameters brdfPT;
+
     uint visualizeRegirCells;
-    float brdfCutoff;
-
-    uint numPrimaryRegirSamples;
-    uint numPrimaryLocalLightSamples;
-    uint numPrimaryBrdfSamples;
-    uint numPrimaryInfiniteLightSamples;
+    uint3 pad2;
     
-    uint numIndirectRegirSamples;
-    uint numIndirectLocalLightSamples;
-    uint numIndirectInfiniteLightSamples;
-    uint enableIndirectEmissiveSurfaces;
-
-    uint enableInitialVisibility;
-    uint enableFinalVisibility;
-    uint initialOutputBufferIndex;
-    uint enableFallbackSampling;
-
-    uint temporalInputBufferIndex;
-    uint temporalOutputBufferIndex;
-    uint spatialInputBufferIndex;
-    uint spatialOutputBufferIndex;
-
-    uint shadeInputBufferIndex;
-    uint discardInvisibleSamples;
-    uint maxHistoryLength;
-    float boilingFilterStrength;
-
-    float temporalDepthThreshold;
-    float temporalNormalThreshold;
-    float spatialDepthThreshold;
-    float spatialNormalThreshold;
-
-    uint temporalBiasCorrection;
-    uint spatialBiasCorrection;
-    uint numSpatialSamples;
-    uint numDisocclusionBoostSamples;
-
-    float spatialSamplingRadius;
-    uint reuseFinalVisibility;
-    uint finalVisibilityMaxAge;
-    float finalVisibilityMaxDistance;
-
     uint2 environmentPdfTextureSize;
-    uint numPrimaryEnvironmentSamples;
-    uint numIndirectEnvironmentSamples;
-
     uint2 localLightPdfTextureSize;
-    uint numRegirBuildSamples;
-    uint environmentMapImportanceSampling;
-
-    uint enableEnvironmentMap;
-    uint environmentMapTextureIndex;
-    float environmentScale;
-    float environmentRotation;
-
-    uint enablePermutationSampling;
-    uint enableAccumulation;
-    uint numSecondarySamples;
-    uint secondaryBiasCorrection;
-
-    float secondarySamplingRadius;
-    float secondaryDepthThreshold;
-    float secondaryNormalThreshold;
-    float permutationSamplingThreshold;
-
-    float roughnessOverride;
-    float metalnessOverride;
-    float minSecondaryRoughness;
-    uint giReservoirMaxAge;
-
-    uint giEnableFinalVisibility;
-    uint giEnableFinalMIS;
 };
 
 struct PerPassConstants

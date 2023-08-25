@@ -1,7 +1,7 @@
 
 # RTXDI SDK and Sample Applications
 
-Version 2.0.0.
+Version 2.1.0.
 
 [Change Log](ChangeLog.md)
 
@@ -18,7 +18,7 @@ For more information about RTXDI, see the [NVIDIA Developer Page](https://develo
 [`rtxdi-sdk`](rtxdi-sdk) contains the SDK source code files that are meant to be included into the application build:
 
 - [`rtxdi-sdk/include`](rtxdi-sdk/include) has the include files, both for host code and for shaders
-- [`rtxdi-sdk/include/rtxdi/ResamplingFunctions.hlsli`](rtxdi-sdk/include/rtxdi/ResamplingFunctions.hlsli) is the main shader include file that contains the resampling implementation
+- [`rtxdi-sdk/include/rtxdi/DIResamplingFunctions.hlsli`](rtxdi-sdk/include/rtxdi/DIResamplingFunctions.hlsli) is the main shader include file that contains the resampling implementation
 - [`rtxdi-sdk/shaders`](rtxdi-sdk/shaders) has the shader files that are supposed to be compiled through whatever means the application normally uses
 - [`rtxdi-sdk/src`](rtxdi-sdk/src) has the host code with various utility functions for setting up the parameters and resources for resampling
 
@@ -98,6 +98,8 @@ Additional contents delivered through packman:
 The RTXDI sample applications can run using D3D12 or Vulkan, which is achieved through the [NVRHI](https://github.com/NVIDIAGameWorks/nvrhi) rendering API abstraction layer and HLSL shader compilation to SPIR-V through DXC (DirectX Shader Compiler). We deliver a compatible version of DXC through packman. If you wish to use a different (e.g. newer) version of DXC, it can be obtained from [Microsoft/DirectXShaderCompiler](https://github.com/Microsoft/DirectXShaderCompiler) on GitHub. The path to a custom version of DXC can be configured using the `DXC_PATH` and `DXC_SPIRV_PATH` CMake variables.
 
 By default, the sample apps will run using D3D12 on Windows. To start them in Vulkan mode, add `--vk` to the command line. To compile the sample apps without Vulkan support, set the CMake variable `DONUT_WITH_VULKAN` to `OFF` and re-generate the project.
+
+To enable SPIV-V compileation tests, set the `GLSLANG_PATH` variable in CMake to the path to glslangValidator.exe in your Vulkan installation.
 
 ## Integration
 

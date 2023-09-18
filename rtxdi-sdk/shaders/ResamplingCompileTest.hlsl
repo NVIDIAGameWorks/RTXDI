@@ -12,7 +12,8 @@
 // that they do not make any undeclared assumptions about the contents of the 
 // user-defined structures and about the functions being available.
 
-#include <rtxdi/RtxdiParameters.h>
+#include <rtxdi/ReSTIRDIParameters.h>
+#include <rtxdi/ReSTIRGIParameters.h>
 
 struct RAB_RandomSamplerState
 {
@@ -53,6 +54,7 @@ void RAB_GetLightDirDistance(RAB_Surface surface, RAB_LightSample lightSample,
     out float3 o_lightDir,
     out float o_lightDistance)
 {
+    o_lightDistance = 0.f;
 }
 
 bool RAB_GetConservativeVisibility(RAB_Surface surface, RAB_LightSample lightSample)
@@ -145,7 +147,7 @@ int RAB_TranslateLightIndex(uint lightIndex, bool currentToPrevious)
     return -1;
 }
 
-float RAB_EvaluateLocalLightSourcePdf(RTXDI_ResamplingRuntimeParameters params, uint lightIndex)
+float RAB_EvaluateLocalLightSourcePdf(uint lightIndex)
 {
     return 0.0;
 }
@@ -172,6 +174,7 @@ float2 RAB_GetEnvironmentMapRandXYFromDir(float3 worldDir)
 
 bool RAB_TraceRayForLocalLight(float3 origin, float3 direction, float tMin, float tMax, out uint o_lightIndex, out float2 o_randXY)
 {
+    o_lightIndex = 0;
     return false;
 }
 
@@ -204,7 +207,7 @@ bool RAB_GetTemporalConservativeVisibility(RAB_Surface currentSurface, RAB_Surfa
 #define RTXDI_BOILING_FILTER_GROUP_SIZE 16
 
 RWBuffer<uint2> u_RisBuffer;
-RWStructuredBuffer<RTXDI_PackedReservoir> u_LightReservoirs;
+RWStructuredBuffer<RTXDI_PackedDIReservoir> u_LightReservoirs;
 RWStructuredBuffer<RTXDI_PackedGIReservoir> u_GIReservoirs;
 Buffer<float2> t_NeighborOffsets;
 
@@ -213,7 +216,9 @@ Buffer<float2> t_NeighborOffsets;
 #define RTXDI_GI_RESERVOIR_BUFFER u_GIReservoirs
 #define RTXDI_NEIGHBOR_OFFSETS_BUFFER t_NeighborOffsets
 
-#include <rtxdi/ResamplingFunctions.hlsli>
+#include <rtxdi/PresamplingFunctions.hlsli>
+#include <rtxdi/InitialSamplingFunctions.hlsli>
+#include <rtxdi/DIResamplingFunctions.hlsli>
 
 [numthreads(1, 1, 1)]
 void main()

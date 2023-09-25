@@ -17,13 +17,13 @@
 // direct diffuse/specular and indirect diffuse/specular signals
 
 float16_t2 RTXDI_GetDlssEnhancementDirectFactor(
-  int2 pixel, float3 lightSamplePosition, float3 cameraPosition,
+  int2 pixel, float3 lightSamplePosition, float3 lightSampleDirection, bool lightSampleInfinite, float3 cameraPosition,
   float neighborDepthThreshold, float neighborNormalThreshold, float brdfClampMin, float brdfClampMax)
 {
   float16_t2 factor = float16_t2(1);
 
   const RAB_Surface centerSurface = RAB_GetGBufferSurface(pixel, false);
-  const SurfaceMaterialInteractionSplitWeight centerBrdf = RAB_CalculateBRDF(normalize(lightSamplePosition - centerSurface.minimalSurfaceInteraction.position), centerSurface);
+  const SurfaceMaterialInteractionSplitWeight centerBrdf = RAB_CalculateBRDF(lightSampleDirection, centerSurface);
   float16_t2 centerBrdfValue;
   centerBrdfValue.x = calcBt709Luminance(centerBrdf.diffuseReflectionWeight);
   centerBrdfValue.y = calcBt709Luminance(centerBrdf.specularReflectionWeight);
@@ -62,7 +62,20 @@ float16_t2 RTXDI_GetDlssEnhancementDirectFactor(
     neighborSurface.opaqueSurfaceMaterialInteraction.albedo = centerDiffuseAlbedo;
     neighborSurface.opaqueSurfaceMaterialInteraction.baseReflectivity = centerSpecularF0;
 
-    SurfaceMaterialInteractionSplitWeight neighborBrdf = RAB_CalculateBRDF(normalize(lightSamplePosition - neighborSurface.minimalSurfaceInteraction.position), neighborSurface);
+    float3 neighborLightDirection;
+
+    if (lightSampleInfinite)
+    {
+      // Note: For infinite light samples the shift to a neighbor position does not change the direction of
+      // the light sample.
+      neighborLightDirection = lightSampleDirection;
+    }
+    else
+    {
+      neighborLightDirection = normalize(lightSamplePosition - neighborSurface.minimalSurfaceInteraction.position);
+    }
+
+    SurfaceMaterialInteractionSplitWeight neighborBrdf = RAB_CalculateBRDF(neighborLightDirection, neighborSurface);
     float16_t2 neighborBrdfValue;
     neighborBrdfValue.x = calcBt709Luminance(neighborBrdf.diffuseReflectionWeight);
     neighborBrdfValue.y = calcBt709Luminance(neighborBrdf.specularReflectionWeight);

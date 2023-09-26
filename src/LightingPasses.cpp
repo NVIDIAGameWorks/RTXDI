@@ -310,14 +310,14 @@ void LightingPasses::createReGIRPipeline(const rtxdi::ReGIRStaticParameters& reg
 
 void LightingPasses::createReSTIRDIPipelines(const std::vector<donut::engine::ShaderMacro>& regirMacros, bool useRayQuery)
 {
-    m_GenerateInitialSamplesPass.Init(m_Device, *m_ShaderFactory, "app/LightingPasses/GenerateInitialSamples.hlsl", regirMacros, useRayQuery, RTXDI_SCREEN_SPACE_GROUP_SIZE, m_BindingLayout, nullptr, m_BindlessLayout);
-    m_TemporalResamplingPass.Init(m_Device, *m_ShaderFactory, "app/LightingPasses/TemporalResampling.hlsl", {}, useRayQuery, RTXDI_SCREEN_SPACE_GROUP_SIZE, m_BindingLayout, nullptr, m_BindlessLayout);
-    m_SpatialResamplingPass.Init(m_Device, *m_ShaderFactory, "app/LightingPasses/SpatialResampling.hlsl", {}, useRayQuery, RTXDI_SCREEN_SPACE_GROUP_SIZE, m_BindingLayout, nullptr, m_BindlessLayout);
-    m_ShadeSamplesPass.Init(m_Device, *m_ShaderFactory, "app/LightingPasses/ShadeSamples.hlsl", regirMacros, useRayQuery, RTXDI_SCREEN_SPACE_GROUP_SIZE, m_BindingLayout, nullptr, m_BindlessLayout);
+    m_GenerateInitialSamplesPass.Init(m_Device, *m_ShaderFactory, "app/LightingPasses/DIGenerateInitialSamples.hlsl", regirMacros, useRayQuery, RTXDI_SCREEN_SPACE_GROUP_SIZE, m_BindingLayout, nullptr, m_BindlessLayout);
+    m_TemporalResamplingPass.Init(m_Device, *m_ShaderFactory, "app/LightingPasses/DITemporalResampling.hlsl", {}, useRayQuery, RTXDI_SCREEN_SPACE_GROUP_SIZE, m_BindingLayout, nullptr, m_BindlessLayout);
+    m_SpatialResamplingPass.Init(m_Device, *m_ShaderFactory, "app/LightingPasses/DISpatialResampling.hlsl", {}, useRayQuery, RTXDI_SCREEN_SPACE_GROUP_SIZE, m_BindingLayout, nullptr, m_BindlessLayout);
+    m_ShadeSamplesPass.Init(m_Device, *m_ShaderFactory, "app/LightingPasses/DIShadeSamples.hlsl", regirMacros, useRayQuery, RTXDI_SCREEN_SPACE_GROUP_SIZE, m_BindingLayout, nullptr, m_BindlessLayout);
     m_BrdfRayTracingPass.Init(m_Device, *m_ShaderFactory, "app/LightingPasses/BrdfRayTracing.hlsl", {}, useRayQuery, RTXDI_SCREEN_SPACE_GROUP_SIZE, m_BindingLayout, nullptr, m_BindlessLayout);
     m_ShadeSecondarySurfacesPass.Init(m_Device, *m_ShaderFactory, "app/LightingPasses/ShadeSecondarySurfaces.hlsl", regirMacros, useRayQuery, RTXDI_SCREEN_SPACE_GROUP_SIZE, m_BindingLayout, nullptr, m_BindlessLayout);
-    m_FusedResamplingPass.Init(m_Device, *m_ShaderFactory, "app/LightingPasses/FusedResampling.hlsl", regirMacros, useRayQuery, RTXDI_SCREEN_SPACE_GROUP_SIZE, m_BindingLayout, nullptr, m_BindlessLayout);
-    m_GradientsPass.Init(m_Device, *m_ShaderFactory, "app/LightingPasses/ComputeGradients.hlsl", {}, useRayQuery, RTXDI_SCREEN_SPACE_GROUP_SIZE, m_BindingLayout, nullptr, m_BindlessLayout);
+    m_FusedResamplingPass.Init(m_Device, *m_ShaderFactory, "app/LightingPasses/DIFusedResampling.hlsl", regirMacros, useRayQuery, RTXDI_SCREEN_SPACE_GROUP_SIZE, m_BindingLayout, nullptr, m_BindlessLayout);
+    m_GradientsPass.Init(m_Device, *m_ShaderFactory, "app/LightingPasses/DIComputeGradients.hlsl", {}, useRayQuery, RTXDI_SCREEN_SPACE_GROUP_SIZE, m_BindingLayout, nullptr, m_BindlessLayout);
 }
 
 void LightingPasses::createReSTIRGIPipelines(bool useRayQuery)

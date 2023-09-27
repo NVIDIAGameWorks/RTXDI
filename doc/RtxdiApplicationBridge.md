@@ -1,7 +1,7 @@
 
 # RTXDI Application Bridge
 
-The application must implement a number of structures and functions on the shader side that are necessary for the RTXDI resampling functions to operate. These structures and functions must be declared before including the main RTXDI header file, [`ResamplingFunctions.hlsli`](../rtxdi-sdk/include/rtxdi/ResamplingFunctions.hlsli).
+The application must implement a number of structures and functions on the shader side that are necessary for the RTXDI resampling functions to operate. These structures and functions must be declared before including the main RTXDI header file, [`DIResamplingFunctions.hlsli`](../rtxdi-sdk/include/rtxdi/DIResamplingFunctions.hlsli).
 
 A reference implementation of the bridge functions and structures with support for multiple light types and fractional visibility (translucency) can be found in [`RtxdiApplicationBridge.hlsli`](../shaders/LightingPasses/RtxdiApplicationBridge.hlsli). This implementation uses some functionality defined in other header files, most notably, polymorphic lights are implemented in [`PolymorphicLight.hlsli`](../shaders/PolymorphicLight.hlsli).
 
@@ -164,7 +164,7 @@ This function is used in the spatial resampling functions for ray traced bias co
 
 Same visibility ray tracing as [`RAB_GetConservativeVisibility`](#rab_getconservativevisibility) but for surfaces and light samples originating from the previous frame.
 
-When the previous frame TLAS and BLAS data is available, the implementation should use that previous data and the `previousSurface` parameter. When the previous acceleration structures are not available, the implementation should use the `currentSurface` parameter, but that will make the results temporarily biased and, in some cases, more noisy. Specifically, the fused spatio-temporal resampling algorithm will produce very noisy results on animated objects.
+When the previous frame TLAS and BLAS data is available, the implementation should use that previous data and the `previousSurface` parameter. When the previous acceleration structures are not available, the implementation should use the `currentSurface` parameter, but that will make the results temporarily biased and, in some cases, more noisy. Specifically, the fused spatiotemporal resampling algorithm will produce very noisy results on animated objects.
 
 
 ## BRDF Sampling Related Functions
@@ -183,7 +183,7 @@ Computes the probability of a particular direction being sampled from the enviro
 
 ### `RAB_EvaluateLocalLightSourcePdf`
 
-`float RAB_EvaluateLocalLightSourcePdf(RTXDI_ResamplingRuntimeParameters params, uint lightIndex)`
+`float RAB_EvaluateLocalLightSourcePdf(uint lightIndex)`
 
 Computes the probability of a particular light being sampled from the local light pool with importance sampling, based on the local light PDF texture.
 

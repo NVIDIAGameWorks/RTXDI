@@ -1,5 +1,5 @@
 /***************************************************************************
- # Copyright (c) 2020-2021, NVIDIA CORPORATION.  All rights reserved.
+ # Copyright (c) 2020-2023, NVIDIA CORPORATION.  All rights reserved.
  #
  # NVIDIA CORPORATION and its licensors retain all intellectual property
  # and proprietary rights in and to this software, related documentation
@@ -21,8 +21,6 @@
 #include <nvrhi/utils.h>
 
 #include <utility>
-
-#include "RtxgiIntegration.h"
 
 using namespace donut::math;
 #include "../shaders/ShaderParameters.h"
@@ -63,18 +61,6 @@ CompositingPass::CompositingPass(
     };
 
     m_BindingLayout = m_Device->createBindingLayout(bindingLayoutDesc);
-
-#ifdef WITH_RTXGI
-    nvrhi::BindingLayoutDesc rtxgiBindingLayoutDesc;
-    rtxgiBindingLayoutDesc.visibility = nvrhi::ShaderType::Compute;
-    rtxgiBindingLayoutDesc.bindings = {
-        nvrhi::BindingLayoutItem::StructuredBuffer_SRV(10),
-        nvrhi::BindingLayoutItem::StructuredBuffer_SRV(11),
-        nvrhi::BindingLayoutItem::Sampler(10)
-    };
-
-    m_RtxgiBindingLayout = m_Device->createBindingLayout(rtxgiBindingLayoutDesc);
-#endif
 }
 
 void CompositingPass::CreatePipeline()
@@ -85,13 +71,11 @@ void CompositingPass::CreatePipeline()
 
     nvrhi::ComputePipelineDesc pipelineDesc;
     pipelineDesc.bindingLayouts = { m_BindingLayout, m_BindlessLayout };
-    if (m_RtxgiBindingLayout)
-        pipelineDesc.addBindingLayout(m_RtxgiBindingLayout);
     pipelineDesc.CS = m_ComputeShader;
     m_ComputePipeline = m_Device->createComputePipeline(pipelineDesc);
 }
 
-void CompositingPass::CreateBindingSet(const RenderTargets& renderTargets, const class RtxgiIntegration* rtxgi)
+void CompositingPass::CreateBindingSet(const RenderTargets& renderTargets)
 {
     nvrhi::BindingSetDesc bindingSetDesc;
 
@@ -121,20 +105,6 @@ void CompositingPass::CreateBindingSet(const RenderTargets& renderTargets, const
     bindingSetDesc.bindings[3].resourceHandle = renderTargets.PrevGBufferSpecularRough;
 
     m_BindingSetOdd = m_Device->createBindingSet(bindingSetDesc, m_BindingLayout);
-
-#ifdef WITH_RTXGI
-    assert(rtxgi);
-
-    nvrhi::BindingSetDesc rtxgiBindingSetDesc;
-
-    rtxgiBindingSetDesc.bindings = {
-        nvrhi::BindingSetItem::StructuredBuffer_SRV(10, rtxgi->GetConstantBuffer()),
-        nvrhi::BindingSetItem::StructuredBuffer_SRV(11, rtxgi->GetVolumeResourceIndicesBuffer()),
-        nvrhi::BindingSetItem::Sampler(10, rtxgi->GetProbeSampler()),
-    };
-
-    m_RtxgiBindingSet = m_Device->createBindingSet(rtxgiBindingSetDesc, m_RtxgiBindingLayout);
-#endif
 }
 
 void CompositingPass::Render(
@@ -142,7 +112,6 @@ void CompositingPass::Render(
     const donut::engine::IView& view,
     const donut::engine::IView& viewPrev,
     const uint32_t denoiserMode,
-    const uint32_t numRtxgiVolumes,
     const bool checkerboard,
     const UIData& ui,
     const EnvironmentLight& environmentLight)
@@ -162,13 +131,10 @@ void CompositingPass::Render(
     constants.noiseMix = ui.noiseMix;
     constants.noiseClampLow = ui.noiseClampLow;
     constants.noiseClampHigh = ui.noiseClampHigh;
-    constants.numRtxgiVolumes = numRtxgiVolumes;
     commandList->writeBuffer(m_ConstantBuffer, &constants, sizeof(constants));
 
     nvrhi::ComputeState state;
     state.bindings = { m_BindingSetEven, m_Scene->GetDescriptorTable() };
-    if (m_RtxgiBindingSet)
-        state.addBindingSet(m_RtxgiBindingSet);
     state.pipeline = m_ComputePipeline;
     commandList->setComputeState(state);
 

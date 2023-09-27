@@ -17,7 +17,10 @@
 
 #include "RtxdiApplicationBridge.hlsli"
 
-#include <rtxdi/ResamplingFunctions.hlsli>
+#include <rtxdi/DIResamplingFunctions.hlsli>
+#if RTXDI_REGIR_MODE != RTXDI_REGIR_DISABLED
+#include "rtxdi/ReGIRSampling.hlsli"
+#endif
 
 #ifdef WITH_NRD
 #define NRD_HEADER_ONLY
@@ -38,15 +41,15 @@ void RayGen()
     uint2 GlobalIndex = DispatchRaysIndex().xy;
 #endif
 
-    const RTXDI_ResamplingRuntimeParameters params = g_Const.runtimeParams;
+    const RTXDI_RuntimeParameters params = g_Const.runtimeParams;
 
-    uint2 pixelPosition = RTXDI_ReservoirPosToPixelPos(GlobalIndex, params);
+    uint2 pixelPosition = RTXDI_DIReservoirPosToPixelPos(GlobalIndex, params.activeCheckerboardField);
 
     RAB_RandomSamplerState rng = RAB_InitRandomSampler(pixelPosition, 2);
 
     RAB_Surface surface = RAB_GetGBufferSurface(pixelPosition, false);
 
-    RTXDI_Reservoir reservoir = RTXDI_LoadReservoir(params, GlobalIndex, g_Const.initialOutputBufferIndex);
+    RTXDI_DIReservoir reservoir = RTXDI_LoadDIReservoir(g_Const.restirDI.reservoirBufferParams, GlobalIndex, g_Const.restirDI.bufferIndices.initialSamplingOutputBufferIndex);
 
     int2 temporalSamplePixelPos = -1;
 
@@ -54,36 +57,38 @@ void RayGen()
     motionVector = convertMotionVectorToPixelSpace(g_Const.view, g_Const.prevView, pixelPosition, motionVector);
 
     bool usePermutationSampling = false;
-    if (g_Const.enablePermutationSampling)
+    if (g_Const.restirDI.temporalResamplingParams.enablePermutationSampling)
     {
         // Permutation sampling makes more noise on thin, high-detail objects.
         usePermutationSampling = !IsComplexSurface(pixelPosition, surface);
     }
 
-    RTXDI_SpatioTemporalResamplingParameters stparams;
+    RTXDI_DISpatioTemporalResamplingParameters stparams;
     stparams.screenSpaceMotion = motionVector;
-    stparams.sourceBufferIndex = g_Const.temporalInputBufferIndex;
-    stparams.maxHistoryLength = g_Const.maxHistoryLength;
-    stparams.biasCorrectionMode = g_Const.temporalBiasCorrection;
-    stparams.depthThreshold = g_Const.temporalDepthThreshold;
-    stparams.normalThreshold = g_Const.temporalNormalThreshold;
-    stparams.numSamples = g_Const.numSpatialSamples + 1;
-    stparams.numDisocclusionBoostSamples = g_Const.numDisocclusionBoostSamples;
-    stparams.samplingRadius = g_Const.spatialSamplingRadius;
-    stparams.enableVisibilityShortcut = g_Const.discardInvisibleSamples;
+    stparams.sourceBufferIndex = g_Const.restirDI.bufferIndices.temporalResamplingInputBufferIndex;
+    stparams.maxHistoryLength = g_Const.restirDI.temporalResamplingParams.maxHistoryLength;
+    stparams.biasCorrectionMode = g_Const.restirDI.temporalResamplingParams.temporalBiasCorrection;
+    stparams.depthThreshold = g_Const.restirDI.temporalResamplingParams.temporalDepthThreshold;
+    stparams.normalThreshold = g_Const.restirDI.temporalResamplingParams.temporalNormalThreshold;
+    stparams.numSamples = g_Const.restirDI.spatialResamplingParams.numSpatialSamples + 1;
+    stparams.numDisocclusionBoostSamples = g_Const.restirDI.spatialResamplingParams.numDisocclusionBoostSamples;
+    stparams.samplingRadius = g_Const.restirDI.spatialResamplingParams.spatialSamplingRadius;
+    stparams.enableVisibilityShortcut = g_Const.restirDI.temporalResamplingParams.discardInvisibleSamples;
     stparams.enablePermutationSampling = usePermutationSampling;
     stparams.enableMaterialSimilarityTest = true;
+    stparams.uniformRandomNumber = g_Const.restirDI.temporalResamplingParams.uniformRandomNumber;
+    stparams.discountNaiveSamples = g_Const.discountNaiveSamples;
 
     RAB_LightSample lightSample;
-    reservoir = RTXDI_SpatioTemporalResampling(pixelPosition, surface, reservoir,
-            rng, stparams, params, temporalSamplePixelPos, lightSample);
+    reservoir = RTXDI_DISpatioTemporalResampling(pixelPosition, surface, reservoir,
+            rng, params, g_Const.restirDI.reservoirBufferParams, stparams, temporalSamplePixelPos, lightSample);
 
     u_TemporalSamplePositions[GlobalIndex] = temporalSamplePixelPos;
 
 #ifdef RTXDI_ENABLE_BOILING_FILTER
-    if (g_Const.boilingFilterStrength > 0)
+    if (g_Const.restirDI.temporalResamplingParams.enableBoilingFilter)
     {
-        RTXDI_BoilingFilter(LocalIndex, g_Const.boilingFilterStrength, params, reservoir);
+        RTXDI_BoilingFilter(LocalIndex, g_Const.restirDI.temporalResamplingParams.boilingFilterStrength, reservoir);
     }
 #endif
 
@@ -92,7 +97,7 @@ void RayGen()
     float lightDistance = 0;
     float2 currLuminance = 0;
 
-    if (RTXDI_IsValidReservoir(reservoir))
+    if (RTXDI_IsValidDIReservoir(reservoir))
     {
         // lightSample is produced by the RTXDI_SampleLightsForSurface and RTXDI_SpatioTemporalResampling calls above
         ShadeSurfaceWithLightSample(reservoir, surface, lightSample,
@@ -107,15 +112,15 @@ void RayGen()
     // Discard the pixels where the visibility was reused, as gradients need actual visibility.
     u_RestirLuminance[GlobalIndex] = currLuminance * (reservoir.age > 0 ? 0 : 1);
 
-    RTXDI_StoreReservoir(reservoir, params, GlobalIndex, g_Const.shadeInputBufferIndex);
+    RTXDI_StoreDIReservoir(reservoir, g_Const.restirDI.reservoirBufferParams, GlobalIndex, g_Const.restirDI.bufferIndices.shadingInputBufferIndex);
 
 #if RTXDI_REGIR_MODE != RTXDI_REGIR_DISABLED
     if (g_Const.visualizeRegirCells)
     {
-        diffuse *= RTXDI_VisualizeReGIRCells(g_Const.runtimeParams, RAB_GetSurfaceWorldPos(surface));
+        diffuse *= RTXDI_VisualizeReGIRCells(g_Const.regir, RAB_GetSurfaceWorldPos(surface));
     }
 #endif
 
     StoreShadingOutput(GlobalIndex, pixelPosition, 
-        surface.viewDepth, surface.roughness,  diffuse, specular, lightDistance, true, g_Const.enableDenoiserInputPacking);
+        surface.viewDepth, surface.roughness,  diffuse, specular, lightDistance, true, g_Const.restirDI.shadingParams.enableDenoiserInputPacking);
 }

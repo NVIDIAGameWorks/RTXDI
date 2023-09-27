@@ -30,14 +30,14 @@ void RayGen()
 #if !USE_RAY_QUERY
     uint2 GlobalIndex = DispatchRaysIndex().xy;
 #endif
-    uint2 pixelPosition = RTXDI_ReservoirPosToPixelPos(GlobalIndex, g_Const.runtimeParams);
+    uint2 pixelPosition = RTXDI_DIReservoirPosToPixelPos(GlobalIndex, g_Const.runtimeParams.activeCheckerboardField);
 
     RAB_RandomSamplerState rng = RAB_InitRandomSampler(GlobalIndex, 7);
     
     const RAB_Surface primarySurface = RAB_GetGBufferSurface(pixelPosition, false);
     
-    const uint2 reservoirPosition = RTXDI_PixelPosToReservoirPos(pixelPosition, g_Const.runtimeParams);
-    RTXDI_GIReservoir reservoir = RTXDI_LoadGIReservoir(g_Const.runtimeParams, reservoirPosition, g_Const.initialOutputBufferIndex);
+    const uint2 reservoirPosition = RTXDI_PixelPosToReservoirPos(pixelPosition, g_Const.runtimeParams.activeCheckerboardField);
+    RTXDI_GIReservoir reservoir = RTXDI_LoadGIReservoir(g_Const.restirGI.reservoirBufferParams, reservoirPosition, g_Const.restirGI.bufferIndices.secondarySurfaceReSTIRDIOutputBufferIndex);
 
     float3 motionVector = t_MotionVectors[pixelPosition].xyz;
     motionVector = convertMotionVectorToPixelSpace(g_Const.view, g_Const.prevView, pixelPosition, motionVector);
@@ -46,30 +46,31 @@ void RayGen()
         RTXDI_GISpatioTemporalResamplingParameters stParams;
 
         stParams.screenSpaceMotion = motionVector;
-        stParams.sourceBufferIndex = g_Const.temporalInputBufferIndex;
-        stParams.maxHistoryLength = g_Const.maxHistoryLength;
-        stParams.biasCorrectionMode = g_Const.temporalBiasCorrection;
-        stParams.depthThreshold = g_Const.temporalDepthThreshold;
-        stParams.normalThreshold = g_Const.temporalNormalThreshold; 
-        stParams.enablePermutationSampling = g_Const.enablePermutationSampling;
-        stParams.numSpatialSamples = g_Const.numSpatialSamples;
-        stParams.samplingRadius = g_Const.spatialSamplingRadius;
-        stParams.enableFallbackSampling = g_Const.enableFallbackSampling;
+        stParams.sourceBufferIndex = g_Const.restirGI.bufferIndices.temporalResamplingInputBufferIndex;
+        stParams.maxHistoryLength = g_Const.restirGI.temporalResamplingParams.maxHistoryLength;
+        stParams.biasCorrectionMode = g_Const.restirGI.temporalResamplingParams.temporalBiasCorrectionMode;
+        stParams.depthThreshold = g_Const.restirGI.temporalResamplingParams.depthThreshold;
+        stParams.normalThreshold = g_Const.restirGI.temporalResamplingParams.normalThreshold;
+        stParams.enablePermutationSampling = g_Const.restirGI.temporalResamplingParams.enablePermutationSampling;
+        stParams.enableFallbackSampling = g_Const.restirGI.temporalResamplingParams.enableFallbackSampling;
+        stParams.numSpatialSamples = g_Const.restirGI.spatialResamplingParams.numSpatialSamples;
+        stParams.samplingRadius = g_Const.restirGI.spatialResamplingParams.spatialSamplingRadius;
+        stParams.uniformRandomNumber = g_Const.restirGI.temporalResamplingParams.uniformRandomNumber;
 
         // Age threshold should vary.
         // This is to avoid to die a bunch of GI reservoirs at once at a disoccluded area.
-        stParams.maxReservoirAge = g_Const.giReservoirMaxAge * (0.5 + RAB_GetNextRandom(rng) * 0.5);
+        stParams.maxReservoirAge = g_Const.restirGI.temporalResamplingParams.maxReservoirAge * (0.5 + RAB_GetNextRandom(rng) * 0.5);
 
         // Execute resampling.
-        reservoir = RTXDI_GISpatioTemporalResampling(pixelPosition, primarySurface, reservoir, rng, stParams, g_Const.runtimeParams);
+        reservoir = RTXDI_GISpatioTemporalResampling(pixelPosition, primarySurface, reservoir, rng, g_Const.runtimeParams, g_Const.restirGI.reservoirBufferParams, stParams);
     }
 
 #ifdef RTXDI_ENABLE_BOILING_FILTER
-    if (g_Const.boilingFilterStrength > 0)
+    if (g_Const.restirGI.temporalResamplingParams.enableBoilingFilter)
     {
-        RTXDI_GIBoilingFilter(LocalIndex, g_Const.boilingFilterStrength, g_Const.runtimeParams, reservoir);
+        RTXDI_GIBoilingFilter(LocalIndex, g_Const.restirGI.temporalResamplingParams.boilingFilterStrength, reservoir);
     }
 #endif
 
-    RTXDI_StoreGIReservoir(reservoir, g_Const.runtimeParams, reservoirPosition, g_Const.spatialOutputBufferIndex);
+    RTXDI_StoreGIReservoir(reservoir, g_Const.restirGI.reservoirBufferParams, reservoirPosition, g_Const.restirGI.bufferIndices.spatialResamplingOutputBufferIndex);
 }

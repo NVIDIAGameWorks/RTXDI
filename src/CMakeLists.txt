@@ -32,20 +32,3 @@ if (TARGET DLSS)
 		"${DLSS_SHARED_LIBRARY_PATH}"
 		"$<TARGET_FILE_DIR:${project}>/")
 endif()
-
-if (TARGET RTXGI-D3D12 OR TARGET RTXGI-VK)
-	target_compile_definitions(${project} PRIVATE WITH_RTXGI=1)
-	
-	if (TARGET RTXGI-D3D12)
-		target_link_libraries(${project} RTXGI-D3D12)
-	endif()
-
-	if (TARGET RTXGI-VK)
-		target_link_libraries(${project} RTXGI-VK)
-		if (UNIX)
-			target_link_libraries(${project} vulkan)
-		else()
-			target_link_libraries(${project} "${Vulkan_LIBRARY}")
-		endif()
-	endif()
-endif()

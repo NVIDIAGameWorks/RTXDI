@@ -1,5 +1,5 @@
 /***************************************************************************
- # Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
+ # Copyright (c) 2021-2023, NVIDIA CORPORATION.  All rights reserved.
  #
  # NVIDIA CORPORATION and its licensors retain all intellectual property
  # and proprietary rights in and to this software, related documentation
@@ -169,27 +169,6 @@ std::shared_ptr<donut::engine::SceneGraphLeaf> SampleSceneTypeFactory::CreateLea
 std::shared_ptr<donut::engine::MeshInfo> SampleSceneTypeFactory::CreateMesh()
 {
     return std::make_shared<SampleMesh>();
-}
-
-bool SampleScene::LoadCustomData(Json::Value& rootNode, tf::Executor* executor)
-{
-    const Json::Value& rtxgiNode = rootNode["rtxgi-volumes"];
-    if (rtxgiNode.isArray())
-    {
-        for (const Json::Value& volumeNode : rtxgiNode)
-        {
-            RtxgiVolumeParameters volume;
-            volumeNode["name"] >> volume.name;
-            volumeNode["scrolling"] >> volume.scrolling;
-            volumeNode["origin"] >> volume.origin;
-            volumeNode["probeSpacing"] >> volume.probeSpacing;
-            volumeNode["eulerAngles"] >> volume.eulerAngles;
-            volumeNode["probeCounts"] >> volume.probeCounts;
-            m_RtxgiVolumes.push_back(volume);
-        }
-    }
-
-    return Scene::LoadCustomData(rootNode, executor);
 }
 
 bool SampleScene::LoadWithExecutor(const std::filesystem::path& jsonFileName, tf::Executor* executor)

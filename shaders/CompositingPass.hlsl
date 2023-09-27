@@ -1,5 +1,5 @@
 /***************************************************************************
- # Copyright (c) 2020-2021, NVIDIA CORPORATION.  All rights reserved.
+ # Copyright (c) 2020-2023, NVIDIA CORPORATION.  All rights reserved.
  #
  # NVIDIA CORPORATION and its licensors retain all intellectual property
  # and proprietary rights in and to this software, related documentation
@@ -35,13 +35,6 @@ Texture2D t_DenoisedDiffuse : register(t7);
 Texture2D t_DenoisedSpecular : register(t8);
 
 SamplerState s_EnvironmentSampler : register(s0);
-
-#ifdef WITH_RTXGI
-#include "RtxgiHelpers.hlsli"
-StructuredBuffer<DDGIVolumeDescGPUPacked> t_DDGIVolumes : register(t10 VK_DESCRIPTOR_SET(2));
-StructuredBuffer<DDGIVolumeResourceIndices> t_DDGIVolumeResourceIndices : register(t11 VK_DESCRIPTOR_SET(2));
-SamplerState s_ProbeSampler : register(s10 VK_DESCRIPTOR_SET(2));
-#endif
 
 [numthreads(8, 8, 1)]
 void main(uint2 globalIdx : SV_DispatchThreadID)
@@ -92,24 +85,6 @@ void main(uint2 globalIdx : SV_DispatchThreadID)
         compositedColor = diffuse_illumination.rgb;
         compositedColor += specular_illumination.rgb;
         compositedColor += emissive.rgb;
-
-#ifdef WITH_RTXGI
-        if (g_Const.numRtxgiVolumes)
-        {
-            float3 worldPosition = viewDepthToWorldPos(g_Const.view, globalIdx, depth);
-
-            float3 indirectIrradiance = GetIrradianceFromDDGI(
-                worldPosition,
-                normal,
-                g_Const.view.cameraDirectionOrPosition.xyz,
-                g_Const.numRtxgiVolumes,
-                t_DDGIVolumes,
-                t_DDGIVolumeResourceIndices,
-                s_ProbeSampler);
-
-            compositedColor += diffuseAlbedo * indirectIrradiance;
-        }
-#endif
     }
     else
     {   

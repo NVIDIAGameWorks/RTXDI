@@ -9,7 +9,7 @@
  **************************************************************************/
 
 #include "RtxdiResources.h"
-#include <rtxdi/RTXDI.h>
+#include <rtxdi/ReSTIRDI.h>
 
 #include <donut/core/math/math.h>
 
@@ -18,7 +18,7 @@ using namespace dm;
 
 RtxdiResources::RtxdiResources(
     nvrhi::IDevice* device, 
-    const rtxdi::Context& context,
+    const rtxdi::ReSTIRDIContext& context,
     uint32_t maxEmissiveMeshes,
     uint32_t maxEmissiveTriangles,
     uint32_t maxGeometryInstances)
@@ -56,7 +56,7 @@ RtxdiResources::RtxdiResources(
 
 
     nvrhi::BufferDesc neighborOffsetBufferDesc;
-    neighborOffsetBufferDesc.byteSize = context.GetParameters().NeighborOffsetCount * 2;
+    neighborOffsetBufferDesc.byteSize = context.getStaticParameters().NeighborOffsetCount * 2;
     neighborOffsetBufferDesc.format = nvrhi::Format::RG8_SNORM;
     neighborOffsetBufferDesc.canHaveTypedViews = true;
     neighborOffsetBufferDesc.debugName = "NeighborOffsets";
@@ -66,8 +66,8 @@ RtxdiResources::RtxdiResources(
 
 
     nvrhi::BufferDesc lightReservoirBufferDesc;
-    lightReservoirBufferDesc.byteSize = sizeof(RTXDI_PackedReservoir) * context.GetReservoirBufferElementCount() * c_NumReservoirBuffers;
-    lightReservoirBufferDesc.structStride = sizeof(RTXDI_PackedReservoir);
+    lightReservoirBufferDesc.byteSize = sizeof(RTXDI_PackedDIReservoir) * context.getReservoirBufferParameters().reservoirArrayPitch * rtxdi::c_NumReSTIRDIReservoirBuffers;
+    lightReservoirBufferDesc.structStride = sizeof(RTXDI_PackedDIReservoir);
     lightReservoirBufferDesc.initialState = nvrhi::ResourceStates::UnorderedAccess;
     lightReservoirBufferDesc.keepInitialState = true;
     lightReservoirBufferDesc.debugName = "LightReservoirBuffer";
@@ -75,15 +75,15 @@ RtxdiResources::RtxdiResources(
     LightReservoirBuffer = device->createBuffer(lightReservoirBufferDesc);
 }
 
-void RtxdiResources::InitializeNeighborOffsets(nvrhi::ICommandList* commandList, const rtxdi::Context& context)
+void RtxdiResources::InitializeNeighborOffsets(nvrhi::ICommandList* commandList, uint32_t neighborOffsetCount)
 {
     if (m_NeighborOffsetsInitialized)
         return;
 
     std::vector<uint8_t> offsets;
-    offsets.resize(context.GetParameters().NeighborOffsetCount* 2);
+    offsets.resize(neighborOffsetCount * 2);
 
-    context.FillNeighborOffsetBuffer(offsets.data());
+    rtxdi::FillNeighborOffsetBuffer(offsets.data(), neighborOffsetCount);
 
     commandList->writeBuffer(NeighborOffsetsBuffer, offsets.data(), offsets.size());
 

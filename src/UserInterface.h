@@ -10,7 +10,10 @@
 
 #pragma once
 
-#include <rtxdi/RTXDI.h>
+#include <rtxdi/ReSTIRDI.h>
+#include <rtxdi/ReGIRParameters.h>
+#include <rtxdi/ReGIR.h>
+#include <rtxdi/ReSTIRGI.h>
 
 #include <donut/engine/Scene.h>
 #include <donut/render/TemporalAntiAliasingPass.h>
@@ -58,20 +61,6 @@ enum class QualityPreset : uint32_t
     Unbiased = 3,
     Ultra = 4,
     Reference = 5
-};
-
-struct RtxgiParameters
-{
-    ibool enabled = true;
-    ibool showProbes = false;
-    int selectedVolumeIndex = 0;
-    float hysteresis = 0.99f;
-    float irradianceThreshold = 0.25f;
-    float brightnessThreshold = 0.1f;
-    float minFrontFaceDistanceFraction = 0.1f;
-    bool probeRelocation = true;
-    bool probeClassification = true;
-    bool resetRelocation = false;
 };
 
 enum class AntiAliasingMode : uint32_t
@@ -152,11 +141,8 @@ struct UIData
     int environmentMapDirty = 0; // 1 -> needs to be rendered; 2 -> passes/textures need to be created
     int environmentMapIndex = -1;
     bool environmentMapImportanceSampling = true;
-    bool enableLocalLightImportanceSampling = true;
     float environmentIntensityBias = 0.f;
     float environmentRotation = 0.f;
-    
-    RtxgiParameters rtxgi;
     
     bool enableDenoiser = true;
 #ifdef WITH_NRD
@@ -182,12 +168,13 @@ struct UIData
     bool enableFpsLimit = false;
     uint32_t fpsLimit = 60;
 
-    rtxdi::ContextParameters rtxdiContextParams;
-    bool resetRtxdiContext = false;
+    rtxdi::ReSTIRDIStaticParameters restirDIStaticParams;
+    rtxdi::ReGIRStaticParameters regirStaticParams;
+    rtxdi::ReSTIRGIStaticParameters restirGIStaticParams;
+    rtxdi::ReGIRDynamicParameters regirDynamicParameters;
+    bool resetISContext = false;
     uint32_t regirLightSlotCount = 0;
     bool freezeRegirPosition = false;
-    float regirCellSize = 1.f;
-    float regirSamplingJitter = 1.f;
     std::optional<int> animationFrame;
     std::string benchmarkResults;
 
@@ -200,6 +187,27 @@ struct UIData
 
     GBufferSettings gbufferSettings;
     LightingPasses::RenderSettings lightingSettings;
+
+    struct
+    {
+        uint32_t numLocalLightUniformSamples = 8;
+        uint32_t numLocalLightPowerRISSamples = 8;
+        uint32_t numLocalLightReGIRRISSamples = 8;
+        rtxdi::ReSTIRDI_ResamplingMode resamplingMode;
+        ReSTIRDI_InitialSamplingParameters initialSamplingParams;
+        ReSTIRDI_TemporalResamplingParameters temporalResamplingParams;
+        ReSTIRDI_SpatialResamplingParameters spatialResamplingParams;
+        ReSTIRDI_ShadingParameters shadingParams;
+    } restirDI;
+
+    struct
+    {
+        rtxdi::ReSTIRGI_ResamplingMode resamplingMode;
+        ReSTIRGI_TemporalResamplingParameters temporalResamplingParams;
+        ReSTIRGI_SpatialResamplingParameters spatialResamplingParams;
+        ReSTIRGI_FinalShadingParameters finalShadingParams;
+    } restirGI;
+
     donut::render::TemporalAntiAliasingParameters taaParams;
 
     donut::render::TemporalAntiAliasingJitter temporalJitter = donut::render::TemporalAntiAliasingJitter::Halton;

@@ -40,7 +40,7 @@ Buffer<float2> t_NeighborOffsets : register(t21);
 StructuredBuffer<uint> t_GeometryInstanceToLight : register(t22);
 
 // Screen-sized UAVs
-RWStructuredBuffer<RTXDI_PackedReservoir> u_LightReservoirs : register(u0);
+RWStructuredBuffer<RTXDI_PackedDIReservoir> u_LightReservoirs : register(u0);
 RWTexture2D<float4> u_ShadingOutput : register(u1);
 RWTexture2D<float> u_GBufferDepth : register(u2);
 RWTexture2D<uint> u_GBufferNormals : register(u3);
@@ -131,10 +131,10 @@ float RAB_EvaluateEnvironmentMapSamplingPdf(float3 L)
     return 0;
 }
 
-float RAB_EvaluateLocalLightSourcePdf(RTXDI_ResamplingRuntimeParameters params, uint lightIndex)
+float RAB_EvaluateLocalLightSourcePdf(uint lightIndex)
 {
     // Uniform pdf
-    return 1.0 / params.localLightParams.numLocalLights;
+    return 1.0 / g_Const.lightBufferParams.localLightBufferRegion.numLights;
 }
 
 RayDesc setupVisibilityRay(RAB_Surface surface, RAB_LightSample lightSample, float offset = 0.001)

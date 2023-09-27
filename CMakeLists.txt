@@ -70,22 +70,6 @@ set(DONUT_PATH "${CMAKE_CURRENT_LIST_DIR}/donut")
 include(NRD.cmake)
 include(DLSS.cmake)
 
-if (EXISTS "${CMAKE_CURRENT_LIST_DIR}/RTXGI/CMakeLists.txt")
-	option(RTXDI_WITH_RTXGI "Enable the RTXGI integration" ON)
-
-	if (RTXDI_WITH_RTXGI)
-		option(RTXGI_DDGI_RESOURCE_MANAGEMENT "" ON)
-		option(RTXGI_DDGI_USE_SHADER_CONFIG_FILE "" ON)
-
-		if (UNIX)
-			set(RTXGI_API_VULKAN_SDK ON)
-			set(Vulkan_INCLUDE_DIR "${CMAKE_CURRENT_LIST_DIR}/donut/nvrhi/thirdparty/Vulkan-Headers/include")
-		endif()
-
-		add_subdirectory(RTXGI)
-	endif()
-endif()
-
 set(GLSLANG_PATH "" CACHE STRING "Path to glslangValidator for GLSL header verification (optional)")
 
 # Temporarily use cxxopts from NVRHI

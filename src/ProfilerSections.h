@@ -26,8 +26,6 @@ struct ProfilerSection
         TemporalResampling,
         SpatialResampling,
         Shading,
-        RtxgiProbeTracing,
-        RtxgiProbeUpdates,
         BrdfRays,
         ShadeSecondary,
         GITemporalResampling,

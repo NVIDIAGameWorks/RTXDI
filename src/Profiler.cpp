@@ -29,8 +29,6 @@ static const char* g_SectionNames[ProfilerSection::Count] = {
     "Temporal Resampling",
     "Spatial Resampling",
     "Shade Primary Surf.",
-    "RTXGI Probe Tracing",
-    "RTXGI Probe Updates",
     "BRDF or MIS Rays",
     "Shade Secondary Surf.",
     "GI - Temporal Resampling",
@@ -248,7 +246,6 @@ void Profiler::BuildUI(const bool enableRayCounts)
     for (uint32_t section = 0; section < ProfilerSection::MaterialReadback; section++)
     {
         if (section == ProfilerSection::InitialSamples ||
-            section == ProfilerSection::RtxgiProbeTracing ||
             section == ProfilerSection::Gradients || 
             section == ProfilerSection::Frame)
             ImGui::Separator();

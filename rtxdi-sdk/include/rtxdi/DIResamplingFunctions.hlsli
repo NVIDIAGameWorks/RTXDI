@@ -11,7 +11,7 @@
 #ifndef RESAMPLING_FUNCTIONS_HLSLI
 #define RESAMPLING_FUNCTIONS_HLSLI
 
-#include "Reservoir.hlsli"
+#include "DIReservoir.hlsli"
 
 // This macro can be defined in the including shader file to reduce code bloat
 // and/or remove ray tracing calls from temporal and spatial resampling shaders
@@ -20,219 +20,18 @@
 #define RTXDI_ALLOWED_BIAS_CORRECTION RTXDI_BIAS_CORRECTION_RAY_TRACED
 #endif
 
-// This macro enables the functions that deal with the RIS buffer and presampling.
-#ifndef RTXDI_ENABLE_PRESAMPLING
-#define RTXDI_ENABLE_PRESAMPLING 1
-#endif
-
-#if !RTXDI_ENABLE_PRESAMPLING && (RTXDI_REGIR_MODE != RTXDI_REGIR_DISABLED)
-#error "ReGIR requires presampling to be enabled"
-#endif
-
-#if RTXDI_ENABLE_PRESAMPLING && !defined(RTXDI_RIS_BUFFER)
-#error "RTXDI_RIS_BUFFER must be defined to point to a RWBuffer<uint2> type resource"
-#endif
-
 #ifndef RTXDI_NEIGHBOR_OFFSETS_BUFFER
 #error "RTXDI_NEIGHBOR_OFFSETS_BUFFER must be defined to point to a Buffer<float2> type resource"
 #endif
 
-struct RTXDI_SampleParameters
-{
-    uint numRegirSamples;
-    uint numLocalLightSamples;
-    uint numInfiniteLightSamples;
-    uint numEnvironmentMapSamples;
-    uint numBrdfSamples;
-
-    uint numMisSamples;
-    float localLightMisWeight;
-    float environmentMapMisWeight;
-    float brdfMisWeight;
-    float brdfCutoff; 
-    float brdfRayMinT;
-};
-
-// Sample parameters struct
-// Defined so that so these can be compile time constants as defined by the user
-// brdfCutoff Value in range [0,1] to determine how much to shorten BRDF rays. 0 to disable shortening
-RTXDI_SampleParameters RTXDI_InitSampleParameters(
-    uint numRegirSamples,
-    uint numLocalLightSamples,
-    uint numInfiniteLightSamples,
-    uint numEnvironmentMapSamples,
-    uint numBrdfSamples,
-    float brdfCutoff RTXDI_DEFAULT(0.0),
-    float brdfRayMinT RTXDI_DEFAULT(0.001f))
-{
-    RTXDI_SampleParameters result;
-    result.numRegirSamples = numRegirSamples;
-    result.numLocalLightSamples = numLocalLightSamples;
-    result.numInfiniteLightSamples = numInfiniteLightSamples;
-    result.numEnvironmentMapSamples = numEnvironmentMapSamples;
-    result.numBrdfSamples = numBrdfSamples;
-
-    result.numMisSamples = numLocalLightSamples + numEnvironmentMapSamples + numBrdfSamples;
-    result.localLightMisWeight = float(numLocalLightSamples) / result.numMisSamples;
-    result.environmentMapMisWeight = float(numEnvironmentMapSamples) / result.numMisSamples;
-    result.brdfMisWeight = float(numBrdfSamples) / result.numMisSamples;
-    result.brdfCutoff = brdfCutoff;
-    result.brdfRayMinT = brdfRayMinT;
-
-    return result;
-}
-
-// Heuristic to determine a max visibility ray length from a PDF wrt. solid angle.
-float RTXDI_BrdfMaxDistanceFromPdf(float brdfCutoff, float pdf)
-{
-    const float kRayTMax = 3.402823466e+38F; // FLT_MAX
-    return brdfCutoff > 0.f ? sqrt((1.f / brdfCutoff - 1.f) * pdf) : kRayTMax;
-}
-
-// Computes the multi importance sampling pdf for brdf and light sample.
-// For light and BRDF PDFs wrt solid angle, blend between the two.
-//      lightSelectionPdf is a dimensionless selection pdf
-float RTXDI_LightBrdfMisWeight(RAB_Surface surface, RAB_LightSample lightSample, 
-    float lightSelectionPdf, float lightMisWeight, bool isEnvironmentMap,
-    RTXDI_SampleParameters sampleParams)
-{
-    float lightSolidAnglePdf = RAB_LightSampleSolidAnglePdf(lightSample);
-    if (sampleParams.brdfMisWeight == 0 || RAB_IsAnalyticLightSample(lightSample) || 
-        lightSolidAnglePdf <= 0 || isinf(lightSolidAnglePdf) || isnan(lightSolidAnglePdf))
-    {
-        // BRDF samples disabled or we can't trace BRDF rays MIS with analytical lights
-        return lightMisWeight * lightSelectionPdf;
-    }
-
-    float3 lightDir;
-    float lightDistance;
-    RAB_GetLightDirDistance(surface, lightSample, lightDir, lightDistance);
-
-    // Compensate for ray shortening due to brdf cutoff, does not apply to environment map sampling
-    float brdfPdf = RAB_GetSurfaceBrdfPdf(surface, lightDir);
-    float maxDistance = RTXDI_BrdfMaxDistanceFromPdf(sampleParams.brdfCutoff, brdfPdf);
-    if (!isEnvironmentMap && lightDistance > maxDistance)
-        brdfPdf = 0.f;
-
-    // Convert light selection pdf (unitless) to a solid angle measurement
-    float sourcePdfWrtSolidAngle = lightSelectionPdf * lightSolidAnglePdf;
-
-    // MIS blending against solid angle pdfs.
-    float blendedPdfWrtSolidangle = lightMisWeight * sourcePdfWrtSolidAngle + sampleParams.brdfMisWeight * brdfPdf;
-
-    // Convert back, RTXDI divides shading again by this term later
-    return blendedPdfWrtSolidangle / lightSolidAnglePdf;
-}
-
-// Adds a new, non-reservoir light sample into the reservoir, returns true if this sample was selected.
-// Algorithm (3) from the ReSTIR paper, Streaming RIS using weighted reservoir sampling.
-bool RTXDI_StreamSample(
-    inout RTXDI_Reservoir reservoir,
-    uint lightIndex,
-    float2 uv,
-    float random,
-    float targetPdf,
-    float invSourcePdf)
-{
-    // What's the current weight
-    float risWeight = targetPdf * invSourcePdf;
-
-    // Add one sample to the counter
-    reservoir.M += 1;
-
-    // Update the weight sum
-    reservoir.weightSum += risWeight;
-
-    // Decide if we will randomly pick this sample
-    bool selectSample = (random * reservoir.weightSum < risWeight);
-
-    // If we did select this sample, update the relevant data.
-    // New samples don't have visibility or age information, we can skip that.
-    if (selectSample) 
-    {
-        reservoir.lightData = lightIndex | RTXDI_Reservoir_LightValidBit;
-        reservoir.uvData = uint(saturate(uv.x) * 0xffff) | (uint(saturate(uv.y) * 0xffff) << 16);
-        reservoir.targetPdf = targetPdf;
-    }
-
-    return selectSample;
-}
-
-// Adds `newReservoir` into `reservoir`, returns true if the new reservoir's sample was selected.
-// This is a very general form, allowing input parameters to specfiy normalization and targetPdf
-// rather than computing them from `newReservoir`.  Named "internal" since these parameters take
-// different meanings (e.g., in RTXDI_CombineReservoirs() or RTXDI_StreamNeighborWithPairwiseMIS())
-bool RTXDI_InternalSimpleResample(
-    inout RTXDI_Reservoir reservoir,
-    const RTXDI_Reservoir newReservoir,
-    float random,
-    float targetPdf RTXDI_DEFAULT(1.0f),            // Usually closely related to the sample normalization, 
-    float sampleNormalization RTXDI_DEFAULT(1.0f),  //     typically off by some multiplicative factor 
-    float sampleM RTXDI_DEFAULT(1.0f)               // In its most basic form, should be newReservoir.M
-)
-{
-    // What's the current weight (times any prior-step RIS normalization factor)
-    float risWeight = targetPdf * sampleNormalization;
-
-    // Our *effective* candidate pool is the sum of our candidates plus those of our neighbors
-    reservoir.M += sampleM;
-
-    // Update the weight sum
-    reservoir.weightSum += risWeight;
-
-    // Decide if we will randomly pick this sample
-    bool selectSample = (random * reservoir.weightSum < risWeight);
-
-    // If we did select this sample, update the relevant data
-    if (selectSample)
-    {
-        reservoir.lightData = newReservoir.lightData;
-        reservoir.uvData = newReservoir.uvData;
-        reservoir.targetPdf = targetPdf;
-        reservoir.packedVisibility = newReservoir.packedVisibility;
-        reservoir.spatialDistance = newReservoir.spatialDistance;
-        reservoir.age = newReservoir.age;
-    }
-
-    return selectSample;
-}
-
-// Adds `newReservoir` into `reservoir`, returns true if the new reservoir's sample was selected.
-// Algorithm (4) from the ReSTIR paper, Combining the streams of multiple reservoirs.
-// Normalization - Equation (6) - is postponed until all reservoirs are combined.
-bool RTXDI_CombineReservoirs(
-    inout RTXDI_Reservoir reservoir,
-    const RTXDI_Reservoir newReservoir,
-    float random,
-    float targetPdf)
-{
-    return RTXDI_InternalSimpleResample(
-        reservoir,
-        newReservoir,
-        random,
-        targetPdf,
-        newReservoir.weightSum * newReservoir.M,
-        newReservoir.M
-    );
-}
-
-// Performs normalization of the reservoir after streaming. Equation (6) from the ReSTIR paper.
-void RTXDI_FinalizeResampling(
-    inout RTXDI_Reservoir reservoir,
-    float normalizationNumerator,
-    float normalizationDenominator)
-{
-    float denominator = reservoir.targetPdf * normalizationDenominator;
-
-    reservoir.weightSum = (denominator == 0.0) ? 0.0 : (reservoir.weightSum * normalizationNumerator) / denominator;
-}
+#define RTXDI_NAIVE_SAMPLING_M_THRESHOLD 2
 
 // A helper used for pairwise MIS computations.  This might be able to simplify code elsewhere, too.
-float RTXDI_TargetPdfHelper(const RTXDI_Reservoir lightReservoir, const RAB_Surface surface, bool priorFrame RTXDI_DEFAULT(false))
+float RTXDI_TargetPdfHelper(const RTXDI_DIReservoir lightReservoir, const RAB_Surface surface, bool priorFrame RTXDI_DEFAULT(false))
 {
     RAB_LightSample lightSample = RAB_SamplePolymorphicLight(
-        RAB_LoadLightInfo(RTXDI_GetReservoirLightIndex(lightReservoir), priorFrame),
-        surface, RTXDI_GetReservoirSampleUV(lightReservoir));
+        RAB_LoadLightInfo(RTXDI_GetDIReservoirLightIndex(lightReservoir), priorFrame),
+        surface, RTXDI_GetDIReservoirSampleUV(lightReservoir));
 
     return RAB_GetLightSampleTargetPdfForSurface(lightSample, surface);
 }
@@ -244,11 +43,11 @@ float RTXDI_TargetPdfHelper(const RTXDI_Reservoir lightReservoir, const RAB_Surf
 // candidate, after which the MIS is completed by calling RTXDI_StreamCanonicalWithPairwiseStep() once for
 // the canonical sample.
 // See Chapter 9.1 of https://digitalcommons.dartmouth.edu/dissertations/77/, especially Eq 9.10 & Algo 8
-bool RTXDI_StreamNeighborWithPairwiseMIS(inout RTXDI_Reservoir reservoir,
+bool RTXDI_StreamNeighborWithPairwiseMIS(inout RTXDI_DIReservoir reservoir,
     float random,
-    const RTXDI_Reservoir neighborReservoir,
+    const RTXDI_DIReservoir neighborReservoir,
     const RAB_Surface neighborSurface,
-    const RTXDI_Reservoir canonicalReservor,
+    const RTXDI_DIReservoir canonicalReservor,
     const RAB_Surface canonicalSurface,
     const uint numberOfNeighborsInStream)    // # neighbors streamed via pairwise MIS before streaming the canonical sample
 {
@@ -286,9 +85,9 @@ bool RTXDI_StreamNeighborWithPairwiseMIS(inout RTXDI_Reservoir reservoir,
 // Called to finish the process of doing pairwise MIS.  This function must be called after all required calls to
 // RTXDI_StreamNeighborWithPairwiseMIS(), since pairwise MIS overweighs the canonical sample.  This function 
 // compensates for this overweighting, but it can only happen after all neighbors have been processed.
-bool RTXDI_StreamCanonicalWithPairwiseStep(inout RTXDI_Reservoir reservoir,
+bool RTXDI_StreamCanonicalWithPairwiseStep(inout RTXDI_DIReservoir reservoir,
     float random,
-    const RTXDI_Reservoir canonicalReservoir,
+    const RTXDI_DIReservoir canonicalReservoir,
     const RAB_Surface canonicalSurface)
 {
     return RTXDI_InternalSimpleResample(reservoir, canonicalReservoir, random,
@@ -297,795 +96,7 @@ bool RTXDI_StreamCanonicalWithPairwiseStep(inout RTXDI_Reservoir reservoir,
         canonicalReservoir.M);
 }
 
-void RTXDI_SamplePdfMipmap(
-    inout RAB_RandomSamplerState rng, 
-    RTXDI_TEX2D pdfTexture, // full mip chain starting from unnormalized sampling pdf in mip 0
-    uint2 pdfTextureSize,        // dimensions of pdfTexture at mip 0; must be 16k or less
-    out uint2 position,
-    out float pdf)
-{
-    int lastMipLevel = max(0, int(floor(log2(max(pdfTextureSize.x, pdfTextureSize.y)))) - 1);
 
-    position = uint2(0, 0);
-    pdf = 1.0;
-    for (int mipLevel = lastMipLevel; mipLevel >= 0; mipLevel--)
-    {
-        position *= 2;
-
-        float4 samples;
-        samples.x = max(0, RTXDI_TEX2D_LOAD(pdfTexture, int2(position.x + 0, position.y + 0), mipLevel).x);
-        samples.y = max(0, RTXDI_TEX2D_LOAD(pdfTexture, int2(position.x + 0, position.y + 1), mipLevel).x);
-        samples.z = max(0, RTXDI_TEX2D_LOAD(pdfTexture, int2(position.x + 1, position.y + 0), mipLevel).x);
-        samples.w = max(0, RTXDI_TEX2D_LOAD(pdfTexture, int2(position.x + 1, position.y + 1), mipLevel).x);
-
-        float weightSum = samples.x + samples.y + samples.z + samples.w;
-        if (weightSum <= 0)
-        {
-            pdf = 0;
-            return;
-        }
-
-        samples /= weightSum;
-
-        float rnd = RAB_GetNextRandom(rng);
-        
-        int2 selectedOffset;
-
-        if (rnd < samples.x)
-        { 
-            pdf *= samples.x;
-        }
-        else
-        {
-            rnd -= samples.x;
-            
-            if (rnd < samples.y)
-            {
-                position += uint2(0, 1);
-                pdf *= samples.y;
-            }
-            else
-            {
-                rnd -= samples.y;
-
-                if (rnd < samples.z)
-                {
-                    position += uint2(1, 0);
-                    pdf *= samples.z;
-                }
-                else
-                {
-                    position += uint2(1, 1);
-                    pdf *= samples.w;
-                }
-            }
-        }
-    }
-}
-
-#if RTXDI_ENABLE_PRESAMPLING
-
-void RTXDI_PresampleLocalLights(
-    inout RAB_RandomSamplerState rng, 
-    RTXDI_TEX2D pdfTexture,
-    uint2 pdfTextureSize,
-    uint tileIndex,
-    uint sampleInTile,
-    RTXDI_ResamplingRuntimeParameters params)
-{
-    uint2 texelPosition;
-    float pdf;
-    RTXDI_SamplePdfMipmap(rng, pdfTexture, pdfTextureSize, texelPosition, pdf);
-
-    uint lightIndex = RTXDI_ZCurveToLinearIndex(texelPosition);
-
-    uint risBufferPtr = sampleInTile + tileIndex * params.risBufferParams.tileSize;
-
-    bool compact = false;
-    float invSourcePdf = 0;
-
-    if (pdf > 0)
-    {
-        invSourcePdf = 1.0 / pdf;
-
-        RAB_LightInfo lightInfo = RAB_LoadLightInfo(lightIndex + params.localLightParams.firstLocalLight, false);
-        compact = RAB_StoreCompactLightInfo(risBufferPtr, lightInfo);
-    }
-
-    lightIndex += params.localLightParams.firstLocalLight;
-
-    if(compact) {
-        lightIndex |= RTXDI_LIGHT_COMPACT_BIT;
-    }
-
-    // Store the index of the light that we found and its inverse pdf.
-    // Or zero and zero if we somehow found nothing.
-    RTXDI_RIS_BUFFER[risBufferPtr] = uint2(lightIndex, asuint(invSourcePdf));
-}
-
-void RTXDI_PresampleEnvironmentMap(
-    inout RAB_RandomSamplerState rng, 
-    RTXDI_TEX2D pdfTexture,
-    uint2 pdfTextureSize,
-    uint tileIndex,
-    uint sampleInTile,
-    RTXDI_EnvironmentLightRuntimeParameters params)
-{
-    uint2 texelPosition;
-    float pdf;
-    RTXDI_SamplePdfMipmap(rng, pdfTexture, pdfTextureSize, texelPosition, pdf);
-
-    // Uniform sampling inside the pixels
-    float2 fPos = float2(texelPosition);
-    fPos.x += RAB_GetNextRandom(rng);
-    fPos.y += RAB_GetNextRandom(rng);
-    
-    // Convert texel position to UV and pack it
-    float2 uv = fPos / float2(pdfTextureSize);
-    uint packedUv = uint(saturate(uv.x) * 0xffff) | (uint(saturate(uv.y) * 0xffff) << 16);
-
-    // Compute the inverse PDF if we found something
-    float invSourcePdf = (pdf > 0) ? (1.0 / pdf) : 0;
-
-    // Store the result
-    uint risBufferPtr = params.environmentRisBufferOffset + sampleInTile + tileIndex * params.environmentTileSize;
-    RTXDI_RIS_BUFFER[risBufferPtr] = uint2(packedUv, asuint(invSourcePdf));
-}
-
-#endif // RTXDI_ENABLE_PRESAMPLING
-
-#ifndef RTXDI_TILE_SIZE_IN_PIXELS
-#define RTXDI_TILE_SIZE_IN_PIXELS 16
-#endif
-
-void RTXDI_RandomlySelectLocalLight(
-    inout RAB_RandomSamplerState rng,
-    uint firstLocalLight,
-    uint numLocalLights,
-#if RTXDI_ENABLE_PRESAMPLING
-    bool useRisBuffer,
-    uint risBufferBase,
-    uint risBufferCount,
-#endif
-    out RAB_LightInfo lightInfo,
-    out uint lightIndex,
-    out float invSourcePdf
-)
-{
-    float rnd = RAB_GetNextRandom(rng);
-    lightInfo = RAB_EmptyLightInfo();
-    bool lightLoaded = false;
-#if RTXDI_ENABLE_PRESAMPLING
-    if (useRisBuffer)
-    {
-        uint risSample = min(uint(floor(rnd * risBufferCount)), risBufferCount - 1);
-        uint risBufferPtr = risSample + risBufferBase;
-
-        uint2 tileData = RTXDI_RIS_BUFFER[risBufferPtr];
-        lightIndex = tileData.x & RTXDI_LIGHT_INDEX_MASK;
-        invSourcePdf = asfloat(tileData.y);
-
-        if ((tileData.x & RTXDI_LIGHT_COMPACT_BIT) != 0)
-        {
-            lightInfo = RAB_LoadCompactLightInfo(risBufferPtr);
-            lightLoaded = true;
-        }
-    }
-    else
-#endif
-    {
-        lightIndex = min(uint(floor(rnd * numLocalLights)), numLocalLights - 1) + firstLocalLight;
-        invSourcePdf = float(numLocalLights);
-    }
-
-    if (!lightLoaded) {
-        lightInfo = RAB_LoadLightInfo(lightIndex, false);
-    }
-}
-
-float2 RTXDI_RandomlySelectLocalLightUV(RAB_RandomSamplerState rng)
-{
-    float2 uv;
-    uv.x = RAB_GetNextRandom(rng);
-    uv.y = RAB_GetNextRandom(rng);
-    return uv;
-}
-
-// Returns false if the blended source PDF == 0, true otherwise
-bool RTXDI_StreamLocalLightAtUVIntoReservoir(
-    inout RAB_RandomSamplerState rng,
-    RTXDI_SampleParameters sampleParams,
-    RAB_Surface surface,
-    uint lightIndex,
-    float2 uv,
-    float invSourcePdf,
-    RAB_LightInfo lightInfo,
-    inout RTXDI_Reservoir state,
-    inout RAB_LightSample o_selectedSample)
-{
-    RAB_LightSample candidateSample = RAB_SamplePolymorphicLight(lightInfo, surface, uv);
-    float blendedSourcePdf = RTXDI_LightBrdfMisWeight(surface, candidateSample, 1.0 / invSourcePdf,
-        sampleParams.localLightMisWeight, false, sampleParams);
-    float targetPdf = RAB_GetLightSampleTargetPdfForSurface(candidateSample, surface);
-    float risRnd = RAB_GetNextRandom(rng);
-
-    if (blendedSourcePdf == 0)
-    {
-        return false;
-    }
-    bool selected = RTXDI_StreamSample(state, lightIndex, uv, risRnd, targetPdf, 1.0 / blendedSourcePdf);
-
-    if (selected) {
-        o_selectedSample = candidateSample;
-    }
-    return true;
-}
-
-// SDK internal function that samples the given set of lights generated by RIS
-// or the local light pool. The RIS set can come from local light importance presampling or from ReGIR.
-RTXDI_Reservoir RTXDI_SampleLocalLightsInternal(
-    inout RAB_RandomSamplerState rng, 
-    RAB_Surface surface, 
-    RTXDI_SampleParameters sampleParams,
-    RTXDI_LocalLightRuntimeParameters params,
-#if RTXDI_ENABLE_PRESAMPLING
-    bool useRisBuffer,
-    uint risBufferBase,
-    uint risBufferCount,
-#endif
-    out RAB_LightSample o_selectedSample)
-{
-    RTXDI_Reservoir state = RTXDI_EmptyReservoir();
-    o_selectedSample = RAB_EmptyLightSample();
-
-    if (params.numLocalLights == 0)
-        return state;
-
-    if (sampleParams.numLocalLightSamples == 0)
-        return state;
-
-    for (uint i = 0; i < sampleParams.numLocalLightSamples; i++)
-    {
-        uint lightIndex;
-        RAB_LightInfo lightInfo;
-        float invSourcePdf;
-
-        RTXDI_RandomlySelectLocalLight(rng, params.firstLocalLight, params.numLocalLights,
-#if RTXDI_ENABLE_PRESAMPLING
-            useRisBuffer, risBufferBase, risBufferCount,
-#endif
-            lightInfo, lightIndex, invSourcePdf);
-
-        float2 uv = RTXDI_RandomlySelectLocalLightUV(rng);
-        bool zeroPdf = RTXDI_StreamLocalLightAtUVIntoReservoir(rng, sampleParams, surface, lightIndex, uv, invSourcePdf, lightInfo, state, o_selectedSample);
-        if (zeroPdf)
-            continue;
-    }
-    
-    RTXDI_FinalizeResampling(state, 1.0, sampleParams.numMisSamples);
-    state.M = 1;
-
-    return state;
-}
-
-// Samples the local light pool for the given surface.
-RTXDI_Reservoir RTXDI_SampleLocalLights(
-    inout RAB_RandomSamplerState rng, 
-    inout RAB_RandomSamplerState coherentRng,
-    RAB_Surface surface, 
-    RTXDI_SampleParameters sampleParams,
-    RTXDI_ResamplingRuntimeParameters params,
-    out RAB_LightSample o_selectedSample)
-{
-    float tileRnd = RAB_GetNextRandom(coherentRng);
-    uint tileIndex = uint(tileRnd * params.risBufferParams.tileCount);
-    uint risBufferBase = tileIndex * params.risBufferParams.tileSize;
-
-    return RTXDI_SampleLocalLightsInternal(rng, surface, sampleParams, params.localLightParams,
-#if RTXDI_ENABLE_PRESAMPLING
-        params.localLightParams.enableLocalLightImportanceSampling != 0, risBufferBase, params.risBufferParams.tileSize,
-#endif
-        o_selectedSample);
-}
-
-void RTXDI_RandomlySelectInfiniteLight(
-    inout RAB_RandomSamplerState rng,
-    RTXDI_InfiniteLightRuntimeParameters params,
-    out RAB_LightInfo lightInfo,
-    out uint lightIndex,
-    out float invSourcePdf)
-{
-    float rnd = RAB_GetNextRandom(rng);
-    invSourcePdf = float(params.numInfiniteLights);
-    lightIndex = params.firstInfiniteLight + min(uint(floor(rnd * params.numInfiniteLights)), params.numInfiniteLights - 1);
-    lightInfo = RAB_LoadLightInfo(lightIndex, false);
-}
-
-float2 RTXDI_RandomlySelectInfiniteLightUV(RAB_RandomSamplerState rng)
-{
-    float2 uv;
-    uv.x = RAB_GetNextRandom(rng);
-    uv.y = RAB_GetNextRandom(rng);
-    return uv;
-}
-
-void RTXDI_StreamInfiniteLightAtUVIntoReservoir(
-    inout RAB_RandomSamplerState rng,
-    RAB_LightInfo lightInfo,
-    RAB_Surface surface,
-    uint lightIndex,
-    float2 uv,
-    float invSourcePdf,
-    inout RTXDI_Reservoir state,
-    inout RAB_LightSample o_selectedSample)
-{
-    RAB_LightSample candidateSample = RAB_SamplePolymorphicLight(lightInfo, surface, uv);
-    float targetPdf = RAB_GetLightSampleTargetPdfForSurface(candidateSample, surface);
-    float risRnd = RAB_GetNextRandom(rng);
-    bool selected = RTXDI_StreamSample(state, lightIndex, uv, risRnd, targetPdf, invSourcePdf);
-
-    if (selected)
-    {
-        o_selectedSample = candidateSample;
-    }
-}
-
-// Samples the infinite light pool for the given surface.
-RTXDI_Reservoir RTXDI_SampleInfiniteLights(
-    inout RAB_RandomSamplerState rng, 
-    RAB_Surface surface, 
-    uint numSamples,
-    RTXDI_InfiniteLightRuntimeParameters params,
-    inout RAB_LightSample o_selectedSample)
-{
-    RTXDI_Reservoir state = RTXDI_EmptyReservoir();
-    o_selectedSample = RAB_EmptyLightSample();
-
-    if (params.numInfiniteLights == 0)
-        return state;
-
-    if (numSamples == 0)
-        return state;
-
-    uint stride = (params.numInfiniteLights + numSamples - 1) / numSamples;
-    uint randStart = uint(RAB_GetNextRandom(rng) * params.numInfiniteLights);
-
-    for(uint i = 0; i < numSamples; i++)
-    {
-        float invSourcePdf;
-        uint lightIndex;
-        RAB_LightInfo lightInfo;
-
-        RTXDI_RandomlySelectInfiniteLight(rng, params, lightInfo, lightIndex, invSourcePdf);
-        float2 uv = RTXDI_RandomlySelectInfiniteLightUV(rng);
-        RTXDI_StreamInfiniteLightAtUVIntoReservoir(rng, lightInfo, surface, lightIndex, uv, invSourcePdf, state, o_selectedSample);
-    }
-
-    RTXDI_FinalizeResampling(state, 1.0, state.M);
-    state.M = 1;
-
-    return state;
-}
-
-#if RTXDI_ENABLE_PRESAMPLING
-
-void RTXDI_ComputeRISBufferBaseAndCount(
-    inout RAB_RandomSamplerState coherentRng,
-    RTXDI_EnvironmentLightRuntimeParameters params,
-    out uint risBufferBase,
-    out uint risBufferCount)
-{
-    float tileRnd = RAB_GetNextRandom(coherentRng);
-    uint tileIndex = uint(tileRnd * params.environmentTileCount);
-    risBufferBase = tileIndex * params.environmentTileSize + params.environmentRisBufferOffset;
-    risBufferCount = params.environmentTileSize;
-}
-
-void RTXDI_SelectEnvironmentLightUV(
-    inout RAB_RandomSamplerState rng,
-    uint risBufferCount,
-    uint risBufferBase,
-    out float2 uv,
-    out float invSourcePdf
-)
-{
-    float rnd = RAB_GetNextRandom(rng);
-    uint risSample = min(uint(floor(rnd * risBufferCount)), risBufferCount - 1);
-    uint risBufferPtr = risSample + risBufferBase;
-    uint2 tileData = RTXDI_RIS_BUFFER[risBufferPtr];
-    uint packedUv = tileData.x;
-
-    invSourcePdf = asfloat(tileData.y);
-    uv = float2(packedUv & 0xffff, packedUv >> 16) / float(0xffff);
-}
-
-void RTXDI_StreamEnvironmentLightAtUVIntoReservoir(
-    inout RAB_RandomSamplerState rng,
-    RTXDI_SampleParameters sampleParams,
-    RAB_Surface surface,
-    RAB_LightInfo lightInfo,
-    uint environmentLightIndex,
-    float2 uv,
-    float invSourcePdf,
-    inout RTXDI_Reservoir state,
-    inout RAB_LightSample o_selectedSample)
-{
-    RAB_LightSample candidateSample = RAB_SamplePolymorphicLight(lightInfo, surface, uv);
-    float blendedSourcePdf = RTXDI_LightBrdfMisWeight(surface, candidateSample, 1.0 / invSourcePdf,
-        sampleParams.environmentMapMisWeight, true, sampleParams);
-    float targetPdf = RAB_GetLightSampleTargetPdfForSurface(candidateSample, surface);
-    float risRnd = RAB_GetNextRandom(rng);
-
-    bool selected = RTXDI_StreamSample(state, environmentLightIndex, uv, risRnd, targetPdf, 1.0 / blendedSourcePdf);
-
-    if (selected) {
-        o_selectedSample = candidateSample;
-    }
-}
-
-RTXDI_Reservoir RTXDI_SampleEnvironmentMap(
-    inout RAB_RandomSamplerState rng,
-    inout RAB_RandomSamplerState coherentRng,
-    RAB_Surface surface, 
-    RTXDI_SampleParameters sampleParams,
-    RTXDI_EnvironmentLightRuntimeParameters params,
-    out RAB_LightSample o_selectedSample)
-{
-    RTXDI_Reservoir state = RTXDI_EmptyReservoir();
-    o_selectedSample = RAB_EmptyLightSample();
-
-    if (params.environmentLightPresent == 0)
-        return state;
-
-    if (sampleParams.numEnvironmentMapSamples == 0)
-        return state;
-
-    float tileRnd = RAB_GetNextRandom(coherentRng);
-    uint tileIndex = uint(tileRnd * params.environmentTileCount);
-
-    uint risBufferBase;
-    uint risBufferCount;
-    RTXDI_ComputeRISBufferBaseAndCount(coherentRng, params, risBufferBase, risBufferCount);
-
-    RAB_LightInfo lightInfo = RAB_LoadLightInfo(params.environmentLightIndex, false);
-
-    for (uint i = 0; i < sampleParams.numEnvironmentMapSamples; i++)
-    {
-        float2 uv;
-        float invSourcePdf;
-        RTXDI_SelectEnvironmentLightUV(rng, risBufferCount, risBufferBase, uv, invSourcePdf);        
-        RTXDI_StreamEnvironmentLightAtUVIntoReservoir(rng, sampleParams, surface, lightInfo, params.environmentLightIndex, uv, invSourcePdf, state, o_selectedSample);
-    }
-
-    RTXDI_FinalizeResampling(state, 1.0, sampleParams.numMisSamples);
-    state.M = 1;
-
-    return state;
-}
-
-#endif // RTXDI_ENABLE_PRESAMPLING
-
-#if RTXDI_REGIR_MODE != RTXDI_REGIR_DISABLED
-
-// ReGIR grid build pass.
-// Each thread populates one light slot in a grid cell.
-void RTXDI_PresampleLocalLightsForReGIR(
-    inout RAB_RandomSamplerState rng, 
-    inout RAB_RandomSamplerState coherentRng,
-    uint lightSlot,
-    uint numSamples,
-    RTXDI_ResamplingRuntimeParameters params)
-{
-    uint risBufferPtr = params.regirCommon.risBufferOffset + lightSlot;
-
-    if (numSamples == 0)
-    {
-        RTXDI_RIS_BUFFER[risBufferPtr] = uint2(0, 0);
-        return;
-    }
-
-    uint lightInCell = lightSlot % params.regirCommon.lightsPerCell;
-
-    uint cellIndex = lightSlot / params.regirCommon.lightsPerCell;
-
-    float3 cellCenter;
-    float cellRadius;
-    if (!RTXDI_ReGIR_CellIndexToWorldPos(params, int(cellIndex), cellCenter, cellRadius))
-    {
-        RTXDI_RIS_BUFFER[risBufferPtr] = uint2(0, 0);
-        return;
-    }
-
-    cellRadius *= (params.regirCommon.samplingJitter + 1.0);
-
-    RAB_LightInfo selectedLightInfo = RAB_EmptyLightInfo();
-    uint selectedLight = 0;
-    float selectedTargetPdf = 0;
-    float weightSum = 0;
-
-
-    float rndTileSample = RAB_GetNextRandom(coherentRng);
-    uint tileIndex = uint(rndTileSample * params.risBufferParams.tileCount);
-
-    float invNumSamples = 1.0 / float(numSamples);
-    
-    for (uint i = 0; i < numSamples; i++)
-    {
-        uint rndLight;
-        RAB_LightInfo lightInfo = RAB_EmptyLightInfo();
-        float invSourcePdf;
-        float rand = RAB_GetNextRandom(rng);
-        bool lightLoaded = false;
-
-        if (params.localLightParams.enableLocalLightImportanceSampling != 0)
-        {
-            uint tileSample = uint(min(rand * params.risBufferParams.tileSize, params.risBufferParams.tileSize - 1));
-            uint tilePtr = tileSample + tileIndex * params.risBufferParams.tileSize;
-            
-            uint2 tileData = RTXDI_RIS_BUFFER[tilePtr];
-            rndLight = tileData.x & RTXDI_LIGHT_INDEX_MASK;
-            invSourcePdf = asfloat(tileData.y) * invNumSamples;
-
-            if ((tileData.x & RTXDI_LIGHT_COMPACT_BIT) != 0)
-            {
-                lightInfo = RAB_LoadCompactLightInfo(tilePtr);
-                lightLoaded = true;
-            }
-        }
-        else
-        {
-            rndLight = uint(min(rand * params.localLightParams.numLocalLights, params.localLightParams.numLocalLights - 1)) + params.localLightParams.firstLocalLight;
-            invSourcePdf = float(params.localLightParams.numLocalLights) * invNumSamples;
-        }
-
-        if (!lightLoaded) {
-            lightInfo = RAB_LoadLightInfo(rndLight, false);
-        }
-
-        float targetPdf = RAB_GetLightTargetPdfForVolume(lightInfo, cellCenter, cellRadius);
-        float risRnd = RAB_GetNextRandom(rng);
-
-        float risWeight = targetPdf * invSourcePdf;
-        weightSum += risWeight;
-
-        if (risRnd * weightSum < risWeight)
-        {
-            selectedLightInfo = lightInfo;
-            selectedLight = rndLight;
-            selectedTargetPdf = targetPdf;
-        }
-    }
-
-    float weight = (selectedTargetPdf > 0) ? weightSum / selectedTargetPdf : 0;
-
-    bool compact = false;
-
-    if (weight > 0) {
-        compact = RAB_StoreCompactLightInfo(risBufferPtr, selectedLightInfo);
-    }
-
-    if(compact) {
-        selectedLight |= RTXDI_LIGHT_COMPACT_BIT;
-    }
-
-    RTXDI_RIS_BUFFER[risBufferPtr] = uint2(selectedLight, asuint(weight));
-}
-
-// Sampling lights for a surface from the ReGIR structure or the local light pool.
-// If the surface is inside the ReGIR structure, and ReGIR is enabled, and
-// numRegirSamples is nonzero, then this function will sample the ReGIR structure.
-// Otherwise, it samples the local light pool.
-RTXDI_Reservoir RTXDI_SampleLocalLightsFromReGIR(
-    inout RAB_RandomSamplerState rng,
-    inout RAB_RandomSamplerState coherentRng,
-    RAB_Surface surface,
-    RTXDI_SampleParameters sampleParams,
-    RTXDI_ResamplingRuntimeParameters params,
-    out RAB_LightSample o_selectedSample)
-{
-    RTXDI_Reservoir reservoir = RTXDI_EmptyReservoir();
-    o_selectedSample = RAB_EmptyLightSample();
-
-    if (sampleParams.numRegirSamples == 0 && sampleParams.numLocalLightSamples == 0)
-        return reservoir;
-
-    int cellIndex = -1;
-
-    if (params.regirCommon.enable != 0 && sampleParams.numRegirSamples > 0)
-    {
-        float3 cellJitter = float3(
-            RAB_GetNextRandom(coherentRng),
-            RAB_GetNextRandom(coherentRng),
-            RAB_GetNextRandom(coherentRng));
-        cellJitter -= 0.5;
-
-        float3 samplingPos = RAB_GetSurfaceWorldPos(surface);
-        float jitterScale = RTXDI_ReGIR_GetJitterScale(params, samplingPos);
-        samplingPos += cellJitter * jitterScale;
-
-        cellIndex = RTXDI_ReGIR_WorldPosToCellIndex(params, samplingPos);
-    }
-
-    uint risBufferBase, risBufferCount, numSamples;
-    bool useRisBuffer;
-
-    if (cellIndex < 0)
-    {
-        float tileRnd = RAB_GetNextRandom(coherentRng);
-        uint tileIndex = uint(tileRnd * params.risBufferParams.tileCount);
-
-        risBufferBase = tileIndex * params.risBufferParams.tileSize;
-        risBufferCount = params.risBufferParams.tileSize;
-        numSamples = sampleParams.numLocalLightSamples;
-        useRisBuffer = params.localLightParams.enableLocalLightImportanceSampling != 0;
-    }
-    else
-    {
-        uint cellBase = uint(cellIndex) * params.regirCommon.lightsPerCell;
-        risBufferBase = cellBase + params.regirCommon.risBufferOffset;
-        risBufferCount =  params.regirCommon.lightsPerCell;
-        numSamples = sampleParams.numRegirSamples;
-        useRisBuffer = true;
-    }
-
-    reservoir = RTXDI_SampleLocalLightsInternal(rng, surface, sampleParams, params.localLightParams,
-        useRisBuffer, risBufferBase, risBufferCount, o_selectedSample);
-
-    return reservoir;
-}
-
-#endif // (RTXDI_REGIR_MODE != RTXDI_REGIR_DISABLED)
-
-// Samples from the BRDF defined by the given surface
-RTXDI_Reservoir RTXDI_SampleBrdf(
-    inout RAB_RandomSamplerState rng,
-    RAB_Surface surface,
-    RTXDI_SampleParameters sampleParams,
-    RTXDI_ResamplingRuntimeParameters params,
-    out RAB_LightSample o_selectedSample)
-{
-    RTXDI_Reservoir state = RTXDI_EmptyReservoir();
-    
-    for (uint i = 0; i < sampleParams.numBrdfSamples; ++i)
-    {
-        float lightSourcePdf = 0;
-        float3 sampleDir;
-        uint lightIndex = RTXDI_InvalidLightIndex;
-        float2 randXY = float2(0, 0);
-        RAB_LightSample candidateSample = RAB_EmptyLightSample();
-
-        if (RAB_GetSurfaceBrdfSample(surface, rng, sampleDir))
-        {
-            float brdfPdf = RAB_GetSurfaceBrdfPdf(surface, sampleDir);
-            float maxDistance = RTXDI_BrdfMaxDistanceFromPdf(sampleParams.brdfCutoff, brdfPdf);
-            
-            bool hitAnything = RAB_TraceRayForLocalLight(RAB_GetSurfaceWorldPos(surface), sampleDir,
-                sampleParams.brdfRayMinT, maxDistance, lightIndex, randXY);
-
-            if (lightIndex != RTXDI_InvalidLightIndex)
-            {
-                RAB_LightInfo lightInfo = RAB_LoadLightInfo(lightIndex, false);
-                candidateSample = RAB_SamplePolymorphicLight(lightInfo, surface, randXY);
-                    
-                if (sampleParams.brdfCutoff > 0.f)
-                {
-                    // If Mis cutoff is used, we need to evaluate the sample and make sure it actually could have been
-                    // generated by the area sampling technique. This is due to numerical precision.
-                    float3 lightDir;
-                    float lightDistance;
-                    RAB_GetLightDirDistance(surface, candidateSample, lightDir, lightDistance);
-
-                    float brdfPdf = RAB_GetSurfaceBrdfPdf(surface, lightDir);
-                    float maxDistance = RTXDI_BrdfMaxDistanceFromPdf(sampleParams.brdfCutoff, brdfPdf);
-                    if (lightDistance > maxDistance)
-                        lightIndex = RTXDI_InvalidLightIndex;
-                }
-
-                if (lightIndex != RTXDI_InvalidLightIndex)
-                {
-                    lightSourcePdf = RAB_EvaluateLocalLightSourcePdf(params, lightIndex);
-                }
-            }
-            else if (!hitAnything && params.environmentLightParams.environmentLightPresent != 0)
-            {
-                // sample environment light
-                lightIndex = params.environmentLightParams.environmentLightIndex;
-                RAB_LightInfo lightInfo = RAB_LoadLightInfo(lightIndex, false);
-                randXY = RAB_GetEnvironmentMapRandXYFromDir(sampleDir);
-                candidateSample = RAB_SamplePolymorphicLight(lightInfo, surface, randXY);
-                lightSourcePdf = RAB_EvaluateEnvironmentMapSamplingPdf(sampleDir);
-            }
-        }
-
-        if (lightSourcePdf == 0)
-        {
-            // Did not hit a visible light
-            continue;
-        }
-
-        bool isEnvMapSample = lightIndex == params.environmentLightParams.environmentLightIndex;
-        float targetPdf = RAB_GetLightSampleTargetPdfForSurface(candidateSample, surface);
-        float blendedSourcePdf = RTXDI_LightBrdfMisWeight(surface, candidateSample, lightSourcePdf,
-            isEnvMapSample ? sampleParams.environmentMapMisWeight : sampleParams.localLightMisWeight, 
-            isEnvMapSample,
-            sampleParams);
-        float risRnd = RAB_GetNextRandom(rng);
-
-        bool selected = RTXDI_StreamSample(state, lightIndex, randXY, risRnd, targetPdf, 1.0f / blendedSourcePdf);
-        if (selected) {
-            o_selectedSample = candidateSample;
-        }
-    }
-
-    RTXDI_FinalizeResampling(state, 1.0, sampleParams.numMisSamples);
-    state.M = 1;
-
-    return state;
-}
-
-// Samples ReGIR and the local and infinite light pools for a given surface.
-RTXDI_Reservoir RTXDI_SampleLightsForSurface(
-    inout RAB_RandomSamplerState rng,
-    inout RAB_RandomSamplerState coherentRng,
-    RAB_Surface surface,
-    RTXDI_SampleParameters sampleParams,
-    RTXDI_ResamplingRuntimeParameters params, 
-    out RAB_LightSample o_lightSample)
-{
-    o_lightSample = RAB_EmptyLightSample();
-
-    RTXDI_Reservoir localReservoir;
-    RAB_LightSample localSample = RAB_EmptyLightSample();
-
-#if RTXDI_REGIR_MODE != RTXDI_REGIR_DISABLED
-    // If ReGIR is enabled and the surface is inside the grid, sample the grid.
-    // Otherwise, fall back to source pool sampling.
-    localReservoir = RTXDI_SampleLocalLightsFromReGIR(rng, coherentRng,
-        surface, sampleParams, params, localSample);
-#else
-    localReservoir = RTXDI_SampleLocalLights(rng, coherentRng, surface, 
-        sampleParams, params, localSample);
-#endif
-
-    RAB_LightSample infiniteSample = RAB_EmptyLightSample();  
-    RTXDI_Reservoir infiniteReservoir = RTXDI_SampleInfiniteLights(rng, surface,
-        sampleParams.numInfiniteLightSamples, params.infiniteLightParams, infiniteSample);
-
-#if RTXDI_ENABLE_PRESAMPLING
-    RAB_LightSample environmentSample = RAB_EmptyLightSample();
-    RTXDI_Reservoir environmentReservoir = RTXDI_SampleEnvironmentMap(rng, coherentRng, surface,
-        sampleParams, params.environmentLightParams, environmentSample);
-#endif
-
-    RAB_LightSample brdfSample = RAB_EmptyLightSample();
-    RTXDI_Reservoir brdfReservoir = RTXDI_SampleBrdf(rng, surface, sampleParams, params, brdfSample);
-
-    RTXDI_Reservoir state = RTXDI_EmptyReservoir();
-    RTXDI_CombineReservoirs(state, localReservoir, 0.5, localReservoir.targetPdf);
-    bool selectInfinite = RTXDI_CombineReservoirs(state, infiniteReservoir, RAB_GetNextRandom(rng), infiniteReservoir.targetPdf);
-#if RTXDI_ENABLE_PRESAMPLING
-    bool selectEnvironment = RTXDI_CombineReservoirs(state, environmentReservoir, RAB_GetNextRandom(rng), environmentReservoir.targetPdf);
-#endif
-    bool selectBrdf = RTXDI_CombineReservoirs(state, brdfReservoir, RAB_GetNextRandom(rng), brdfReservoir.targetPdf);
-    
-    RTXDI_FinalizeResampling(state, 1.0, 1.0);
-    state.M = 1;
-
-    if (selectBrdf)
-        o_lightSample = brdfSample;
-    else
-#if RTXDI_ENABLE_PRESAMPLING
-    if (selectEnvironment)
-        o_lightSample = environmentSample;
-    else
-#endif
-    if (selectInfinite)
-        o_lightSample = infiniteSample;
-    else
-        o_lightSample = localSample;
-
-    return state;
-}
 
 #ifdef RTXDI_ENABLE_BOILING_FILTER
 // Boiling filter that should be applied at the end of the temporal resampling pass.
@@ -1096,16 +107,15 @@ RTXDI_Reservoir RTXDI_SampleLightsForSurface(
 void RTXDI_BoilingFilter(
     uint2 LocalIndex,
     float filterStrength, // (0..1]
-    RTXDI_ResamplingRuntimeParameters params,
-    inout RTXDI_Reservoir reservoir)
+    inout RTXDI_DIReservoir reservoir)
 {
-    if (RTXDI_BoilingFilterInternal(LocalIndex, filterStrength, params, reservoir.weightSum))
-        reservoir = RTXDI_EmptyReservoir();
+    if (RTXDI_BoilingFilterInternal(LocalIndex, filterStrength, reservoir.weightSum))
+        reservoir = RTXDI_EmptyDIReservoir();
 }
 #endif // RTXDI_ENABLE_BOILING_FILTER
 
 // A structure that groups the application-provided settings for temporal resampling.
-struct RTXDI_TemporalResamplingParameters
+struct RTXDI_DITemporalResamplingParameters
 {
     // Screen-space motion vector, computed as (previousPosition - currentPosition).
     // The X and Y components are measured in pixels.
@@ -1143,6 +153,9 @@ struct RTXDI_TemporalResamplingParameters
     // Enables permuting the pixels sampled from the previous frame in order to add temporal
     // variation to the output signal and make it more denoiser friendly.
     bool enablePermutationSampling;
+
+    // Random number for permutation sampling that is the same for all pixels in the frame
+    uint uniformRandomNumber;
 };
 
 // Temporal resampling pass.
@@ -1154,13 +167,14 @@ struct RTXDI_TemporalResamplingParameters
 // can also use the current frame BVH if the previous is not available - that will produce more bias.
 // The selectedLightSample parameter is used to update and return the selected sample; it's optional,
 // and it's safe to pass a null structure there and ignore the result.
-RTXDI_Reservoir RTXDI_TemporalResampling(
+RTXDI_DIReservoir RTXDI_DITemporalResampling(
     uint2 pixelPosition,
     RAB_Surface surface,
-    RTXDI_Reservoir curSample,
+    RTXDI_DIReservoir curSample,
     inout RAB_RandomSamplerState rng,
-    RTXDI_TemporalResamplingParameters tparams,
-    RTXDI_ResamplingRuntimeParameters params,
+    RTXDI_RuntimeParameters params,
+    RTXDI_ReservoirBufferParameters reservoirParams,
+    RTXDI_DITemporalResamplingParameters tparams,
     out int2 temporalSamplePixelPos,
     inout RAB_LightSample selectedLightSample)
 {
@@ -1170,19 +184,19 @@ RTXDI_Reservoir RTXDI_TemporalResampling(
         tparams.biasCorrectionMode = RTXDI_BIAS_CORRECTION_BASIC;
     }
 
-    uint historyLimit = min(RTXDI_PackedReservoir_MaxM, uint(tparams.maxHistoryLength * curSample.M));
+    uint historyLimit = min(RTXDI_PackedDIReservoir_MaxM, uint(tparams.maxHistoryLength * curSample.M));
 
     int selectedLightPrevID = -1;
 
-    if (RTXDI_IsValidReservoir(curSample))
+    if (RTXDI_IsValidDIReservoir(curSample))
     {
-        selectedLightPrevID = RAB_TranslateLightIndex(RTXDI_GetReservoirLightIndex(curSample), true);
+        selectedLightPrevID = RAB_TranslateLightIndex(RTXDI_GetDIReservoirLightIndex(curSample), true);
     }
 
     temporalSamplePixelPos = int2(-1, -1);
 
-    RTXDI_Reservoir state = RTXDI_EmptyReservoir();
-    RTXDI_CombineReservoirs(state, curSample, /* random = */ 0.5, curSample.targetPdf);
+    RTXDI_DIReservoir state = RTXDI_EmptyDIReservoir();
+    RTXDI_CombineDIReservoirs(state, curSample, /* random = */ 0.5, curSample.targetPdf);
 
     // Backproject this pixel to last frame
     float3 motion = tparams.screenSpaceMotion;
@@ -1215,10 +229,10 @@ RTXDI_Reservoir RTXDI_TemporalResampling(
         int2 idx = prevPos + offset;
         if (tparams.enablePermutationSampling && i == 0)
         {
-            RTXDI_ApplyPermutationSampling(idx, params.uniformRandomNumber);
+            RTXDI_ApplyPermutationSampling(idx, tparams.uniformRandomNumber);
         }
 
-        RTXDI_ActivateCheckerboardPixel(idx, true, params);
+        RTXDI_ActivateCheckerboardPixel(idx, true, params.activeCheckerboardField);
 
         // Grab shading / g-buffer data from last frame
         temporalSurface = RAB_GetGBufferSurface(idx, true);
@@ -1246,24 +260,24 @@ RTXDI_Reservoir RTXDI_TemporalResampling(
     {
         // Resample the previous frame sample into the current reservoir, but reduce the light's weight
         // according to the bilinear weight of the current pixel
-        uint2 prevReservoirPos = RTXDI_PixelPosToReservoirPos(prevPos, params);
-        RTXDI_Reservoir prevSample = RTXDI_LoadReservoir(params,
+        uint2 prevReservoirPos = RTXDI_PixelPosToReservoirPos(prevPos, params.activeCheckerboardField);
+        RTXDI_DIReservoir prevSample = RTXDI_LoadDIReservoir(reservoirParams,
             prevReservoirPos, tparams.sourceBufferIndex);
         prevSample.M = min(prevSample.M, historyLimit);
         prevSample.spatialDistance += spatialOffset;
         prevSample.age += 1;
 
-        uint originalPrevLightID = RTXDI_GetReservoirLightIndex(prevSample);
+        uint originalPrevLightID = RTXDI_GetDIReservoirLightIndex(prevSample);
 
         // Map the light ID from the previous frame into the current frame, if it still exists
-        if (RTXDI_IsValidReservoir(prevSample))
+        if (RTXDI_IsValidDIReservoir(prevSample))
         {
             if (prevSample.age <= 1)
             {
                 temporalSamplePixelPos = prevPos;
             }
 
-            int mappedLightID = RAB_TranslateLightIndex(RTXDI_GetReservoirLightIndex(prevSample), false);
+            int mappedLightID = RAB_TranslateLightIndex(RTXDI_GetDIReservoirLightIndex(prevSample), false);
 
             if (mappedLightID < 0)
             {
@@ -1274,7 +288,7 @@ RTXDI_Reservoir RTXDI_TemporalResampling(
             else
             {
                 // Sample is valid - modify the light ID stored
-                prevSample.lightData = mappedLightID | RTXDI_Reservoir_LightValidBit;
+                prevSample.lightData = mappedLightID | RTXDI_DIReservoir_LightValidBit;
             }
         }
 
@@ -1282,17 +296,17 @@ RTXDI_Reservoir RTXDI_TemporalResampling(
 
         float weightAtCurrent = 0;
         RAB_LightSample candidateLightSample = RAB_EmptyLightSample();
-        if (RTXDI_IsValidReservoir(prevSample))
+        if (RTXDI_IsValidDIReservoir(prevSample))
         {
-            const RAB_LightInfo candidateLight = RAB_LoadLightInfo(RTXDI_GetReservoirLightIndex(prevSample), false);
+            const RAB_LightInfo candidateLight = RAB_LoadLightInfo(RTXDI_GetDIReservoirLightIndex(prevSample), false);
 
             candidateLightSample = RAB_SamplePolymorphicLight(
-                candidateLight, surface, RTXDI_GetReservoirSampleUV(prevSample));
+                candidateLight, surface, RTXDI_GetDIReservoirSampleUV(prevSample));
 
             weightAtCurrent = RAB_GetLightSampleTargetPdfForSurface(candidateLightSample, surface);
         }
 
-        bool sampleSelected = RTXDI_CombineReservoirs(state, prevSample, RAB_GetNextRandom(rng), weightAtCurrent);
+        bool sampleSelected = RTXDI_CombineDIReservoirs(state, prevSample, RAB_GetNextRandom(rng), weightAtCurrent);
         if(sampleSelected)
         {
             selectedPreviousSample = true;
@@ -1308,7 +322,7 @@ RTXDI_Reservoir RTXDI_TemporalResampling(
         float pi = state.targetPdf;
         float piSum = state.targetPdf * curSample.M;
         
-        if (RTXDI_IsValidReservoir(state) && selectedLightPrevID >= 0 && previousM > 0)
+        if (RTXDI_IsValidDIReservoir(state) && selectedLightPrevID >= 0 && previousM > 0)
         {
             float temporalP = 0;
 
@@ -1316,7 +330,7 @@ RTXDI_Reservoir RTXDI_TemporalResampling(
 
             // Get the PDF of the sample RIS selected in the first loop, above, *at this neighbor* 
             const RAB_LightSample selectedSampleAtTemporal = RAB_SamplePolymorphicLight(
-                selectedLightPrev, temporalSurface, RTXDI_GetReservoirSampleUV(state));
+                selectedLightPrev, temporalSurface, RTXDI_GetDIReservoirSampleUV(state));
         
             temporalP = RAB_GetLightSampleTargetPdfForSurface(selectedSampleAtTemporal, temporalSurface);
 
@@ -1346,7 +360,7 @@ RTXDI_Reservoir RTXDI_TemporalResampling(
 }
 
 // A structure that groups the application-provided settings for spatial resampling.
-struct RTXDI_SpatialResamplingParameters
+struct RTXDI_DISpatialResamplingParameters
 {
     // The index of the reservoir buffer to pull the spatial samples from.
     uint sourceBufferIndex;
@@ -1383,23 +397,27 @@ struct RTXDI_SpatialResamplingParameters
 
     // Enables the comparison of surface materials before taking a surface into resampling.
     bool enableMaterialSimilarityTest;
+
+    // Prevents samples which are from the current frame or have no reasonable temporal history merged being spread to neighbors
+    bool discountNaiveSamples;
 };
 
 // Spatial resampling pass, using pairwise MIS.  
 // Inputs and outputs equivalent to RTXDI_SpatialResampling(), but only uses pairwise MIS.
 // Can call this directly, or call RTXDI_SpatialResampling() with sparams.biasCorrectionMode 
 // set to RTXDI_BIAS_CORRECTION_PAIRWISE, which simply calls this function.
-RTXDI_Reservoir RTXDI_SpatialResamplingWithPairwiseMIS(
+RTXDI_DIReservoir RTXDI_DISpatialResamplingWithPairwiseMIS(
     uint2 pixelPosition,
     RAB_Surface centerSurface,
-    RTXDI_Reservoir centerSample,
+    RTXDI_DIReservoir centerSample,
     inout RAB_RandomSamplerState rng,
-    RTXDI_SpatialResamplingParameters sparams,
-    RTXDI_ResamplingRuntimeParameters params,
+    RTXDI_RuntimeParameters params,
+    RTXDI_ReservoirBufferParameters reservoirParams,
+    RTXDI_DISpatialResamplingParameters sparams,
     inout RAB_LightSample selectedLightSample)
 {
     // Initialize the output reservoir
-    RTXDI_Reservoir state = RTXDI_EmptyReservoir();
+    RTXDI_DIReservoir state = RTXDI_EmptyDIReservoir();
     state.canonicalWeight = 0.0f;
 
     // How many spatial samples to use?  
@@ -1419,7 +437,7 @@ RTXDI_Reservoir RTXDI_SpatialResamplingWithPairwiseMIS(
         int2 idx = int2(pixelPosition)+spatialOffset;
         idx = RAB_ClampSamplePositionIntoView(idx, false);
 
-        RTXDI_ActivateCheckerboardPixel(idx, false, params);
+        RTXDI_ActivateCheckerboardPixel(idx, false, params.activeCheckerboardField);
 
         RAB_Surface neighborSurface = RAB_GetGBufferSurface(idx, false);
 
@@ -1436,9 +454,15 @@ RTXDI_Reservoir RTXDI_SpatialResamplingWithPairwiseMIS(
             continue;
 
         // The surfaces are similar enough so we *can* reuse a neighbor from this pixel, so load it.
-        RTXDI_Reservoir neighborSample = RTXDI_LoadReservoir(params,
-            RTXDI_PixelPosToReservoirPos(idx, params), sparams.sourceBufferIndex);
+        RTXDI_DIReservoir neighborSample = RTXDI_LoadDIReservoir(reservoirParams,
+            RTXDI_PixelPosToReservoirPos(idx, params.activeCheckerboardField), sparams.sourceBufferIndex);
         neighborSample.spatialDistance += spatialOffset;
+
+        if (RTXDI_IsValidDIReservoir(neighborSample))
+        {
+            if (sparams.discountNaiveSamples && neighborSample.M <= RTXDI_NAIVE_SAMPLING_M_THRESHOLD)
+                continue;
+        }
 
         validSpatialSamples++;
 
@@ -1463,8 +487,8 @@ RTXDI_Reservoir RTXDI_SpatialResamplingWithPairwiseMIS(
     // Return the selected light sample.  This is a redundant lookup and could be optimized away by storing
         // the selected sample from the stream steps above.
     selectedLightSample = RAB_SamplePolymorphicLight(
-        RAB_LoadLightInfo(RTXDI_GetReservoirLightIndex(state), false),
-        centerSurface, RTXDI_GetReservoirSampleUV(state));
+        RAB_LoadLightInfo(RTXDI_GetDIReservoirLightIndex(state), false),
+        centerSurface, RTXDI_GetDIReservoirSampleUV(state));
 
     return state;
 }
@@ -1477,22 +501,23 @@ RTXDI_Reservoir RTXDI_SpatialResamplingWithPairwiseMIS(
 // Optionally, one visibility ray is traced for each neighbor being considered, to reduce bias.
 // The selectedLightSample parameter is used to update and return the selected sample; it's optional,
 // and it's safe to pass a null structure there and ignore the result.
-RTXDI_Reservoir RTXDI_SpatialResampling(
+RTXDI_DIReservoir RTXDI_DISpatialResampling(
     uint2 pixelPosition,
     RAB_Surface centerSurface,
-    RTXDI_Reservoir centerSample,
+    RTXDI_DIReservoir centerSample,
     inout RAB_RandomSamplerState rng,
-    RTXDI_SpatialResamplingParameters sparams,
-    RTXDI_ResamplingRuntimeParameters params,
+    RTXDI_RuntimeParameters params,
+    RTXDI_ReservoirBufferParameters reservoirParams,
+    RTXDI_DISpatialResamplingParameters sparams,
     inout RAB_LightSample selectedLightSample)
 {
     if (sparams.biasCorrectionMode == RTXDI_BIAS_CORRECTION_PAIRWISE)
     {
-        return RTXDI_SpatialResamplingWithPairwiseMIS(pixelPosition, centerSurface, 
-            centerSample, rng, sparams, params, selectedLightSample);
+        return RTXDI_DISpatialResamplingWithPairwiseMIS(pixelPosition, centerSurface, 
+            centerSample, rng, params, reservoirParams, sparams, selectedLightSample);
     }
 
-    RTXDI_Reservoir state = RTXDI_EmptyReservoir();
+    RTXDI_DIReservoir state = RTXDI_EmptyDIReservoir();
 
     // This is the weight we'll use (instead of 1/M) to make our estimate unbaised (see paper).
     float normalizationWeight = 1.0f;
@@ -1502,12 +527,12 @@ RTXDI_Reservoir RTXDI_SpatialResampling(
 
     RAB_LightInfo selectedLight = RAB_EmptyLightInfo();
 
-    if (RTXDI_IsValidReservoir(centerSample))
+    if (RTXDI_IsValidDIReservoir(centerSample))
     {
-        selectedLight = RAB_LoadLightInfo(RTXDI_GetReservoirLightIndex(centerSample), false);
+        selectedLight = RAB_LoadLightInfo(RTXDI_GetDIReservoirLightIndex(centerSample), false);
     }
 
-    RTXDI_CombineReservoirs(state, centerSample, /* random = */ 0.5f, centerSample.targetPdf);
+    RTXDI_CombineDIReservoirs(state, centerSample, /* random = */ 0.5f, centerSample.targetPdf);
 
     uint startIdx = uint(RAB_GetNextRandom(rng) * params.neighborOffsetMask);
     
@@ -1533,7 +558,7 @@ RTXDI_Reservoir RTXDI_SpatialResampling(
 
         idx = RAB_ClampSamplePositionIntoView(idx, false);
 
-        RTXDI_ActivateCheckerboardPixel(idx, false, params);
+        RTXDI_ActivateCheckerboardPixel(idx, false, params.activeCheckerboardField);
 
         RAB_Surface neighborSurface = RAB_GetGBufferSurface(idx, false);
 
@@ -1548,9 +573,9 @@ RTXDI_Reservoir RTXDI_SpatialResampling(
         if (sparams.enableMaterialSimilarityTest && !RAB_AreMaterialsSimilar(centerSurface, neighborSurface))
             continue;
 
-        uint2 neighborReservoirPos = RTXDI_PixelPosToReservoirPos(idx, params);
+        uint2 neighborReservoirPos = RTXDI_PixelPosToReservoirPos(idx, params.activeCheckerboardField);
 
-        RTXDI_Reservoir neighborSample = RTXDI_LoadReservoir(params,
+        RTXDI_DIReservoir neighborSample = RTXDI_LoadDIReservoir(reservoirParams,
             neighborReservoirPos, sparams.sourceBufferIndex);
         neighborSample.spatialDistance += spatialOffset;
 
@@ -1561,17 +586,20 @@ RTXDI_Reservoir RTXDI_SpatialResampling(
         // Load that neighbor's RIS state, do resampling
         float neighborWeight = 0;
         RAB_LightSample candidateLightSample = RAB_EmptyLightSample();
-        if (RTXDI_IsValidReservoir(neighborSample))
+        if (RTXDI_IsValidDIReservoir(neighborSample))
         {   
-            candidateLight = RAB_LoadLightInfo(RTXDI_GetReservoirLightIndex(neighborSample), false);
+            if (sparams.discountNaiveSamples && neighborSample.M <= RTXDI_NAIVE_SAMPLING_M_THRESHOLD)
+                continue;
+
+            candidateLight = RAB_LoadLightInfo(RTXDI_GetDIReservoirLightIndex(neighborSample), false);
             
             candidateLightSample = RAB_SamplePolymorphicLight(
-                candidateLight, centerSurface, RTXDI_GetReservoirSampleUV(neighborSample));
+                candidateLight, centerSurface, RTXDI_GetDIReservoirSampleUV(neighborSample));
             
             neighborWeight = RAB_GetLightSampleTargetPdfForSurface(candidateLightSample, centerSurface);
         }
         
-        if (RTXDI_CombineReservoirs(state, neighborSample, RAB_GetNextRandom(rng), neighborWeight))
+        if (RTXDI_CombineDIReservoirs(state, neighborSample, RAB_GetNextRandom(rng), neighborWeight))
         {
             selected = int(i);
             selectedLight = candidateLight;
@@ -1579,7 +607,7 @@ RTXDI_Reservoir RTXDI_SpatialResampling(
         }
     }
 
-    if (RTXDI_IsValidReservoir(state))
+    if (RTXDI_IsValidDIReservoir(state))
     {
 #if RTXDI_ALLOWED_BIAS_CORRECTION >= RTXDI_BIAS_CORRECTION_BASIC
         if (sparams.biasCorrectionMode >= RTXDI_BIAS_CORRECTION_BASIC)
@@ -1601,14 +629,14 @@ RTXDI_Reservoir RTXDI_SpatialResampling(
 
                 idx = RAB_ClampSamplePositionIntoView(idx, false);
 
-                RTXDI_ActivateCheckerboardPixel(idx, false, params);
+                RTXDI_ActivateCheckerboardPixel(idx, false, params.activeCheckerboardField);
 
                 // Load our neighbor's G-buffer
                 RAB_Surface neighborSurface = RAB_GetGBufferSurface(idx, false);
                 
                 // Get the PDF of the sample RIS selected in the first loop, above, *at this neighbor* 
                 const RAB_LightSample selectedSampleAtNeighbor = RAB_SamplePolymorphicLight(
-                    selectedLight, neighborSurface, RTXDI_GetReservoirSampleUV(state));
+                    selectedLight, neighborSurface, RTXDI_GetDIReservoirSampleUV(state));
 
                 float ps = RAB_GetLightSampleTargetPdfForSurface(selectedSampleAtNeighbor, neighborSurface);
 
@@ -1622,9 +650,9 @@ RTXDI_Reservoir RTXDI_SpatialResampling(
                 }
 #endif
 
-                uint2 neighborReservoirPos = RTXDI_PixelPosToReservoirPos(idx, params);
+                uint2 neighborReservoirPos = RTXDI_PixelPosToReservoirPos(idx, params.activeCheckerboardField);
 
-                RTXDI_Reservoir neighborSample = RTXDI_LoadReservoir(params,
+                RTXDI_DIReservoir neighborSample = RTXDI_LoadDIReservoir(reservoirParams,
                     neighborReservoirPos, sparams.sourceBufferIndex);
 
                 // Select this sample for the (normalization) numerator if this particular neighbor pixel
@@ -1650,7 +678,7 @@ RTXDI_Reservoir RTXDI_SpatialResampling(
 
 
 // A structure that groups the application-provided settings for spatio-temporal resampling.
-struct RTXDI_SpatioTemporalResamplingParameters
+struct RTXDI_DISpatioTemporalResamplingParameters
 {
     // Screen-space motion vector, computed as (previousPosition - currentPosition).
     // The X and Y components are measured in pixels.
@@ -1703,23 +731,30 @@ struct RTXDI_SpatioTemporalResamplingParameters
 
     // Enables the comparison of surface materials before taking a surface into resampling.
     bool enableMaterialSimilarityTest;
+
+    // Prevents samples which are from the current frame or have no reasonable temporal history merged being spread to neighbors
+    bool discountNaiveSamples;
+
+    // Random number for permutation sampling that is the same for all pixels in the frame
+    uint uniformRandomNumber;
 };
 
 // Fused spatialtemporal resampling pass, using pairwise MIS.  
 // Inputs and outputs equivalent to RTXDI_SpatioTemporalResampling(), but only uses pairwise MIS.
 // Can call this directly, or call RTXDI_SpatioTemporalResampling() with sparams.biasCorrectionMode 
 // set to RTXDI_BIAS_CORRECTION_PAIRWISE, which simply calls this function.
-RTXDI_Reservoir RTXDI_SpatioTemporalResamplingWithPairwiseMIS(
+RTXDI_DIReservoir RTXDI_DISpatioTemporalResamplingWithPairwiseMIS(
     uint2 pixelPosition,
     RAB_Surface surface,
-    RTXDI_Reservoir curSample,
+    RTXDI_DIReservoir curSample,
     inout RAB_RandomSamplerState rng,
-    RTXDI_SpatioTemporalResamplingParameters stparams,
-    RTXDI_ResamplingRuntimeParameters params,
+    RTXDI_RuntimeParameters params,
+    RTXDI_ReservoirBufferParameters reservoirParams,
+    RTXDI_DISpatioTemporalResamplingParameters stparams,
     out int2 temporalSamplePixelPos,
     inout RAB_LightSample selectedLightSample)
 {
-    uint historyLimit = min(RTXDI_PackedReservoir_MaxM, uint(stparams.maxHistoryLength * curSample.M));
+    uint historyLimit = min(RTXDI_PackedDIReservoir_MaxM, uint(stparams.maxHistoryLength * curSample.M));
 
     // Backproject this pixel to last frame
     float3 motion = stparams.screenSpaceMotion;
@@ -1749,10 +784,10 @@ RTXDI_Reservoir RTXDI_SpatioTemporalResamplingWithPairwiseMIS(
         centralIdx = prevPos + offset;
         if (stparams.enablePermutationSampling && i == 0)
         {
-            RTXDI_ApplyPermutationSampling(centralIdx, params.uniformRandomNumber);
+            RTXDI_ApplyPermutationSampling(centralIdx, stparams.uniformRandomNumber);
         }
 
-        RTXDI_ActivateCheckerboardPixel(centralIdx, true, params);
+        RTXDI_ActivateCheckerboardPixel(centralIdx, true, params.activeCheckerboardField);
 
         // Grab shading / g-buffer data from last frame
         temporalSurface = RAB_GetGBufferSurface(centralIdx, true);
@@ -1780,22 +815,22 @@ RTXDI_Reservoir RTXDI_SpatioTemporalResamplingWithPairwiseMIS(
     int validSamples = 0;
 
     // Create an empty reservoir we'll use to accumulate into
-    RTXDI_Reservoir state = RTXDI_EmptyReservoir();
+    RTXDI_DIReservoir state = RTXDI_EmptyDIReservoir();
     state.canonicalWeight = 0.0f;    // Important this is 0 for temporal
 
     // Load the "temporal" reservoir at the temporally backprojected "central" pixel
-    RTXDI_Reservoir prevSample = RTXDI_LoadReservoir(params,
-        RTXDI_PixelPosToReservoirPos(centralIdx, params), stparams.sourceBufferIndex);
+    RTXDI_DIReservoir prevSample = RTXDI_LoadDIReservoir(reservoirParams,
+        RTXDI_PixelPosToReservoirPos(centralIdx, params.activeCheckerboardField), stparams.sourceBufferIndex);
     prevSample.M = min(prevSample.M, historyLimit);
     prevSample.spatialDistance += temporalSpatialOffset;
     prevSample.age += 1;
 
     // Find the prior frame's light in the current frame
-    int mappedLightID = RAB_TranslateLightIndex(RTXDI_GetReservoirLightIndex(prevSample), false);
+    int mappedLightID = RAB_TranslateLightIndex(RTXDI_GetDIReservoirLightIndex(prevSample), false);
 
     // Kill the reservoir if it doesn't exist in the current frame, otherwise update its ID for this frame
     prevSample.weightSum = (mappedLightID < 0) ? 0 : prevSample.weightSum;
-    prevSample.lightData = (mappedLightID < 0) ? 0 : mappedLightID | RTXDI_Reservoir_LightValidBit;
+    prevSample.lightData = (mappedLightID < 0) ? 0 : mappedLightID | RTXDI_DIReservoir_LightValidBit;
 
     // If we found a valid surface by backprojecting our current pixel, stream it through the reservoir.
     if (foundTemporalSurface && prevSample.M > 0)
@@ -1825,7 +860,7 @@ RTXDI_Reservoir RTXDI_SpatioTemporalResamplingWithPairwiseMIS(
 
         idx = RAB_ClampSamplePositionIntoView(idx, false);
         
-        RTXDI_ActivateCheckerboardPixel(idx, false, params);
+        RTXDI_ActivateCheckerboardPixel(idx, false, params.activeCheckerboardField);
 
         RAB_Surface neighborSurface = RAB_GetGBufferSurface(idx, true);
 
@@ -1842,18 +877,25 @@ RTXDI_Reservoir RTXDI_SpatioTemporalResamplingWithPairwiseMIS(
             continue;
 
         // The surfaces are similar enough so we *can* reuse a neighbor from this pixel, so load it.
-        RTXDI_Reservoir neighborSample = RTXDI_LoadReservoir(params,
-            RTXDI_PixelPosToReservoirPos(idx, params), stparams.sourceBufferIndex);
+        RTXDI_DIReservoir neighborSample = RTXDI_LoadDIReservoir(reservoirParams,
+            RTXDI_PixelPosToReservoirPos(idx, params.activeCheckerboardField), stparams.sourceBufferIndex);
+
+        if (RTXDI_IsValidDIReservoir(prevSample))
+        {
+            if (stparams.discountNaiveSamples && neighborSample.M <= RTXDI_NAIVE_SAMPLING_M_THRESHOLD)
+                continue;
+        }
+
         neighborSample.M = min(neighborSample.M, historyLimit);
         neighborSample.spatialDistance += spatialOffset;
         neighborSample.age += 1;
 
         // Find the this neighbors light in the current frame (it may have turned off or moved in the ID list)
-        int mappedLightID = RAB_TranslateLightIndex(RTXDI_GetReservoirLightIndex(neighborSample), false);
+        int mappedLightID = RAB_TranslateLightIndex(RTXDI_GetDIReservoirLightIndex(neighborSample), false);
 
         // Kill the sample if the light doesn't exist in the current frame, otherwise update its ID for this frame
         neighborSample.weightSum = (mappedLightID < 0) ? 0 : neighborSample.weightSum;
-        neighborSample.lightData = (mappedLightID < 0) ? 0 : mappedLightID | RTXDI_Reservoir_LightValidBit;
+        neighborSample.lightData = (mappedLightID < 0) ? 0 : mappedLightID | RTXDI_DIReservoir_LightValidBit;
 
         if (mappedLightID < 0) continue;
 
@@ -1879,8 +921,8 @@ RTXDI_Reservoir RTXDI_SpatioTemporalResamplingWithPairwiseMIS(
     // Return the selected light sample.  This is a redundant lookup and could be optimized away by storing
     // the selected sample from the stream steps above.
     selectedLightSample = RAB_SamplePolymorphicLight(
-        RAB_LoadLightInfo(RTXDI_GetReservoirLightIndex(state), false),
-        surface, RTXDI_GetReservoirSampleUV(state));
+        RAB_LoadLightInfo(RTXDI_GetDIReservoirLightIndex(state), false),
+        surface, RTXDI_GetDIReservoirSampleUV(state));
 
     return state;
 }
@@ -1890,35 +932,36 @@ RTXDI_Reservoir RTXDI_SpatioTemporalResamplingWithPairwiseMIS(
 // A combination of the temporal and spatial passes that operates only on the previous frame reservoirs.
 // The selectedLightSample parameter is used to update and return the selected sample; it's optional,
 // and it's safe to pass a null structure there and ignore the result.
-RTXDI_Reservoir RTXDI_SpatioTemporalResampling(
+RTXDI_DIReservoir RTXDI_DISpatioTemporalResampling(
     uint2 pixelPosition,
     RAB_Surface surface,
-    RTXDI_Reservoir curSample,
+    RTXDI_DIReservoir curSample,
     inout RAB_RandomSamplerState rng,
-    RTXDI_SpatioTemporalResamplingParameters stparams,
-    RTXDI_ResamplingRuntimeParameters params,
+    RTXDI_RuntimeParameters params,
+    RTXDI_ReservoirBufferParameters reservoirParams,
+    RTXDI_DISpatioTemporalResamplingParameters stparams,
     out int2 temporalSamplePixelPos,
     inout RAB_LightSample selectedLightSample)
 {
     if (stparams.biasCorrectionMode == RTXDI_BIAS_CORRECTION_PAIRWISE)
     {
-        return RTXDI_SpatioTemporalResamplingWithPairwiseMIS(pixelPosition, surface,
-            curSample, rng, stparams, params, temporalSamplePixelPos, selectedLightSample);
+        return RTXDI_DISpatioTemporalResamplingWithPairwiseMIS(pixelPosition, surface,
+            curSample, rng, params, reservoirParams, stparams, temporalSamplePixelPos, selectedLightSample);
     }
 
-    uint historyLimit = min(RTXDI_PackedReservoir_MaxM, uint(stparams.maxHistoryLength * curSample.M));
+    uint historyLimit = min(RTXDI_PackedDIReservoir_MaxM, uint(stparams.maxHistoryLength * curSample.M));
 
     int selectedLightPrevID = -1;
 
-    if (RTXDI_IsValidReservoir(curSample))
+    if (RTXDI_IsValidDIReservoir(curSample))
     {
-        selectedLightPrevID = RAB_TranslateLightIndex(RTXDI_GetReservoirLightIndex(curSample), true);
+        selectedLightPrevID = RAB_TranslateLightIndex(RTXDI_GetDIReservoirLightIndex(curSample), true);
     }
 
     temporalSamplePixelPos = int2(-1, -1);
 
-    RTXDI_Reservoir state = RTXDI_EmptyReservoir();
-    RTXDI_CombineReservoirs(state, curSample, /* random = */ 0.5, curSample.targetPdf);
+    RTXDI_DIReservoir state = RTXDI_EmptyDIReservoir();
+    RTXDI_CombineDIReservoirs(state, curSample, /* random = */ 0.5, curSample.targetPdf);
 
     uint startIdx = uint(RAB_GetNextRandom(rng) * params.neighborOffsetMask);
 
@@ -1956,10 +999,10 @@ RTXDI_Reservoir RTXDI_SpatioTemporalResampling(
 
         if (stparams.enablePermutationSampling && i == 0)
         {
-            RTXDI_ApplyPermutationSampling(idx, params.uniformRandomNumber);
+            RTXDI_ApplyPermutationSampling(idx, stparams.uniformRandomNumber);
         }
 
-        RTXDI_ActivateCheckerboardPixel(idx, true, params);
+        RTXDI_ActivateCheckerboardPixel(idx, true, params.activeCheckerboardField);
 
         // Grab shading / g-buffer data from last frame
         temporalSurface = RAB_GetGBufferSurface(idx, true);
@@ -2012,7 +1055,7 @@ RTXDI_Reservoir RTXDI_SpatioTemporalResampling(
 
             idx = RAB_ClampSamplePositionIntoView(idx, true);
 
-            RTXDI_ActivateCheckerboardPixel(idx, true, params);
+            RTXDI_ActivateCheckerboardPixel(idx, true, params.activeCheckerboardField);
 
             temporalSurface = RAB_GetGBufferSurface(idx, true);
 
@@ -2030,26 +1073,32 @@ RTXDI_Reservoir RTXDI_SpatioTemporalResampling(
         
         cachedResult |= (1u << uint(i));
 
-        uint2 neighborReservoirPos = RTXDI_PixelPosToReservoirPos(idx, params);
+        uint2 neighborReservoirPos = RTXDI_PixelPosToReservoirPos(idx, params.activeCheckerboardField);
 
-        RTXDI_Reservoir prevSample = RTXDI_LoadReservoir(params,
+        RTXDI_DIReservoir prevSample = RTXDI_LoadDIReservoir(reservoirParams,
             neighborReservoirPos, stparams.sourceBufferIndex);
+
+        if (RTXDI_IsValidDIReservoir(prevSample))
+        {
+            if (stparams.discountNaiveSamples && prevSample.M <= RTXDI_NAIVE_SAMPLING_M_THRESHOLD)
+                continue;
+        }
 
         prevSample.M = min(prevSample.M, historyLimit);
         prevSample.spatialDistance += spatialOffset;
         prevSample.age += 1;
 
-        uint originalPrevLightID = RTXDI_GetReservoirLightIndex(prevSample);
+        uint originalPrevLightID = RTXDI_GetDIReservoirLightIndex(prevSample);
 
         // Map the light ID from the previous frame into the current frame, if it still exists
-        if (RTXDI_IsValidReservoir(prevSample))
+        if (RTXDI_IsValidDIReservoir(prevSample))
         {   
             if (i == 0 && foundTemporalSurface && prevSample.age <= 1)
             {
                 temporalSamplePixelPos = idx;
             }
 
-            int mappedLightID = RAB_TranslateLightIndex(RTXDI_GetReservoirLightIndex(prevSample), false);
+            int mappedLightID = RAB_TranslateLightIndex(RTXDI_GetDIReservoirLightIndex(prevSample), false);
 
             if (mappedLightID < 0)
             {
@@ -2060,7 +1109,7 @@ RTXDI_Reservoir RTXDI_SpatioTemporalResampling(
             else
             {
                 // Sample is valid - modify the light ID stored
-                prevSample.lightData = mappedLightID | RTXDI_Reservoir_LightValidBit;
+                prevSample.lightData = mappedLightID | RTXDI_DIReservoir_LightValidBit;
             }
         }
 
@@ -2069,17 +1118,17 @@ RTXDI_Reservoir RTXDI_SpatioTemporalResampling(
         // Load that neighbor's RIS state, do resampling
         float neighborWeight = 0;
         RAB_LightSample candidateLightSample = RAB_EmptyLightSample();
-        if (RTXDI_IsValidReservoir(prevSample))
+        if (RTXDI_IsValidDIReservoir(prevSample))
         {   
-            candidateLight = RAB_LoadLightInfo(RTXDI_GetReservoirLightIndex(prevSample), false);
+            candidateLight = RAB_LoadLightInfo(RTXDI_GetDIReservoirLightIndex(prevSample), false);
             
             candidateLightSample = RAB_SamplePolymorphicLight(
-                candidateLight, surface, RTXDI_GetReservoirSampleUV(prevSample));
+                candidateLight, surface, RTXDI_GetDIReservoirSampleUV(prevSample));
             
             neighborWeight = RAB_GetLightSampleTargetPdfForSurface(candidateLightSample, surface);
         }
 
-        if (RTXDI_CombineReservoirs(state, prevSample, RAB_GetNextRandom(rng), neighborWeight))
+        if (RTXDI_CombineDIReservoirs(state, prevSample, RAB_GetNextRandom(rng), neighborWeight))
         {
             selected = i;
             selectedLightPrevID = int(originalPrevLightID);
@@ -2087,7 +1136,7 @@ RTXDI_Reservoir RTXDI_SpatioTemporalResampling(
         }
     }
 
-    if (RTXDI_IsValidReservoir(state))
+    if (RTXDI_IsValidDIReservoir(state))
     {
 #if RTXDI_ALLOWED_BIAS_CORRECTION >= RTXDI_BIAS_CORRECTION_BASIC
         if (stparams.biasCorrectionMode >= RTXDI_BIAS_CORRECTION_BASIC)
@@ -2119,14 +1168,14 @@ RTXDI_Reservoir RTXDI_SpatioTemporalResampling(
                         idx = RAB_ClampSamplePositionIntoView(idx, true);
                     }
 
-                    RTXDI_ActivateCheckerboardPixel(idx, true, params);
+                    RTXDI_ActivateCheckerboardPixel(idx, true, params.activeCheckerboardField);
 
                     // Load our neighbor's G-buffer
                     RAB_Surface neighborSurface = RAB_GetGBufferSurface(idx, true);
                     
                     // Get the PDF of the sample RIS selected in the first loop, above, *at this neighbor* 
                     const RAB_LightSample selectedSampleAtNeighbor = RAB_SamplePolymorphicLight(
-                        selectedLightPrev, neighborSurface, RTXDI_GetReservoirSampleUV(state));
+                        selectedLightPrev, neighborSurface, RTXDI_GetDIReservoirSampleUV(state));
 
                     float ps = RAB_GetLightSampleTargetPdfForSurface(selectedSampleAtNeighbor, neighborSurface);
 
@@ -2147,9 +1196,9 @@ RTXDI_Reservoir RTXDI_SpatioTemporalResampling(
                     }
 #endif
 
-                    uint2 neighborReservoirPos = RTXDI_PixelPosToReservoirPos(idx, params);
+                    uint2 neighborReservoirPos = RTXDI_PixelPosToReservoirPos(idx, params.activeCheckerboardField);
 
-                    RTXDI_Reservoir prevSample = RTXDI_LoadReservoir(params,
+                    RTXDI_DIReservoir prevSample = RTXDI_LoadDIReservoir(reservoirParams,
                         neighborReservoirPos, stparams.sourceBufferIndex);
                     prevSample.M = min(prevSample.M, historyLimit);
 

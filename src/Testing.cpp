@@ -89,26 +89,49 @@ std::istream& operator>> (std::istream& is, IndirectLightingMode& mode)
     return is;
 }
 
-std::istream& operator>> (std::istream& is, ResamplingMode& mode)
+std::istream& operator>> (std::istream& is, rtxdi::ReSTIRDI_ResamplingMode& mode)
 {
     std::string s;
     is >> s;
     toupper(s);
 
     if (s == "NONE")
-        mode = ResamplingMode::None;
+        mode = rtxdi::ReSTIRDI_ResamplingMode::None;
     else if (s == "TEMPORAL")
-        mode = ResamplingMode::Temporal;
+        mode = rtxdi::ReSTIRDI_ResamplingMode::Temporal;
     else if (s == "SPATIAL")
-        mode = ResamplingMode::Spatial;
+        mode = rtxdi::ReSTIRDI_ResamplingMode::Spatial;
     else if (s == "TEMPORAL_SPATIAL")
-        mode = ResamplingMode::TemporalAndSpatial;
+        mode = rtxdi::ReSTIRDI_ResamplingMode::TemporalAndSpatial;
     else if (s == "FUSED")
-        mode = ResamplingMode::FusedSpatiotemporal;
+        mode = rtxdi::ReSTIRDI_ResamplingMode::FusedSpatiotemporal;
 
     else
         throw cxxopts::OptionException("Unrecognized value passed to the --gi-mode argument.");
-    
+
+    return is;
+}
+
+std::istream& operator>> (std::istream& is, rtxdi::ReSTIRGI_ResamplingMode& mode)
+{
+    std::string s;
+    is >> s;
+    toupper(s);
+
+    if (s == "NONE")
+        mode = rtxdi::ReSTIRGI_ResamplingMode::None;
+    else if (s == "TEMPORAL")
+        mode = rtxdi::ReSTIRGI_ResamplingMode::Temporal;
+    else if (s == "SPATIAL")
+        mode = rtxdi::ReSTIRGI_ResamplingMode::Spatial;
+    else if (s == "TEMPORAL_SPATIAL")
+        mode = rtxdi::ReSTIRGI_ResamplingMode::TemporalAndSpatial;
+    else if (s == "FUSED")
+        mode = rtxdi::ReSTIRGI_ResamplingMode::FusedSpatiotemporal;
+
+    else
+        throw cxxopts::OptionException("Unrecognized value passed to the --gi-mode argument.");
+
     return is;
 }
 
@@ -157,11 +180,11 @@ void ProcessCommandLine(int argc, char** argv, donut::app::DeviceCreationParamet
         ("checkerboard", "Use checkerboard rendering", value(checkerboard))
         ("d,debug", "Enable the DX12 or Vulkan validation layers", value(deviceParams.enableDebugRuntime))
         ("disable-bg-opt", "Disable DX12 driver background optimization", value(args.disableBackgroundOptimization))
-        ("direct-resampling", "Direct lighting resampling mode: NONE, TEMPORAL, SPATIAL, TEMPORAL_SPATIAL, FUSED", value(ui.lightingSettings.resamplingMode))
+        ("direct-resampling", "Direct lighting resampling mode: NONE, TEMPORAL, SPATIAL, TEMPORAL_SPATIAL, FUSED", value(ui.restirDI.resamplingMode))
         ("fullscreen", "Run in full screen", value(deviceParams.startFullscreen))
         ("h,help", "Display this help message", value(help))
         ("height", "Window height", value(deviceParams.backBufferHeight))
-        ("indirect-resampling", "ReSTIR GI resampling mode: NONE, TEMPORAL, SPATIAL, TEMPORAL_SPATIAL, FUSED", value(ui.lightingSettings.reStirGI.resamplingMode))
+        ("indirect-resampling", "ReSTIR GI resampling mode: NONE, TEMPORAL, SPATIAL, TEMPORAL_SPATIAL, FUSED", value(ui.restirGI.resamplingMode))
         ("noise-mix", "Amount of noise to mix in after denoising", value(ui.noiseMix))
         ("pixel-jitter", "Pixel jitter toggle", value(ui.enablePixelJitter))
         ("preset", "Rendering settings preset: FAST, MEDIUM, UNBIASED, ULTRA, REFERENCE", value(ui))
@@ -183,12 +206,6 @@ void ProcessCommandLine(int argc, char** argv, donut::app::DeviceCreationParamet
 #if WITH_NRD
     options.add_options()
         ("denoiser", "Denoiser: OFF, REBLUR, RELAX", value(denoiserMode))
-    ;
-#endif
-
-#if WITH_RTXGI
-    options.add_options()
-        ("rtxgi", "RTXGI toggle", value(ui.rtxgi.enabled))
     ;
 #endif
 
@@ -250,7 +267,7 @@ void ProcessCommandLine(int argc, char** argv, donut::app::DeviceCreationParamet
         ui.animationFrame = 0;
 
     if (checkerboard)
-        ui.rtxdiContextParams.CheckerboardSamplingMode = rtxdi::CheckerboardMode::Black;
+        ui.restirDIStaticParams.CheckerboardSamplingMode = rtxdi::CheckerboardMode::Black;
 }
 
 void ApplicationLogCallback(log::Severity severity, const char* message)

@@ -35,7 +35,7 @@ uint32_t ReSTIRGIContext::getFrameIndex() const
     return m_frameIndex;
 }
 
-RTXDI_DIReservoirBufferParameters ReSTIRGIContext::getReservoirBufferParameters() const
+RTXDI_ReservoirBufferParameters ReSTIRGIContext::getReservoirBufferParameters() const
 {
     return m_reservoirBufferParams;
 }

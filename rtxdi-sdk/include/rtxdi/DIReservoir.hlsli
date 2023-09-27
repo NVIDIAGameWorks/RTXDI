@@ -105,7 +105,7 @@ RTXDI_PackedDIReservoir RTXDI_PackDIReservoir(const RTXDI_DIReservoir reservoir)
 #if RTXDI_ENABLE_STORE_RESERVOIR
 void RTXDI_StoreDIReservoir(
     const RTXDI_DIReservoir reservoir,
-    RTXDI_DIReservoirBufferParameters reservoirParams,
+    RTXDI_ReservoirBufferParameters reservoirParams,
     uint2 reservoirPosition,
     uint reservoirArrayIndex)
 {
@@ -153,7 +153,7 @@ RTXDI_DIReservoir RTXDI_UnpackDIReservoir(RTXDI_PackedDIReservoir data)
 }
 
 RTXDI_DIReservoir RTXDI_LoadDIReservoir(
-    RTXDI_DIReservoirBufferParameters reservoirParams,
+    RTXDI_ReservoirBufferParameters reservoirParams,
     uint2 reservoirPosition,
     uint reservoirArrayIndex)
 {

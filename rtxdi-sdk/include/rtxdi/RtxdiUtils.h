@@ -19,7 +19,7 @@ enum class CheckerboardMode : uint32_t
     White = 2
 };
 
-RTXDI_DIReservoirBufferParameters CalculateReservoirBufferParameters(uint32_t renderWidth, uint32_t renderHeight, CheckerboardMode checkerboardMode);
+RTXDI_ReservoirBufferParameters CalculateReservoirBufferParameters(uint32_t renderWidth, uint32_t renderHeight, CheckerboardMode checkerboardMode);
 
 void ComputePdfTextureSize(uint32_t maxItems, uint32_t& outWidth, uint32_t& outHeight, uint32_t& outMipLevels);
 

@@ -115,7 +115,7 @@ struct ReSTIRGI_BufferIndices
 
 struct ReSTIRGI_Parameters
 {
-    RTXDI_DIReservoirBufferParameters reservoirBufferParams;
+    RTXDI_ReservoirBufferParameters reservoirBufferParams;
     ReSTIRGI_BufferIndices bufferIndices;
     ReSTIRGI_TemporalResamplingParameters temporalResamplingParams;
     ReSTIRGI_SpatialResamplingParameters spatialResamplingParams;

@@ -63,7 +63,7 @@ RTXDI_RuntimeParameters ReSTIRDIContext::getRuntimeParams() const
     return m_runtimeParams;
 }
 
-RTXDI_DIReservoirBufferParameters ReSTIRDIContext::getReservoirBufferParameters() const
+RTXDI_ReservoirBufferParameters ReSTIRDIContext::getReservoirBufferParameters() const
 {
     return m_reservoirBufferParams;
 }

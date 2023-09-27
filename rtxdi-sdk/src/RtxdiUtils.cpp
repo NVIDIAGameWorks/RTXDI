@@ -15,14 +15,14 @@
 namespace rtxdi
 {
 
-RTXDI_DIReservoirBufferParameters CalculateReservoirBufferParameters(uint32_t renderWidth, uint32_t renderHeight, CheckerboardMode checkerboardMode)
+RTXDI_ReservoirBufferParameters CalculateReservoirBufferParameters(uint32_t renderWidth, uint32_t renderHeight, CheckerboardMode checkerboardMode)
 {
     renderWidth = (checkerboardMode == CheckerboardMode::Off)
         ? renderWidth
         : (renderWidth + 1) / 2;
     uint32_t renderWidthBlocks = (renderWidth + RTXDI_RESERVOIR_BLOCK_SIZE - 1) / RTXDI_RESERVOIR_BLOCK_SIZE;
     uint32_t renderHeightBlocks = (renderHeight + RTXDI_RESERVOIR_BLOCK_SIZE - 1) / RTXDI_RESERVOIR_BLOCK_SIZE;
-    RTXDI_DIReservoirBufferParameters params;
+    RTXDI_ReservoirBufferParameters params;
     params.reservoirBlockRowPitch = renderWidthBlocks * (RTXDI_RESERVOIR_BLOCK_SIZE * RTXDI_RESERVOIR_BLOCK_SIZE);
     params.reservoirArrayPitch = params.reservoirBlockRowPitch * renderHeightBlocks;
     return params;

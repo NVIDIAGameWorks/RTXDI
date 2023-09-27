@@ -189,7 +189,7 @@ RTXDI_GIReservoir RTXDI_GITemporalResampling(
     const RTXDI_GIReservoir inputReservoir,
     inout RAB_RandomSamplerState rng,
     const RTXDI_RuntimeParameters params,
-    const RTXDI_DIReservoirBufferParameters reservoirParams,
+    const RTXDI_ReservoirBufferParameters reservoirParams,
     const RTXDI_GITemporalResamplingParameters tparams)
 {
     // Backproject this pixel to last frame
@@ -394,7 +394,7 @@ RTXDI_GIReservoir RTXDI_GISpatialResampling(
     const RTXDI_GIReservoir inputReservoir,
     inout RAB_RandomSamplerState rng,
     const RTXDI_RuntimeParameters params,
-    const RTXDI_DIReservoirBufferParameters reservoirParams,
+    const RTXDI_ReservoirBufferParameters reservoirParams,
     const RTXDI_GISpatialResamplingParameters sparams)
 {
     const uint numSamples = sparams.numSamples;
@@ -614,7 +614,7 @@ RTXDI_GIReservoir RTXDI_GISpatioTemporalResampling(
     RTXDI_GIReservoir inputReservoir,
     inout RAB_RandomSamplerState rng,
     const RTXDI_RuntimeParameters params,
-    const RTXDI_DIReservoirBufferParameters reservoirParams,
+    const RTXDI_ReservoirBufferParameters reservoirParams,
     const RTXDI_GISpatioTemporalResamplingParameters stparams)
 {
     // Backproject this pixel to last frame

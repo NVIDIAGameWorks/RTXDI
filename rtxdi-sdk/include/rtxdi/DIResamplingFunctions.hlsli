@@ -173,7 +173,7 @@ RTXDI_DIReservoir RTXDI_DITemporalResampling(
     RTXDI_DIReservoir curSample,
     inout RAB_RandomSamplerState rng,
     RTXDI_RuntimeParameters params,
-    RTXDI_DIReservoirBufferParameters reservoirParams,
+    RTXDI_ReservoirBufferParameters reservoirParams,
     RTXDI_DITemporalResamplingParameters tparams,
     out int2 temporalSamplePixelPos,
     inout RAB_LightSample selectedLightSample)
@@ -412,7 +412,7 @@ RTXDI_DIReservoir RTXDI_DISpatialResamplingWithPairwiseMIS(
     RTXDI_DIReservoir centerSample,
     inout RAB_RandomSamplerState rng,
     RTXDI_RuntimeParameters params,
-    RTXDI_DIReservoirBufferParameters reservoirParams,
+    RTXDI_ReservoirBufferParameters reservoirParams,
     RTXDI_DISpatialResamplingParameters sparams,
     inout RAB_LightSample selectedLightSample)
 {
@@ -507,7 +507,7 @@ RTXDI_DIReservoir RTXDI_DISpatialResampling(
     RTXDI_DIReservoir centerSample,
     inout RAB_RandomSamplerState rng,
     RTXDI_RuntimeParameters params,
-    RTXDI_DIReservoirBufferParameters reservoirParams,
+    RTXDI_ReservoirBufferParameters reservoirParams,
     RTXDI_DISpatialResamplingParameters sparams,
     inout RAB_LightSample selectedLightSample)
 {
@@ -749,7 +749,7 @@ RTXDI_DIReservoir RTXDI_DISpatioTemporalResamplingWithPairwiseMIS(
     RTXDI_DIReservoir curSample,
     inout RAB_RandomSamplerState rng,
     RTXDI_RuntimeParameters params,
-    RTXDI_DIReservoirBufferParameters reservoirParams,
+    RTXDI_ReservoirBufferParameters reservoirParams,
     RTXDI_DISpatioTemporalResamplingParameters stparams,
     out int2 temporalSamplePixelPos,
     inout RAB_LightSample selectedLightSample)
@@ -938,7 +938,7 @@ RTXDI_DIReservoir RTXDI_DISpatioTemporalResampling(
     RTXDI_DIReservoir curSample,
     inout RAB_RandomSamplerState rng,
     RTXDI_RuntimeParameters params,
-    RTXDI_DIReservoirBufferParameters reservoirParams,
+    RTXDI_ReservoirBufferParameters reservoirParams,
     RTXDI_DISpatioTemporalResamplingParameters stparams,
     out int2 temporalSamplePixelPos,
     inout RAB_LightSample selectedLightSample)

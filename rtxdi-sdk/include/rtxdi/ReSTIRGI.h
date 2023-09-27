@@ -88,7 +88,7 @@ public:
     ReSTIRGIStaticParameters getStaticParams() const;
 
     uint32_t getFrameIndex() const;
-    RTXDI_DIReservoirBufferParameters getReservoirBufferParameters() const;
+    RTXDI_ReservoirBufferParameters getReservoirBufferParameters() const;
     ReSTIRGI_ResamplingMode getResamplingMode() const;
     ReSTIRGI_BufferIndices getBufferIndices() const;
     ReSTIRGI_TemporalResamplingParameters getTemporalResamplingParameters() const;
@@ -107,7 +107,7 @@ private:
     ReSTIRGIStaticParameters m_staticParams;
 
     uint32_t m_frameIndex;
-    RTXDI_DIReservoirBufferParameters m_reservoirBufferParams;
+    RTXDI_ReservoirBufferParameters m_reservoirBufferParams;
     ReSTIRGI_ResamplingMode m_resamplingMode;
     ReSTIRGI_BufferIndices m_bufferIndices;
     ReSTIRGI_TemporalResamplingParameters m_temporalResamplingParams;

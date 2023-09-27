@@ -182,8 +182,8 @@ struct ConfidenceConstants
 struct VisualizationConstants
 {
     RTXDI_RuntimeParameters runtimeParams;
-    RTXDI_DIReservoirBufferParameters restirDIReservoirBufferParams;
-    RTXDI_DIReservoirBufferParameters restirGIReservoirBufferParams;
+    RTXDI_ReservoirBufferParameters restirDIReservoirBufferParams;
+    RTXDI_ReservoirBufferParameters restirGIReservoirBufferParams;
 
     int2 outputSize;
     float2 resolutionScale;

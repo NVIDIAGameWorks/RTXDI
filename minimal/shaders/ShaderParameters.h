@@ -44,7 +44,7 @@ struct ResamplingConstants
     PlanarViewConstants prevView;
     RTXDI_RuntimeParameters runtimeParams;
     RTXDI_LightBufferParameters lightBufferParams;
-    RTXDI_DIReservoirBufferParameters restirDIReservoirBufferParams;
+    RTXDI_ReservoirBufferParameters restirDIReservoirBufferParams;
 
     uint frameIndex;
     uint numInitialSamples;

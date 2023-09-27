@@ -73,7 +73,7 @@ void RTXDI_ApplyPermutationSampling(inout int2 prevPixelPos, uint uniformRandomN
 }
 
 uint RTXDI_DIReservoirPositionToPointer(
-    RTXDI_DIReservoirBufferParameters reservoirParams,
+    RTXDI_ReservoirBufferParameters reservoirParams,
     uint2 reservoirPosition,
     uint reservoirArrayIndex)
 {

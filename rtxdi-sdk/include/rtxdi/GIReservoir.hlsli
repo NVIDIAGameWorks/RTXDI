@@ -112,7 +112,7 @@ RTXDI_GIReservoir RTXDI_UnpackGIReservoir(RTXDI_PackedGIReservoir data)
 }
 
 RTXDI_GIReservoir RTXDI_LoadGIReservoir(
-    RTXDI_DIReservoirBufferParameters reservoirParams,
+    RTXDI_ReservoirBufferParameters reservoirParams,
     uint2 reservoirPosition,
     uint reservoirArrayIndex)
 {
@@ -121,7 +121,7 @@ RTXDI_GIReservoir RTXDI_LoadGIReservoir(
 }
 
 RTXDI_GIReservoir RTXDI_LoadGIReservoir(
-    RTXDI_DIReservoirBufferParameters reservoirParams,
+    RTXDI_ReservoirBufferParameters reservoirParams,
     uint2 reservoirPosition,
     uint reservoirArrayIndex,
     out uint miscFlags)

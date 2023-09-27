@@ -117,7 +117,7 @@ namespace rtxdi
     public:
         ReSTIRDIContext(const ReSTIRDIStaticParameters& params);
 
-        RTXDI_DIReservoirBufferParameters getReservoirBufferParameters() const;
+        RTXDI_ReservoirBufferParameters getReservoirBufferParameters() const;
         ReSTIRDI_ResamplingMode getResamplingMode() const;
         RTXDI_RuntimeParameters getRuntimeParams() const;
         ReSTIRDI_BufferIndices getBufferIndices() const;
@@ -147,7 +147,7 @@ namespace rtxdi
         ReSTIRDIStaticParameters m_staticParams;
 
         ReSTIRDI_ResamplingMode m_resamplingMode;
-        RTXDI_DIReservoirBufferParameters m_reservoirBufferParams;
+        RTXDI_ReservoirBufferParameters m_reservoirBufferParams;
         RTXDI_RuntimeParameters m_runtimeParams;
         ReSTIRDI_BufferIndices m_bufferIndices;
         

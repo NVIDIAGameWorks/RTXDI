@@ -115,7 +115,7 @@ struct ReSTIRDI_ShadingParameters
 
 struct ReSTIRDI_Parameters
 {
-    RTXDI_DIReservoirBufferParameters reservoirBufferParams;
+    RTXDI_ReservoirBufferParameters reservoirBufferParams;
     ReSTIRDI_BufferIndices bufferIndices;
     ReSTIRDI_InitialSamplingParameters initialSamplingParams;
     ReSTIRDI_TemporalResamplingParameters temporalResamplingParams;

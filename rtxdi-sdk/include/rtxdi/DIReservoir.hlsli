@@ -109,7 +109,7 @@ void RTXDI_StoreDIReservoir(
     uint2 reservoirPosition,
     uint reservoirArrayIndex)
 {
-    uint pointer = RTXDI_DIReservoirPositionToPointer(reservoirParams, reservoirPosition, reservoirArrayIndex);
+    uint pointer = RTXDI_ReservoirPositionToPointer(reservoirParams, reservoirPosition, reservoirArrayIndex);
     RTXDI_LIGHT_RESERVOIR_BUFFER[pointer] = RTXDI_PackDIReservoir(reservoir);
 }
 #endif // RTXDI_ENABLE_STORE_RESERVOIR
@@ -157,7 +157,7 @@ RTXDI_DIReservoir RTXDI_LoadDIReservoir(
     uint2 reservoirPosition,
     uint reservoirArrayIndex)
 {
-    uint pointer = RTXDI_DIReservoirPositionToPointer(reservoirParams, reservoirPosition, reservoirArrayIndex);
+    uint pointer = RTXDI_ReservoirPositionToPointer(reservoirParams, reservoirPosition, reservoirArrayIndex);
     return RTXDI_UnpackDIReservoir(RTXDI_LIGHT_RESERVOIR_BUFFER[pointer]);
 }
 

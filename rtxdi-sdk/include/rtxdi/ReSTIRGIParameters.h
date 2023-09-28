@@ -29,14 +29,6 @@ struct RTXDI_PackedGIReservoir
     float       unused;
 };
 
-struct ReSTIRGI_ReservoirBufferParameters
-{
-    uint32_t reservoirBlockRowPitch;
-    uint32_t reservoirArrayPitch;
-    uint32_t pad1;
-    uint32_t pad2;
-};
-
 #ifdef __cplusplus
 enum class ResTIRGI_TemporalBiasCorrectionMode : uint32_t
 {

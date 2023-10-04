@@ -38,7 +38,7 @@ void RayGen()
 
     const RTXDI_RuntimeParameters params = g_Const.runtimeParams;
 
-    uint2 pixelPosition = RTXDI_DIReservoirPosToPixelPos(GlobalIndex, params.activeCheckerboardField);
+    uint2 pixelPosition = RTXDI_ReservoirPosToPixelPos(GlobalIndex, params.activeCheckerboardField);
 
     RAB_Surface surface = RAB_GetGBufferSurface(pixelPosition, false);
 

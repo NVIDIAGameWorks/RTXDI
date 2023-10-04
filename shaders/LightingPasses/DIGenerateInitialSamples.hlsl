@@ -28,7 +28,7 @@ void RayGen()
 
     const RTXDI_RuntimeParameters params = g_Const.runtimeParams;
 
-    uint2 pixelPosition = RTXDI_DIReservoirPosToPixelPos(GlobalIndex, params.activeCheckerboardField);
+    uint2 pixelPosition = RTXDI_ReservoirPosToPixelPos(GlobalIndex, params.activeCheckerboardField);
 
     RAB_RandomSamplerState rng = RAB_InitRandomSampler(pixelPosition, 1);
     RAB_RandomSamplerState tileRng = RAB_InitRandomSampler(pixelPosition / RTXDI_TILE_SIZE_IN_PIXELS, 1);

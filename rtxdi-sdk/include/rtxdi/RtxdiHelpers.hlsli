@@ -50,7 +50,7 @@ uint2 RTXDI_PixelPosToReservoirPos(uint2 pixelPosition, uint activeCheckerboardF
     return uint2(pixelPosition.x >> 1, pixelPosition.y);
 }
 
-uint2 RTXDI_DIReservoirPosToPixelPos(uint2 reservoirIndex, uint activeCheckerboardField)
+uint2 RTXDI_ReservoirPosToPixelPos(uint2 reservoirIndex, uint activeCheckerboardField)
 {
     if (activeCheckerboardField == 0)
         return reservoirIndex;
@@ -72,7 +72,7 @@ void RTXDI_ApplyPermutationSampling(inout int2 prevPixelPos, uint uniformRandomN
     prevPixelPos -= offset;
 }
 
-uint RTXDI_DIReservoirPositionToPointer(
+uint RTXDI_ReservoirPositionToPointer(
     RTXDI_ReservoirBufferParameters reservoirParams,
     uint2 reservoirPosition,
     uint reservoirArrayIndex)

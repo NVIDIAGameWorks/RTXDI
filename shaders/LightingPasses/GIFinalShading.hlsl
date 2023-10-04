@@ -38,7 +38,7 @@ float GetMISWeight(const SplitBrdf roughBrdf, const SplitBrdf trueBrdf, const fl
 
 RTXDI_GIReservoir LoadInitialSampleReservoir(int2 reservoirPosition, RAB_Surface primarySurface)
 {
-    const uint gbufferIndex = RTXDI_DIReservoirPositionToPointer(g_Const.restirGI.reservoirBufferParams, reservoirPosition, 0);
+    const uint gbufferIndex = RTXDI_ReservoirPositionToPointer(g_Const.restirGI.reservoirBufferParams, reservoirPosition, 0);
     const SecondaryGBufferData secondaryGBufferData = u_SecondaryGBuffer[gbufferIndex];
 
     const float3 normal = octToNdirUnorm32(secondaryGBufferData.normal);
@@ -60,7 +60,7 @@ void RayGen()
 #if !USE_RAY_QUERY
     uint2 GlobalIndex = DispatchRaysIndex().xy;
 #endif
-    uint2 pixelPosition = RTXDI_DIReservoirPosToPixelPos(GlobalIndex, g_Const.runtimeParams.activeCheckerboardField);
+    uint2 pixelPosition = RTXDI_ReservoirPosToPixelPos(GlobalIndex, g_Const.runtimeParams.activeCheckerboardField);
 
     if (any(pixelPosition > int2(g_Const.view.viewportSize)))
         return;

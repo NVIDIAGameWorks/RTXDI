@@ -51,7 +51,7 @@ void RayGen()
     {
         // Translate the gradient stratum index (GlobalIndex) into reservoir and pixel positions.
         int2 srcReservoirPos = GlobalIndex * RTXDI_GRAD_FACTOR + int2(xx, yy);
-        int2 srcPixelPos = RTXDI_DIReservoirPosToPixelPos(srcReservoirPos, params.activeCheckerboardField);
+        int2 srcPixelPos = RTXDI_ReservoirPosToPixelPos(srcReservoirPos, params.activeCheckerboardField);
 
         if (any(srcPixelPos >= int2(g_Const.view.viewportSize)))
             continue;

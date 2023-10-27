@@ -69,6 +69,7 @@ set(DONUT_PATH "${CMAKE_CURRENT_LIST_DIR}/donut")
 
 include(NRD.cmake)
 include(DLSS.cmake)
+include(rtxdi-runtime.cmake)
 
 set(GLSLANG_PATH "" CACHE STRING "Path to glslangValidator for GLSL header verification (optional)")
 
@@ -80,7 +81,6 @@ if (NOT TARGET cxxopts)
 	add_subdirectory(donut/nvrhi/thirdparty/cxxopts)
 endif()
 
-add_subdirectory(rtxdi-sdk)
 add_subdirectory(shaders)
 add_subdirectory(src)
 add_subdirectory(minimal/src)

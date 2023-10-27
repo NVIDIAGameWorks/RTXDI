@@ -7,3 +7,6 @@
 [submodule "DLSS"]
 	path = DLSS
 	url = https://github.com/NVIDIA/DLSS.git
+[submodule "rtxdi-runtime"]
+	path = rtxdi-runtime
+	url = https://gitlab-master.nvidia.com/rtx/rtxdi-runtime.git

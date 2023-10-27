@@ -1,6 +1,6 @@
 
 include("${DONUT_PATH}/compileshaders.cmake")
-file(GLOB shaders "*.hlsl" "*.hlsli" "*.h" "../rtxdi-sdk/shaders/*.hlsl" "../rtxdi-sdk/include/*.hlsli")
+file(GLOB shaders "*.hlsl" "*.hlsli" "*.h" "../rtxdi-runtime/shaders/*.hlsl" "../rtxdi-runtime/include/*.hlsli")
 
 set(project minimal-sample)
 set(folder "RTXDI SDK")
@@ -25,7 +25,7 @@ if (DONUT_WITH_DX12)
       --blob
       --outputExt .bin
       -I ${DONUT_SHADER_INCLUDE_DIR}
-      -I ${CMAKE_CURRENT_SOURCE_DIR}/../../rtxdi-sdk/include
+      -I ${CMAKE_CURRENT_SOURCE_DIR}/../../rtxdi-runtime/include
       ${USE_API_OPTION}
       --relaxedInclude "../Types.h"
       --compiler ${DXC_PATH})
@@ -45,7 +45,7 @@ if (DONUT_WITH_VULKAN)
       --blob
       --outputExt .bin
       -I ${DONUT_SHADER_INCLUDE_DIR}
-      -I ${CMAKE_CURRENT_SOURCE_DIR}/../../rtxdi-sdk/include
+      -I ${CMAKE_CURRENT_SOURCE_DIR}/../../rtxdi-runtime/include
       ${USE_API_OPTION}
       --relaxedInclude "../Types.h"
       -D SPIRV

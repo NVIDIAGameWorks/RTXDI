@@ -10,3 +10,6 @@
 [submodule "rtxdi-runtime"]
 	path = rtxdi-runtime
 	url = https://gitlab-master.nvidia.com/rtx/rtxdi-runtime.git
+[submodule "rtxdi-assets"]
+	path = rtxdi-assets
+	url = https://gitlab-master.nvidia.com/rtx/rtxdi-assets.git

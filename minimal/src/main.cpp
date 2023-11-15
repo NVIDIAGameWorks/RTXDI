@@ -90,13 +90,13 @@ public:
 
     bool Init()
     {
-        std::filesystem::path mediaPath = app::GetDirectoryWithExecutable().parent_path() / "media";
+        std::filesystem::path mediaPath = app::GetDirectoryWithExecutable().parent_path() / "rtxdi-assets";
         if (!std::filesystem::exists(mediaPath))
         {
-            mediaPath = mediaPath.parent_path().parent_path() / "media";
+            mediaPath = mediaPath.parent_path().parent_path() / "rtxdi-assets";
             if (!std::filesystem::exists(mediaPath))
             {
-                log::error("Couldn't locate the 'media' folder.");
+                log::error("Couldn't locate the 'rtxdi-assets' folder.");
                 return false;
             }
         }
@@ -104,12 +104,12 @@ public:
         std::filesystem::path frameworkShaderPath = app::GetDirectoryWithExecutable() / "shaders/framework" / app::GetShaderTypeName(GetDevice()->getGraphicsAPI());
         std::filesystem::path appShaderPath = app::GetDirectoryWithExecutable() / "shaders/minimal-sample" / app::GetShaderTypeName(GetDevice()->getGraphicsAPI());
 
-        log::debug("Mounting %s to %s", mediaPath.string().c_str(), "/media");
+        log::debug("Mounting %s to %s", mediaPath.string().c_str(), "/rtxdi-assets");
         log::debug("Mounting %s to %s", frameworkShaderPath.string().c_str(), "/shaders/donut");
         log::debug("Mounting %s to %s", appShaderPath.string().c_str(), "/shaders/app");
 
         m_RootFs = std::make_shared<vfs::RootFileSystem>();
-        m_RootFs->mount("/media", mediaPath);
+        m_RootFs->mount("/rtxdi-assets", mediaPath);
         m_RootFs->mount("/shaders/donut", frameworkShaderPath);
         m_RootFs->mount("/shaders/app", appShaderPath);
 
@@ -129,7 +129,7 @@ public:
             m_BindlessLayout = GetDevice()->createBindlessLayout(bindlessLayoutDesc);
         }
 
-        std::filesystem::path scenePath = "/media/Arcade/Arcade.gltf";
+        std::filesystem::path scenePath = "/rtxdi-assets/Arcade/Arcade.gltf";
 
         m_DescriptorTableManager = std::make_shared<engine::DescriptorTableManager>(GetDevice(), m_BindlessLayout);
 

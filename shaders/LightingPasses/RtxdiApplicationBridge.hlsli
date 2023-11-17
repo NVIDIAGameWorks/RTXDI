@@ -859,7 +859,7 @@ bool RAB_TraceRayForLocalLight(float3 origin, float3 direction, float tMin, floa
 // This function also be able to clamp the value of the Jacobian.
 bool RAB_ValidateGISampleWithJacobian(inout float jacobian)
 {
-    // Sold angle ratio is too different. Discard the sample.
+    // Solid angle ratio is too different. Discard the sample.
     if (jacobian > 10.0 || jacobian < 1 / 10.0) {
         return false;
     }

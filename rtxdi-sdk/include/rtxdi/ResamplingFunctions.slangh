@@ -685,7 +685,7 @@ struct ReSTIRGI_TemporalResamplingParameters
   float2 prevBackupPixelCenter;
 
   // Expected hit distance of the same surface on the previous frame.
-  float expectedPrevHitDistance;
+  float2 expectedPrevHitDistance;
 
   // Motion vector for the surface in virtual world space, i.e. with PSR resolved.
   float3 virtualMotionVector;
@@ -734,6 +734,9 @@ struct ReSTIRGI_TemporalResamplingParameters
 
   // The portal index the camera is going through, offsetted by 1. 0 means the camera is not going through portals. 
   uint teleportationPortalIndex;
+
+  // Initial search radius
+  float initialSearchRadius;
 };
 
 // ReSTIR GI temporal resampling pass.
@@ -756,9 +759,9 @@ ReSTIRGI_Reservoir ReSTIRGI_TemporalResampling(
   float16_t3 prevNormal;
   for (int i = 0; i < 10; i++)
   {
-    const float radius = 2;
+    const float radius = tparams.initialSearchRadius + ((i > 0 && i < 8) ? 2 : 0);
     int2 offset = int2(0);
-    if (i > 0 && i < 8)
+    if (radius > 0)
     {
       offset.x = int((RAB_GetNextRandom(rng) - 0.5) * radius);
       offset.y = int((RAB_GetNextRandom(rng) - 0.5) * radius);
@@ -781,7 +784,8 @@ ReSTIRGI_Reservoir ReSTIRGI_TemporalResampling(
       continue;
     float normalThreshold = i < 9 ? tparams.normalThreshold.x : tparams.normalThreshold.y;
     float depthThreshold = i < 9 ? tparams.depthThreshold.x : tparams.depthThreshold.y;
-    if (!RTXDI_IsValidNeighbor(RAB_GetSurfaceNormal(surface), RAB_GetSurfaceNormal(prevSurface), tparams.expectedPrevHitDistance, 
+    float expectedPrevHitDistance = i < 9 ? tparams.expectedPrevHitDistance.x : tparams.expectedPrevHitDistance.y;
+    if (!RTXDI_IsValidNeighbor(RAB_GetSurfaceNormal(surface), RAB_GetSurfaceNormal(prevSurface), expectedPrevHitDistance, 
       RAB_GetSurfaceLinearDepth(prevSurface), normalThreshold, depthThreshold))
       continue;
 
@@ -916,6 +920,12 @@ struct ReSTIRGI_SpatialResamplingParameters
 
   // Pairwise MIS central weight
   float pairwiseMISCentralWeight;
+
+  // Initial search radius
+  float initialSearchRadius;
+
+  // Number of samples to reuse
+  uint numSamples;
 };
 
 int2 ReSTIRGI_GetNeighborPosition(float2 randomNumber, float searchRadius, int2 thisPixel, ReSTIRGI_SpatialResamplingParameters sparams)
@@ -964,13 +974,11 @@ ReSTIRGI_Reservoir ReSTIRGI_SpatialResampling(
   // Determine maximum iteration based on current sample count.
   // If sample count is low, use more iterations to boost sample count.
   const uint16_t targetHistoryLength = sparams.fastHistoryLength;
-  int maxIteration = oldM < targetHistoryLength ? 4 : 1;
+  int maxIteration = sparams.numSamples;
   const float radiusShrinkRatio = 0.6f;
   const float minSearchRadius = 10.f;
   const float radiusExpandRatio = 2.f;
-  const float initialSearchRadius = 
-    oldM < targetHistoryLength ||
-    (sparams.frameIndex + pixelPosition.x / 16 + pixelPosition.y / 8) % 2 == 0 ? 200.f : 85.f;
+  const float initialSearchRadius = sparams.initialSearchRadius;
   float searchRadius = initialSearchRadius;
   const float cosViewAngle = max(0.1, dot(RAB_GetViewDirection(surface), RAB_GetTriangleNormal(surface)));
   int2 tileSize = oldM < targetHistoryLength ? int2(1,1) : int2(4,4);

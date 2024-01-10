@@ -57,12 +57,12 @@ Returns `true` if the provided reservoir contains a valid GI sample.
 ### `RTXDI_LoadGIReservoir`
 
     RTXDI_GIReservoir RTXDI_LoadGIReservoir(
-        RTXDI_ResamplingRuntimeParameters params,
+        RTXDI_ReservoirBufferParameters reservoirParams,
         uint2 reservoirPosition,
         uint reservoirArrayIndex)
 
     RTXDI_GIReservoir RTXDI_LoadGIReservoir(
-        RTXDI_ResamplingRuntimeParameters params,
+        RTXDI_ReservoirBufferParameters reservoirParams,
         uint2 reservoirPosition,
         uint reservoirArrayIndex,
         out uint miscFlags)
@@ -73,14 +73,14 @@ Loads and unpacks a GI reservoir from the provided reservoir storage buffer. The
 
     void RTXDI_StoreGIReservoir(
         const RTXDI_GIReservoir reservoir,
-        RTXDI_ResamplingRuntimeParameters params,
+        RTXDI_ReservoirBufferParameters reservoirParams,
         uint2 reservoirPosition,
         uint reservoirArrayIndex)
 
     void RTXDI_StoreGIReservoir(
         const RTXDI_GIReservoir reservoir,
         const uint miscFlags,
-        RTXDI_ResamplingRuntimeParameters params,
+        RTXDI_ReservoirBufferParameters reservoirParams,
         uint2 reservoirPosition,
         uint reservoirArrayIndex)
 
@@ -140,14 +140,16 @@ Creates a GI reservoir from a raw light sample.
         uint maxReservoirAge;
         bool enablePermutationSampling;
         bool enableFallbackSampling;
+        uint uniformRandomNumber;
     };
     GI_GIReservoir RTXDI_GITemporalResampling(
         const uint2 pixelPosition,
         const RAB_Surface surface,
         const RTXDI_GIReservoir inputReservoir,
         inout RAB_RandomSamplerState rng,
-        const RTXDI_GITemporalResamplingParameters tparams,
-        const RTXDI_ResamplingRuntimeParameters params)
+        const RTXDI_RuntimeParameters params,
+        const RTXDI_ReservoirBufferParameters reservoirParams,
+        const RTXDI_GITemporalResamplingParameters tparams)
 
 Implements the core functionality of the temporal resampling pass. Takes the previous G-buffer, motion vectors, and two GI reservoir buffers - current and previous - as inputs. Tries to match the surfaces in the current frame to surfaces in the previous frame. If a match is found for a given pixel, the current and previous reservoirs are combined.
 
@@ -171,8 +173,9 @@ For more information on the members of the `RTXDI_GITemporalResamplingParameters
         const RAB_Surface surface,
         const RTXDI_GIReservoir inputReservoir,
         inout RAB_RandomSamplerState rng,
-        const RTXDI_GISpatialResamplingParameters sparams,
-        const RTXDI_ResamplingRuntimeParameters params)
+        const RTXDI_RuntimeParameters params,
+        const RTXDI_ReservoirBufferParameters reservoirParams,
+        const RTXDI_GISpatialResamplingParameters sparams)
 
 Implements the core functionality of the spatial resampling pass. Operates on the current frame G-buffer and its reservoirs. For each pixel, considers a number of its neighbors and, if their surfaces are similar enough to the current pixel, combines their reservoirs.
 
@@ -197,14 +200,16 @@ For more information on the members of the `RTXDI_GISpatialResamplingParameters`
         uint biasCorrectionMode;
         bool enablePermutationSampling;
         bool enableFallbackSampling;
+        uint uniformRandomNumber;
     };
     RTXDI_GIReservoir RTXDI_GISpatioTemporalResampling(
         const uint2 pixelPosition,
         const RAB_Surface surface,
         RTXDI_GIReservoir inputReservoir,
         inout RAB_RandomSamplerState rng,
-        const RTXDI_GISpatioTemporalResamplingParameters stparams,
-        const RTXDI_ResamplingRuntimeParameters params)
+        const RTXDI_RuntimeParameters params,
+        const RTXDI_ReservoirBufferParameters reservoirParams,
+        const RTXDI_GISpatioTemporalResamplingParameters stparams)
 
 Implements the core functionality of a combined spatiotemporal resampling pass. This is similar to a sequence of `RTXDI_GITemporalResampling` and `RTXDI_GISpatialResampling`, with the exception that the input reservoirs are all taken from the previous frame. This function is useful for implementing a lighting solution in a single shader, which generates the initial samples, applies spatiotemporal resampling, and shades the final samples.
 

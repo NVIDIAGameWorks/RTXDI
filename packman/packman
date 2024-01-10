@@ -20,7 +20,7 @@ else
 	PM_CURL_SILENT="-s -S"
 	PM_WGET_QUIET="--quiet"
 fi
-PM_PACKMAN_VERSION=6.30
+PM_PACKMAN_VERSION=6.57
 
 # This is necessary for newer macOS
 if [ `uname` == 'Darwin' ]; then
@@ -119,7 +119,7 @@ if [ -z "$PM_MODULE_DIR_EXT" ]; then
 else
     PM_MODULE_DIR="$PM_MODULE_DIR_EXT"
 fi
-export PM_MODULE="$PM_MODULE_DIR/packman.py"
+export PM_MODULE="$PM_MODULE_DIR/run.py"
 
 # Ensure the packman package exists:
 if [ ! -f "$PM_MODULE" ]; then

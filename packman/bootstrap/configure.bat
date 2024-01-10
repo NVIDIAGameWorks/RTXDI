@@ -12,7 +12,7 @@
 :: See the License for the specific language governing permissions and
 :: limitations under the License.
 
-set PM_PACKMAN_VERSION=6.30
+set PM_PACKMAN_VERSION=6.57
 
 :: Specify where packman command is rooted
 set PM_INSTALL_PATH=%~dp0..
@@ -107,7 +107,7 @@ if defined PM_MODULE_DIR_EXT (
     set PM_MODULE_DIR=%PM_PACKAGES_ROOT%\packman-common\%PM_PACKMAN_VERSION%
 )
 
-set PM_MODULE=%PM_MODULE_DIR%\packman.py
+set PM_MODULE=%PM_MODULE_DIR%\run.py
 
 if exist "%PM_MODULE%" goto ENSURE_7ZA
 

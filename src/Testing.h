@@ -34,6 +34,7 @@ struct CommandLineArguments
     bool disableBackgroundOptimization = false;
     int renderWidth = 0;
     int renderHeight = 0;
+    std::string sceneFile = "bistro-rtxdi.scene.json";
 };
 
 void ProcessCommandLine(int argc, char** argv, donut::app::DeviceCreationParameters& deviceParams, UIData& ui, CommandLineArguments& args);

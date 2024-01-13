@@ -212,7 +212,7 @@ public:
             m_BindlessLayout = GetDevice()->createBindlessLayout(bindlessLayoutDesc);
         }
 
-        std::filesystem::path scenePath = "/media/bistro-rtxdi.scene.json";
+        std::filesystem::path scenePath = "/media/" + m_args.sceneFile;
 
         m_DescriptorTableManager = std::make_shared<engine::DescriptorTableManager>(GetDevice(), m_BindlessLayout);
 
@@ -314,10 +314,27 @@ public:
 
         m_Scene->FinishedLoading(GetFrameIndex());
 
-        m_Camera.LookAt(float3(-7.688f, 2.0f, 5.594f), float3(-7.3341f, 2.0f, 6.5366f));
-        m_Camera.SetMoveSpeed(3.f);
-
         const auto& sceneGraph = m_Scene->GetSceneGraph();
+        const auto& cameras = sceneGraph->GetCameras();
+
+        if (!cameras.empty())
+        {
+            const std::shared_ptr<engine::SceneCamera>& glTfCam = cameras[0];
+
+            auto camPos = glTfCam->GetViewToWorldMatrix().transformPoint(dm::float3(0.0f));
+            auto camTarget = glTfCam->GetViewToWorldMatrix().transformPoint(dm::float3(0.0f, 0.0f, 1.0f));
+            m_Camera.LookAt(camPos, camTarget);
+
+            if (auto glTFPerspectiveCam = std::static_pointer_cast<engine::PerspectiveCamera>(glTfCam); glTFPerspectiveCam)
+            {
+                m_ui.verticalFov = dm::degrees(glTFPerspectiveCam->verticalFov);
+            }
+        }
+        else
+        {
+            m_Camera.LookAt(float3(-7.688f, 2.0f, 5.594f), float3(-7.3341f, 2.0f, 6.5366f));
+        }
+        m_Camera.SetMoveSpeed(3.f);
 
         for (const auto& pLight : sceneGraph->GetLights())
         {

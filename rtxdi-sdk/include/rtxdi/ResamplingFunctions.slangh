@@ -853,8 +853,7 @@ ReSTIRGI_Reservoir ReSTIRGI_TemporalResampling(
   {
     // Ignore low roughness specular sample.
     float pNew = RAB_GetGITargetPdfForSurface(initialSample.radiance, initialSample.position, surface);
-    float pOld = initialSample.avgWeight;
-    wi = pOld <= 0.f ? 0.f : pNew / pOld;
+    wi = pNew * initialSample.avgWeight * initialSample.M;
   }
 
   // Update temporal reservoir.

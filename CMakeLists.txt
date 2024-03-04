@@ -70,6 +70,8 @@ include(NRD.cmake)
 include(DLSS.cmake)
 include(rtxdi-runtime.cmake)
 
+set(RTXDI_RUNTIME_INCLUDE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/rtxdi-runtime/include")
+
 set(GLSLANG_PATH "" CACHE STRING "Path to glslangValidator for GLSL header verification (optional)")
 
 # Temporarily use cxxopts from NVRHI
@@ -84,6 +86,7 @@ add_subdirectory(shaders)
 add_subdirectory(src)
 add_subdirectory(minimal/src)
 add_subdirectory(minimal/shaders)
+add_subdirectory(rtxdi-runtime-shader-tests)
 
 if (MSVC)
 	set_property(DIRECTORY PROPERTY VS_STARTUP_PROJECT rtxdi-sample)

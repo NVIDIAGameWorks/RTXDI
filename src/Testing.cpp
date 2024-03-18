@@ -23,7 +23,7 @@
 using namespace donut;
 namespace fs = std::filesystem;
 
-const char* g_ApplicationTitle = "RTX Direct Illumination SDK Sample";
+const char* g_ApplicationTitle = "RTX Dynamic Illumination SDK Sample";
 
 static void toupper(std::string& s)
 {

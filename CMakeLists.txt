@@ -53,8 +53,11 @@ if (EXISTS "${PACKMAN_DXC}")
 		set(DXC_SPIRV_PATH "${PACKMAN_DXC}" CACHE STRING "Path to DirectX Shader Compiler for SPIR-V output")
 	endif()
 endif()
-# We have our own compiler here, don't let ShaderMake search for it (and potentially fail)
-set(SHADERMAKE_SEARCH_FOR_COMPILERS OFF CACHE BOOL "")
+# Have ShaderMake use included DXC
+option(SHADERMAKE_FIND_DXC "" OFF)
+option(SHADERMAKE_FIND_DXC_SPIRV "" OFF)
+# But do have ShaderMake find FXC for compiling NRD shaders
+option(SHADERMAKE_FIND_FXC "" ON)
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
@@ -74,12 +77,11 @@ set(RTXDI_RUNTIME_INCLUDE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/rtxdi-runtime/includ
 
 set(GLSLANG_PATH "" CACHE STRING "Path to glslangValidator for GLSL header verification (optional)")
 
-# Temporarily use cxxopts from NVRHI
 if (NOT TARGET cxxopts)
 	option(CXXOPTS_BUILD_EXAMPLES OFF)
 	option(CXXOPTS_BUILD_TESTS OFF)
 	option(CXXOPTS_ENABLE_INSTALL OFF)
-	add_subdirectory(donut/nvrhi/thirdparty/cxxopts)
+	add_subdirectory(thirdparty/cxxopts)
 endif()
 
 add_subdirectory(shaders)

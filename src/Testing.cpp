@@ -48,7 +48,7 @@ std::istream& operator>> (std::istream& is, AntiAliasingMode& mode)
         mode = AntiAliasingMode::DLSS;
 #endif
     else
-        throw cxxopts::OptionException("Unrecognized value passed to the --aa-mode argument.");
+        throw cxxopts::exceptions::exception("Unrecognized value passed to the --aa-mode argument.");
     
     return is;
 }
@@ -66,7 +66,7 @@ std::istream& operator>> (std::istream& is, DirectLightingMode& mode)
     else if (s == "RESTIR")
         mode = DirectLightingMode::ReStir;
     else
-        throw cxxopts::OptionException("Unrecognized value passed to the --direct-mode argument.");
+        throw cxxopts::exceptions::exception("Unrecognized value passed to the --direct-mode argument.");
 
     return is;
 }
@@ -84,7 +84,7 @@ std::istream& operator>> (std::istream& is, IndirectLightingMode& mode)
     else if (s == "RESTIRGI")
         mode = IndirectLightingMode::ReStirGI;
     else
-        throw cxxopts::OptionException("Unrecognized value passed to the --indirect-mode argument.");
+        throw cxxopts::exceptions::exception("Unrecognized value passed to the --indirect-mode argument.");
 
     return is;
 }
@@ -107,7 +107,7 @@ std::istream& operator>> (std::istream& is, rtxdi::ReSTIRDI_ResamplingMode& mode
         mode = rtxdi::ReSTIRDI_ResamplingMode::FusedSpatiotemporal;
 
     else
-        throw cxxopts::OptionException("Unrecognized value passed to the --gi-mode argument.");
+        throw cxxopts::exceptions::exception("Unrecognized value passed to the --gi-mode argument.");
 
     return is;
 }
@@ -130,7 +130,7 @@ std::istream& operator>> (std::istream& is, rtxdi::ReSTIRGI_ResamplingMode& mode
         mode = rtxdi::ReSTIRGI_ResamplingMode::FusedSpatiotemporal;
 
     else
-        throw cxxopts::OptionException("Unrecognized value passed to the --gi-mode argument.");
+        throw cxxopts::exceptions::exception("Unrecognized value passed to the --gi-mode argument.");
 
     return is;
 }
@@ -153,7 +153,7 @@ std::istream& operator>> (std::istream& is, UIData& ui)
     else if (s == "REFERENCE")
         ui.preset = QualityPreset::Reference;
     else
-        throw cxxopts::OptionException("Unrecognized value passed to the --preset argument.");
+        throw cxxopts::exceptions::exception("Unrecognized value passed to the --preset argument.");
 
     ui.ApplyPreset();
 
@@ -236,7 +236,7 @@ void ProcessCommandLine(int argc, char** argv, donut::app::DeviceCreationParamet
             else if (denoiserMode == "RELAX")
                 ui.denoisingMethod = nrd::Method::RELAX_DIFFUSE_SPECULAR;
             else
-                throw OptionException("Unrecognized value passed to the --denoiser argument.");
+                throw cxxopts::exceptions::exception("Unrecognized value passed to the --denoiser argument.");
 #endif
         }
     }
@@ -251,11 +251,11 @@ void ProcessCommandLine(int argc, char** argv, donut::app::DeviceCreationParamet
         log::warning("The --save-frame argument is used without --save-file. It will be ignored.");
     }
 
-#if USE_DX12 && USE_VK
+#if DONUT_WITH_DX12 && DONUT_WITH_VULKAN
     args.graphicsApi = useVk ? nvrhi::GraphicsAPI::VULKAN : nvrhi::GraphicsAPI::D3D12;
-#elif USE_DX12
+#elif DONUT_WITH_DX12
     args.graphicsApi = nvrhi::GraphicsAPI::D3D12;
-#elif USE_VK
+#elif DONUT_WITH_VULKAN
     args.graphicsApi = nvrhi::GraphicsAPI::VULKAN;
 #else
 #error "At least one of USE_DX12 and USE_VK macros needs to be defined"

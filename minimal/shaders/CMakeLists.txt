@@ -22,7 +22,7 @@ if (DONUT_WITH_DX12)
    set(DX12_COMPILER_OPTIONS 
       --platform DXIL
       --shaderModel 6_5
-      --blob
+      --binaryBlob
       --outputExt .bin
       -I ${DONUT_SHADER_INCLUDE_DIR}
       -I ${CMAKE_CURRENT_SOURCE_DIR}/../../rtxdi-runtime/include
@@ -42,7 +42,7 @@ if (DONUT_WITH_VULKAN)
       --platform SPIRV
       --shaderModel 6_5
       --vulkanVersion 1.2
-      --blob
+      --binaryBlob
       --outputExt .bin
       -I ${DONUT_SHADER_INCLUDE_DIR}
       -I ${CMAKE_CURRENT_SOURCE_DIR}/../../rtxdi-runtime/include

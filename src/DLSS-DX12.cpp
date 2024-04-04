@@ -8,7 +8,7 @@
  # license agreement from NVIDIA CORPORATION is strictly prohibited.
  **************************************************************************/
 
-#if defined(WITH_DLSS) && defined(USE_DX12)
+#if defined(WITH_DLSS) && defined(DONUT_WITH_DX12)
 
 #include <nvsdk_ngx.h>
 #include <nvsdk_ngx_helpers.h>

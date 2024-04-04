@@ -471,7 +471,7 @@ void UserInterface::SamplingSettings()
 
             if (ImGui::TreeNode("Initial Sampling"))
             {
-                ImGui::SetNextTreeNodeOpen(true);
+                ImGui::SetNextItemOpen(true);
                 if(ImGui::TreeNode("Local Light Sampling"))
                 {
                     int* initSamplingMode = (int*)&m_ui.restirDI.initialSamplingParams.localLightSamplingMode;

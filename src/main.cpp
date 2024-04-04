@@ -73,7 +73,6 @@ extern "C" {
 using namespace donut;
 using namespace donut::math;
 using namespace std::chrono;
-
 #include "../shaders/ShaderParameters.h"
 
 static int g_ExitCode = 0;
@@ -249,11 +248,11 @@ public:
 
 #ifdef WITH_DLSS
         {
-#ifdef USE_DX12
+#ifdef DONUT_WITH_DX12
             if (GetDevice()->getGraphicsAPI() == nvrhi::GraphicsAPI::D3D12)
                 m_DLSS = DLSS::CreateDX12(GetDevice(), *m_ShaderFactory);
 #endif
-#ifdef USE_VK
+#ifdef DONUT_WITH_VULKAN
             if (GetDevice()->getGraphicsAPI() == nvrhi::GraphicsAPI::VULKAN)
                 m_DLSS = DLSS::CreateVK(GetDevice(), *m_ShaderFactory);
 #endif
@@ -1534,15 +1533,15 @@ int main(int argc, char** argv)
     
     app::DeviceManager* deviceManager = app::DeviceManager::Create(args.graphicsApi);
 
-#if defined(USE_VK)
+#if defined(DONUT_WITH_VULKAN)
     if (args.graphicsApi == nvrhi::GraphicsAPI::VULKAN)
     {
         // Set the extra device feature bit(s)
-        deviceParams.deviceCreateInfoCallback = [](vk::DeviceCreateInfo& info) {
-            auto features = const_cast<vk::PhysicalDeviceFeatures*>(info.pEnabledFeatures);
-            features->setFragmentStoresAndAtomics(true);
+        deviceParams.deviceCreateInfoCallback = [](VkDeviceCreateInfo& info) {
+            auto features = const_cast<VkPhysicalDeviceFeatures*>(info.pEnabledFeatures);
+            features->fragmentStoresAndAtomics = VK_TRUE;
 #if defined(WITH_DLSS)
-            features->setShaderStorageImageWriteWithoutFormat(true);
+            features->shaderStorageImageWriteWithoutFormat = VK_TRUE;
 #endif
         };
 
@@ -1592,7 +1591,7 @@ int main(int argc, char** argv)
         return 1;
     }
 
-#if USE_DX12
+#if DONUT_WITH_DX12
     if (args.graphicsApi == nvrhi::GraphicsAPI::D3D12 && args.disableBackgroundOptimization)
     {
         // On DX12, optionally disable the background shader optimization because it leads to stutter on some NV driver versions (496.61 specifically).

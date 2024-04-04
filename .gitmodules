@@ -13,3 +13,6 @@
 [submodule "rtxdi-assets"]
 	path = rtxdi-assets
 	url = https://gitlab-master.nvidia.com/rtx/rtxdi-assets.git
+[submodule "thirdparty/cxxopts"]
+	path = thirdparty/cxxopts
+	url = https://github.com/jarro2783/cxxopts.git

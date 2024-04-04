@@ -8,7 +8,7 @@
  # license agreement from NVIDIA CORPORATION is strictly prohibited.
  **************************************************************************/
 
-#if defined(WITH_DLSS) && defined(USE_VK)
+#if defined(WITH_DLSS) && defined(DONUT_WITH_VULKAN)
 
 #include <vulkan/vulkan.h>
 #include <nvsdk_ngx_vk.h>

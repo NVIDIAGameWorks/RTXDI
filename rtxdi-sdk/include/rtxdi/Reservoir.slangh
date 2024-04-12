@@ -229,7 +229,7 @@ void ReSTIRGI_StoreHitGeometry(RWTexture2D<float4> hitGeometryTexture, int2 pixe
   // Use last normal 
   normal = clamp(normal, -1.0, 1.0);
   uint32_t encodedNormal = RAB_EncodeNormal(normal);
-  encodedNormal = (encodedNormal & 0xfffefffe) | ((portalIdx & 0x2) << 15) | (portalIdx & 0x1);
+  encodedNormal = (encodedNormal & 0xfffefffe) | (uint32_t(portalIdx & 0x2) << 15) | uint32_t(portalIdx & 0x1);
   hitGeometryTexture[pixel] = float4(position, asfloat(encodedNormal));
 }
 

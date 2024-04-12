@@ -1274,6 +1274,9 @@ bool VolumeReSTIR_GetLightSample(
   inout VolumeReSTIR_Reservoir volumeReservoir, RAB_VolumeInteraction volumeInteraction,
   out RAB_LightSample lightSample, out float inverseSelectionPdf)
 {
+  lightSample = {};
+  inverseSelectionPdf = {};
+
   // Check if the volume reservoir is valid
 
   if (!volumeReservoir.isValid())
@@ -1383,6 +1386,8 @@ VolumeReSTIR_Reservoir VolumeReSTIR_SampleLightRIS(
   inout RAB_RandomSamplerState rng, RAB_VolumeVisibilityContext volumeVisibilityContext, RAB_VolumeInteraction volumeInteraction,
   out RAB_LightSample cachedSelectedLightSample, VolumeReSTIR_Parameters volumeParameters)
 {
+  cachedSelectedLightSample = {};
+
   VolumeReSTIR_Reservoir newReservoir = VolumeReSTIR_Reservoir::createEmpty();
 
   // Early out if there are no lights to sample from

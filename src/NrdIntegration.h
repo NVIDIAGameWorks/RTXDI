@@ -16,6 +16,7 @@
 #include <nvrhi/nvrhi.h>
 #include <unordered_map>
 #include <donut/engine/BindingCache.h>
+#include <donut/core/math/math.h>
 
 class RenderTargets;
 
@@ -29,8 +30,8 @@ class NrdIntegration
 private:
     nvrhi::DeviceHandle m_Device;
     bool m_Initialized;
-    nrd::Denoiser* m_Denoiser;
-    nrd::Method m_Method;
+    nrd::Instance* m_Instance;
+    nrd::Denoiser m_Denoiser;
 
     struct NrdPipeline
     {
@@ -45,9 +46,10 @@ private:
     std::vector<nvrhi::TextureHandle> m_PermanentTextures;
     std::vector<nvrhi::TextureHandle> m_TransientTextures;
     donut::engine::BindingCache m_BindingCache;
+    dm::float2 m_PixelOffsetPrev;
 
 public:
-    NrdIntegration(nvrhi::IDevice* device, nrd::Method method);
+    NrdIntegration(nvrhi::IDevice* device, nrd::Denoiser denoiser);
 
     bool Initialize(uint32_t width, uint32_t height);
     bool IsAvailable() const;
@@ -59,10 +61,10 @@ public:
         const donut::engine::PlanarView& viewPrev,
         uint32_t frameIndex,
         bool enableConfidenceInputs,
-        const void* methodSettings,
+        const void* denoiserSettings,
         float debug);
 
-    const nrd::Method GetMethod() const { return m_Method; }
+    const nrd::Denoiser GetDenoiser() const { return m_Denoiser; }
 };
 
 #endif

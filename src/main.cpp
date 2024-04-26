@@ -961,7 +961,7 @@ public:
         m_PreviousFrameTimeStamp = steady_clock::now();
 
 #if WITH_NRD
-        if (m_NRD && m_NRD->GetMethod() != m_ui.denoisingMethod)
+        if (m_NRD && m_NRD->GetDenoiser() != m_ui.denoisingMethod)
             m_NRD = nullptr; // need to create a new one
 #endif
 
@@ -1082,7 +1082,7 @@ public:
             m_ui.enableDenoiser = false;
 
         uint32_t denoiserMode = (m_ui.enableDenoiser)
-            ? (m_ui.denoisingMethod == nrd::Method::RELAX_DIFFUSE_SPECULAR) ? DENOISER_MODE_RELAX : DENOISER_MODE_REBLUR
+            ? (m_ui.denoisingMethod == nrd::Denoiser::RELAX_DIFFUSE_SPECULAR) ? DENOISER_MODE_RELAX : DENOISER_MODE_REBLUR
             : DENOISER_MODE_OFF;
 #else
         m_ui.enableDenoiser = false;
@@ -1278,7 +1278,7 @@ public:
             ProfilerScope scope(*m_Profiler, m_CommandList, ProfilerSection::Denoising);
             m_CommandList->beginMarker("Denoising");
 
-            const void* methodSettings = (m_ui.denoisingMethod == nrd::Method::RELAX_DIFFUSE_SPECULAR)
+            const void* methodSettings = (m_ui.denoisingMethod == nrd::Denoiser::RELAX_DIFFUSE_SPECULAR)
                 ? (void*)&m_ui.relaxSettings
                 : (void*)&m_ui.reblurSettings;
 

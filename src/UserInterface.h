@@ -146,11 +146,10 @@ struct UIData
     
     bool enableDenoiser = true;
 #ifdef WITH_NRD
-    bool usePrePass = false;
     float debug = 0.0f;
-    nrd::Method denoisingMethod = nrd::Method::RELAX_DIFFUSE_SPECULAR;
+    nrd::Denoiser denoisingMethod = nrd::Denoiser::RELAX_DIFFUSE_SPECULAR;
     nrd::ReblurSettings reblurSettings = {};
-    nrd::RelaxDiffuseSpecularSettings relaxSettings = {};
+    nrd::RelaxSettings relaxSettings = {};
     void SetDefaultDenoiserSettings();
 #endif
     float noiseMix = 0.33f;

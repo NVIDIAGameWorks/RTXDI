@@ -232,9 +232,9 @@ void ProcessCommandLine(int argc, char** argv, donut::app::DeviceCreationParamet
             if (denoiserMode == "OFF")
                 ui.enableDenoiser = false;
             else if (denoiserMode == "REBLUR")
-                ui.denoisingMethod = nrd::Method::REBLUR_DIFFUSE_SPECULAR;
+                ui.denoisingMethod = nrd::Denoiser::REBLUR_DIFFUSE_SPECULAR;
             else if (denoiserMode == "RELAX")
-                ui.denoisingMethod = nrd::Method::RELAX_DIFFUSE_SPECULAR;
+                ui.denoisingMethod = nrd::Denoiser::RELAX_DIFFUSE_SPECULAR;
             else
                 throw cxxopts::exceptions::exception("Unrecognized value passed to the --denoiser argument.");
 #endif

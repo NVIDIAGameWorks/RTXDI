@@ -541,8 +541,6 @@ void LightingPasses::RenderDirectLighting(
     // because NVRHI misses them, as the binding sets are exactly the same between these passes.
     // That equality makes NVRHI take a shortcut for performance and it doesn't look at bindings at all.
 
-    ExecuteRayTracingPass(commandList, m_GenerateInitialSamplesPass, localSettings.enableRayCounts, "DIGenerateInitialSamples", dispatchSize, ProfilerSection::InitialSamples);
-
     if (context.getResamplingMode() == rtxdi::ReSTIRDI_ResamplingMode::FusedSpatiotemporal)
     {
         nvrhi::utils::BufferUavBarrier(commandList, m_LightReservoirBuffer);
@@ -551,6 +549,8 @@ void LightingPasses::RenderDirectLighting(
     }
     else
     {
+        ExecuteRayTracingPass(commandList, m_GenerateInitialSamplesPass, localSettings.enableRayCounts, "DIGenerateInitialSamples", dispatchSize, ProfilerSection::InitialSamples);
+
         if (context.getResamplingMode() == rtxdi::ReSTIRDI_ResamplingMode::Temporal || context.getResamplingMode() == rtxdi::ReSTIRDI_ResamplingMode::TemporalAndSpatial)
         {
             nvrhi::utils::BufferUavBarrier(commandList, m_LightReservoirBuffer);

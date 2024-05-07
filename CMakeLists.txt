@@ -38,19 +38,40 @@ option(DONUT_WITH_VULKAN "" ON)
 option(DONUT_WITH_LZ4 "" OFF)
 option(DONUT_WITH_MINIZ "" OFF)
 
+# Helper to download and unzip a package from a URL
+# Uses a zero-length file to identify the version of the package
+function(CheckAndDownloadPackage NAME VERSION LOCAL_PATH URL)
+    # Do we already have the correct version?
+    if(NOT EXISTS ${LOCAL_PATH}/${VERSION}.ver)
+        # Was there a previous version that we need to delete?
+        if(EXISTS ${LOCAL_PATH})
+            message(STATUS "Deleting old " ${NAME})
+            file(REMOVE_RECURSE ${LOCAL_PATH})
+        endif()
+        message(STATUS "Obtaining " ${NAME} " " ${VERSION})
+        file(DOWNLOAD ${URL} ${LOCAL_PATH}.zip)
+        message(STATUS "Extracting " ${NAME})
+        file(ARCHIVE_EXTRACT INPUT ${LOCAL_PATH}.zip DESTINATION ${LOCAL_PATH})
+        file(REMOVE ${LOCAL_PATH}.zip)
+        # Create an empty file so we know which version we have
+        file(WRITE ${LOCAL_PATH}/${VERSION}.ver)
+    endif()
+endfunction()
 
-# Point to the DXC provided through packman
+# Download DXC
 if (WIN32)
-	set(PACKMAN_DXC "${CMAKE_CURRENT_LIST_DIR}/dxc/bin/x64/dxc.exe")
+	CheckAndDownloadPackage("DXC" "v1.7.2212.1" ${CMAKE_CURRENT_SOURCE_DIR}/external/dxc https://github.com/microsoft/DirectXShaderCompiler/releases/download/v1.7.2212.1/dxc_2023_03_01.zip)
+	set(REDIST_DXC "${CMAKE_CURRENT_SOURCE_DIR}/external/dxc/bin/x64/dxc.exe")
 else()
-	set(PACKMAN_DXC "${CMAKE_CURRENT_LIST_DIR}/dxc/bin/dxc")
+	CheckAndDownloadPackage("DXC" "v1.7.2212.1" ${CMAKE_CURRENT_SOURCE_DIR}/external/dxc https://github.com/microsoft/DirectXShaderCompiler/releases/download/v1.7.2212.1/linux_dxc_2023_03_01.x86_64.tar.gz)
+	set(REDIST_DXC "${CMAKE_CURRENT_SOURCE_DIR}/external/dxc/bin/dxc")
 endif()
-if (EXISTS "${PACKMAN_DXC}")
+if (EXISTS "${REDIST_DXC}")
 	if (WIN32 AND NOT DXC_PATH)
-		set(DXC_PATH "${PACKMAN_DXC}" CACHE STRING "Path to DirectX Shader Compiler for DXIL output")
+		set(DXC_PATH "${REDIST_DXC}" CACHE STRING "Path to DirectX Shader Compiler for DXIL output")
 	endif()
 	if (NOT DXC_SPIRV_PATH)
-		set(DXC_SPIRV_PATH "${PACKMAN_DXC}" CACHE STRING "Path to DirectX Shader Compiler for SPIR-V output")
+		set(DXC_SPIRV_PATH "${REDIST_DXC}" CACHE STRING "Path to DirectX Shader Compiler for SPIR-V output")
 	endif()
 endif()
 # Have ShaderMake use included DXC

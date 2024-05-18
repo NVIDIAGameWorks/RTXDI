@@ -78,10 +78,10 @@ public:
 
     virtual ~DLSS() = default;
 
-#if defined(DONUT_WITH_DX12)
+#if DONUT_WITH_DX12
     static std::unique_ptr<DLSS> CreateDX12(nvrhi::IDevice* device, donut::engine::ShaderFactory& shaderFactory);
 #endif
-#if defined(DONUT_WITH_VULKAN)
+#if DONUT_WITH_VULKAN
     static std::unique_ptr<DLSS> CreateVK(nvrhi::IDevice* device, donut::engine::ShaderFactory& shaderFactory);
 #endif
     static void GetRequiredVulkanExtensions(std::vector<std::string>& instanceExtensions, std::vector<std::string>& deviceExtensions);

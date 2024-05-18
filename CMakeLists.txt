@@ -60,11 +60,13 @@ endfunction()
 
 # Download DXC
 if (WIN32)
-	CheckAndDownloadPackage("DXC" "v1.7.2212.1" ${CMAKE_CURRENT_SOURCE_DIR}/external/dxc https://github.com/microsoft/DirectXShaderCompiler/releases/download/v1.7.2212.1/dxc_2023_03_01.zip)
-	set(REDIST_DXC "${CMAKE_CURRENT_SOURCE_DIR}/external/dxc/bin/x64/dxc.exe")
+	CheckAndDownloadPackage("DXC" "v1.7.2212.1" ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/dxc https://github.com/microsoft/DirectXShaderCompiler/releases/download/v1.7.2212.1/dxc_2023_03_01.zip)
+	set(REDIST_DXC "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/dxc/bin/x64/dxc.exe")
 else()
-	CheckAndDownloadPackage("DXC" "v1.7.2212.1" ${CMAKE_CURRENT_SOURCE_DIR}/external/dxc https://github.com/microsoft/DirectXShaderCompiler/releases/download/v1.7.2212.1/linux_dxc_2023_03_01.x86_64.tar.gz)
-	set(REDIST_DXC "${CMAKE_CURRENT_SOURCE_DIR}/external/dxc/bin/dxc")
+	CheckAndDownloadPackage("DXC" "v1.7.2212.1" ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/dxc https://github.com/microsoft/DirectXShaderCompiler/releases/download/v1.7.2212.1/linux_dxc_2023_03_01.x86_64.tar.gz)
+	# Add execute permissions
+	file(CHMOD ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/dxc/bin/dxc PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE)
+	set(REDIST_DXC "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/dxc/bin/dxc")
 endif()
 if (EXISTS "${REDIST_DXC}")
 	if (WIN32 AND NOT DXC_PATH)

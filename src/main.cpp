@@ -57,7 +57,7 @@
 #include "NrdIntegration.h"
 #endif
 
-#ifdef WITH_DLSS
+#if WITH_DLSS
 #include "DLSS.h"
 #endif
 
@@ -127,7 +127,7 @@ private:
     std::unique_ptr<NrdIntegration> m_NRD;
 #endif
 
-#ifdef WITH_DLSS
+#if WITH_DLSS
     std::unique_ptr<DLSS> m_DLSS;
 #endif
 
@@ -246,13 +246,13 @@ public:
         m_LightingPasses = std::make_unique<LightingPasses>(GetDevice(), m_ShaderFactory, m_CommonPasses, m_Scene, m_Profiler, m_BindlessLayout);
 
 
-#ifdef WITH_DLSS
+#if WITH_DLSS
         {
-#ifdef DONUT_WITH_DX12
+#if DONUT_WITH_DX12
             if (GetDevice()->getGraphicsAPI() == nvrhi::GraphicsAPI::D3D12)
                 m_DLSS = DLSS::CreateDX12(GetDevice(), *m_ShaderFactory);
 #endif
-#ifdef DONUT_WITH_VULKAN
+#if DONUT_WITH_VULKAN
             if (GetDevice()->getGraphicsAPI() == nvrhi::GraphicsAPI::VULKAN)
                 m_DLSS = DLSS::CreateVK(GetDevice(), *m_ShaderFactory);
 #endif
@@ -764,7 +764,7 @@ public:
             m_NRD->Initialize(m_RenderTargets->Size.x, m_RenderTargets->Size.y);
         }
 #endif
-#ifdef WITH_DLSS
+#if WITH_DLSS
         {
             m_DLSS->SetRenderSize(m_RenderTargets->Size.x, m_RenderTargets->Size.y, m_RenderTargets->Size.x, m_RenderTargets->Size.y);
             
@@ -823,7 +823,7 @@ public:
             break;
         }
 
-#ifdef WITH_DLSS
+#if WITH_DLSS
         case AntiAliasingMode::DLSS: {
             m_DLSS->Render(commandList, *m_RenderTargets, m_ToneMappingPass->GetExposureBuffer(), m_ui.dlssExposureScale, m_ui.dlssSharpness, m_ui.rasterizeGBuffer, m_ui.resetAccumulation, m_View, m_ViewPrevious);
             break;
@@ -1533,19 +1533,19 @@ int main(int argc, char** argv)
     
     app::DeviceManager* deviceManager = app::DeviceManager::Create(args.graphicsApi);
 
-#if defined(DONUT_WITH_VULKAN)
+#if DONUT_WITH_VULKAN
     if (args.graphicsApi == nvrhi::GraphicsAPI::VULKAN)
     {
         // Set the extra device feature bit(s)
         deviceParams.deviceCreateInfoCallback = [](VkDeviceCreateInfo& info) {
             auto features = const_cast<VkPhysicalDeviceFeatures*>(info.pEnabledFeatures);
             features->fragmentStoresAndAtomics = VK_TRUE;
-#if defined(WITH_DLSS)
+#if WITH_DLSS
             features->shaderStorageImageWriteWithoutFormat = VK_TRUE;
 #endif
         };
 
-#if defined(WITH_DLSS)
+#if WITH_DLSS
         DLSS::GetRequiredVulkanExtensions(
             deviceParams.optionalVulkanInstanceExtensions,
             deviceParams.optionalVulkanDeviceExtensions);

@@ -837,7 +837,7 @@ void UserInterface::PostProcessSettings()
         ImGui::RadioButton("Accumulation", (int*)&m_ui.aaMode, (int)AntiAliasingMode::Accumulation);
         ImGui::SameLine();
         ImGui::RadioButton("TAAU", (int*)&m_ui.aaMode, (int)AntiAliasingMode::TAA);
-#ifdef WITH_DLSS
+#if WITH_DLSS
         if (m_ui.dlssAvailable)
         {
             ImGui::SameLine();
@@ -885,7 +885,7 @@ void UserInterface::PostProcessSettings()
             ImGui::Separator();
         }
 
-#ifdef WITH_DLSS
+#if WITH_DLSS
         if (m_ui.dlssAvailable)
         {
             // ImGui::SliderFloat("DLSS Exposure Scale", &m_ui.dlssExposureScale, 0.125f, 16.f, "%.3f", ImGuiSliderFlags_Logarithmic);

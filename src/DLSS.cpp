@@ -8,7 +8,7 @@
  # license agreement from NVIDIA CORPORATION is strictly prohibited.
  **************************************************************************/
 
-#if defined(WITH_DLSS)
+#if WITH_DLSS
 
 #include "DLSS.h"
 #include "RenderTargets.h"

@@ -401,7 +401,7 @@ int main(int argc, char** argv)
     deviceParams.infoLogSeverity = log::Severity::Debug;
 
     UIData ui;
-#if defined(DONUT_WITH_DX12)
+#if DONUT_WITH_DX12
     nvrhi::GraphicsAPI api = nvrhi::GraphicsAPI::D3D12;
 #else
     nvrhi::GraphicsAPI api = nvrhi::GraphicsAPI::VULKAN;

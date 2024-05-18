@@ -6,7 +6,7 @@ set(folder "RTXDI SDK")
 
 include(CMakeDependentOption)
 
-add_executable(${project} ${sources})
+add_library(${project} ${sources})
 target_compile_definitions(${project} PRIVATE IS_CONSOLE_APP=1)
 
 target_link_libraries(${project} rtxdi-runtime cxxopts)

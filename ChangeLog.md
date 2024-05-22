@@ -1,6 +1,29 @@
 # RTXDI SDK Change Log
 
 
+## 2.2.0
+
+**Release highlights:**
+
+- Updated [NRD](https://github.com/NVIDIAGameWorks/RayTracingDenoiser) to v4.4.2 and updated sample app code accordingly.
+- Updated [Donut](https://github.com/NVIDIAGameWorks/donut) sample framework to support NRD update.
+- Removed Packman hosting of dependencies and the corresponding "update_dependencies" scripts.
+- DXC redistributable is now installed by CMake.
+- Assets are now installed from the new [RTXDI Assets]() submodule.
+ 
+**Breaking changes:**
+
+- rtxdi-sdk folder moved into the [RTXDI Runtime](https://gitlab-master.nvidia.com/rtx/rtxdi-runtime) submodule. 
+
+**Fixed issues:**
+
+- Fixed visual "sparkling" regression in fused resampling kernel.
+- Fixed Linux build.
+
+**Misc improvements:**
+
+- Moved to [DXC v1.7.2212](https://github.com/microsoft/DirectXShaderCompiler/releases/tag/v1.7.2212).
+
 ## 2.1.0
 
 **Release highlights:**
@@ -17,7 +40,7 @@
 - ReSTIR DI resampling functions renamed to have a DI infix to distinguish them from their GI counterparts.
 - Shader headers broken down into more files.
 
-**Fixed issued:**
+**Fixed issues:**
 
 - Fixed SPIR-V compiler issues.
 - Reorganized UI to reflect algorithm/code path.

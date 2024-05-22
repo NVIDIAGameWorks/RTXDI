@@ -1,13 +1,13 @@
 
 # RTXDI SDK and Sample Applications
 
-Version 2.1.0.
+Version 2.2.0.
 
 [Change Log](ChangeLog.md)
 
 ## Introduction
 
-**RTX** **D**irect **I**llumination is a framework that facilitates the implementations of efficient direct light sampling in real-time renderers. It is based on the **ReSTIR** algorithm published in the paper called "Spatiotemporal reservoir resampling for real-time ray tracing with dynamic direct lighting" by B. Bitterli et al.
+**RTX** **D**ynamic **I**llumination is a framework that originally facilitated implementation of efficient direct light sampling in real-time renderers. It is based on the **ReSTIR** algorithm published in the paper called "Spatiotemporal reservoir resampling for real-time ray tracing with dynamic direct lighting" by B. Bitterli et al.
 
 Starting with version 2.0, RTXDI also includes **ReSTIR GI** functionality, which allows applications to apply importance resampling to indirect illumination rendered using path tracing. For more information about the indirect illumination algorithm, see the paper called "ReSTIR GI: Path Resampling for Real-Time Path Tracing" by Y. Ouyang et al. The feature is described in more detail in [this document](doc/RestirGI.md).
 
@@ -15,12 +15,11 @@ For more information about RTXDI, see the [NVIDIA Developer Page](https://develo
 
 ## Package Contents
 
-[`rtxdi-sdk`](rtxdi-sdk) contains the SDK source code files that are meant to be included into the application build:
+[`rtxdi-runtime`](https://github.com/NVIDIAGameWorks/rtxdi-runtime) is a submodule that contains the integrable runtime sources that are meant to be included in the application build:
 
-- [`rtxdi-sdk/include`](rtxdi-sdk/include) has the include files, both for host code and for shaders
-- [`rtxdi-sdk/include/rtxdi/DIResamplingFunctions.hlsli`](rtxdi-sdk/include/rtxdi/DIResamplingFunctions.hlsli) is the main shader include file that contains the resampling implementation
-- [`rtxdi-sdk/shaders`](rtxdi-sdk/shaders) has the shader files that are supposed to be compiled through whatever means the application normally uses
-- [`rtxdi-sdk/src`](rtxdi-sdk/src) has the host code with various utility functions for setting up the parameters and resources for resampling
+- [`rtxdi-runtime/include/rtxdi`](https://github.com/NVIDIAGameWorks/rtxdi-runtime/tree/main/include/rtxdi) has the include files, both for host code and for shaders
+- [`rtxdi-runtime/include/rtxdi/DIResamplingFunctions.hlsli`](https://github.com/NVIDIAGameWorks/rtxdi-runtime/tree/main/include/rtxdi/DIResamplingFunctions.hlsli) and [`rtxdi-runtime/include/rtxdi/GIResamplingFunctions.hlsli`](https://github.com/NVIDIAGameWorks/rtxdi-runtime/tree/main/include/rtxdi/GIResamplingFunctions.hlsli) are the main shader includes that contain the resampling implementations
+- [`rtxdi-runtime/src`](https://github.com/NVIDIAGameWorks/rtxdi-runtime/tree/main/src) has the host code with various utility functions for setting up the parameters and resources for resampling
 
 [`src`](src) contains the sample application host code.
 
@@ -32,26 +31,25 @@ For more information about RTXDI, see the [NVIDIA Developer Page](https://develo
 
 [`DLSS`](DLSS) is a submodule with the [Deep Learning Super-Sampling SDK](https://github.com/NVIDIA/DLSS).
 
-Additional contents delivered through packman:
+[`rtxdi-assets`](rtxdi-assets) is a submodule containing the [RTXDI SDK Sample Assets](https://github.com/NVIDIAGameWorks/rtxdi-assets).
 
-`dxc` is a recent version of DirectX Shader Compiler;
+Additional content delivered through CMake:
 
-`media` contains the media files necessary for the sample apps to run.
+`thirdparty/dxc` is a recent version of DirectX Shader Compiler;
 
 ## Building and Running the Sample Apps
 
 ### Windows
 
-1. Clone the repository with all submodules:
+1. Install LFS support by following the instructions on [git-lfs.com](http://git-lfs.com)
+
+2. Clone the repository with all submodules:
 	- `git clone --recursive https://github.com/NVIDIAGameWorks/RTXDI.git`
 
 	If the clone was made non-recursively and the submodules are missing, clone them separately:
 
 	- `git submodule update --init --recursive`
 
-2. Pull the media files and DXC binaries from packman:
-	- `update_dependencies.bat`
-	
 3. Configure the solution with CMake. The easiest option is to use [CMake GUI](https://cmake.org/download/).
 
 4. Assuming that the RTXDI SDK tree is located in `D:\RTXDI`, set the following parameters in the GUI:
@@ -71,16 +69,16 @@ Additional contents delivered through packman:
 1. Make sure the necessary build packages are installed on the target system. For Ubuntu 20.04 (amd64), the following command is sufficient:
 	- `sudo apt install build-essential cmake xorg-dev libtinfo5`
 
-2. Clone the repository with all submodules:
+2. Install LFS support by following the instructions on [git-lfs.com](https://git-lfs.com). Note that on Ubunutu 21.04+ you can simply:
+	- `sudo apt install git-lfs`
+
+3. Clone the repository with all submodules:
 	- `git clone --recursive https://github.com/NVIDIAGameWorks/RTXDI.git`
 
 	If the clone was made non-recursively and the submodules are missing, clone them separately:
 
 	- `git submodule update --init --recursive`
 
-3. Pull the media files and DXC binaries from packman:
-	- `cd RTXDI && ./update_dependencies.sh`
-	
 4. Create a build folder:
 	- `mkdir build && cd build`
 

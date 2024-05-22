@@ -9,10 +9,10 @@
 	url = https://github.com/NVIDIA/DLSS.git
 [submodule "rtxdi-runtime"]
 	path = rtxdi-runtime
-	url = https://gitlab-master.nvidia.com/rtx/rtxdi-runtime.git
+	url = https://github.com/NVIDIAGameWorks/rtxdi-runtime
 [submodule "rtxdi-assets"]
 	path = rtxdi-assets
-	url = https://gitlab-master.nvidia.com/rtx/rtxdi-assets.git
+	url = https://github.com/NVIDIAGameWorks/rtxdi-assets
 [submodule "thirdparty/cxxopts"]
 	path = thirdparty/cxxopts
 	url = https://github.com/jarro2783/cxxopts.git

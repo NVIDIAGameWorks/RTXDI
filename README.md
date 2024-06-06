@@ -31,17 +31,19 @@ For more information about RTXDI, see the [NVIDIA Developer Page](https://develo
 
 [`DLSS`](DLSS) is a submodule with the [Deep Learning Super-Sampling SDK](https://github.com/NVIDIA/DLSS).
 
-[`rtxdi-assets`](rtxdi-assets) is a submodule containing the [RTXDI SDK Sample Assets](https://github.com/NVIDIAGameWorks/rtxdi-assets).
+[`rtxdi-assets`](https://github.com/NVIDIAGameWorks/rtxdi-assets) is a submodule containing the [RTXDI SDK Sample Assets](https://github.com/NVIDIAGameWorks/rtxdi-assets).
 
-Additional content delivered through CMake:
+Additional content delivered during CMake configuration:
 
-`thirdparty/dxc` is a recent version of DirectX Shader Compiler;
+`thirdparty/dxc` is a recent version of DirectX Shader Compiler.
 
 ## Building and Running the Sample Apps
 
+**Note** that because the [`rtxdi-assets`](https://github.com/NVIDIAGameWorks/rtxdi-assets) submodule uses LFS. Cloning it without [LFS](https://git-lfs.com) installed will result in files containing LFS pointers instead of the actual assets.
+
 ### Windows
 
-1. Install LFS support by following the instructions on [git-lfs.com](http://git-lfs.com)
+1. Install LFS support by following the instructions on [git-lfs.com](https://git-lfs.com)
 
 2. Clone the repository with all submodules:
 	- `git clone --recursive https://github.com/NVIDIAGameWorks/RTXDI.git`

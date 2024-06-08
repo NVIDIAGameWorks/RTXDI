@@ -284,7 +284,7 @@ public:
     {
         for (const auto& light : m_Scene->GetSceneGraph()->GetLights())
         {
-            if (light->GetLightType() == LightType_Spot)
+            if (light->GetLightType() == LightType_SpotProfile)
             {
                 SpotLightWithProfile& spotLight = static_cast<SpotLightWithProfile&>(*light);
 

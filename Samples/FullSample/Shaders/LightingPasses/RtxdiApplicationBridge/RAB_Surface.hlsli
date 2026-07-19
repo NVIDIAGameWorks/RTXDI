@@ -19,7 +19,7 @@
 
 #include "Rtxdi/Utils/BrdfRaySample.hlsli"
 #include "Rtxdi/Utils/Color.hlsli"
-#include "Rtxdi/Utils/RandomSamplerstate.hlsli"
+#include "Rtxdi/Utils/RandomSamplerState.hlsli"
 #include "RAB_Material.hlsli"
 
 struct RAB_Surface

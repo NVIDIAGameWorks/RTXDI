@@ -21,7 +21,7 @@
 #include <Rtxdi/DI/ReSTIRDI.h>
 
 using namespace donut::math;
-#include "../shaders/ShaderParameters.h"
+#include "../Shaders/ShaderParameters.h"
 
 using namespace donut::engine;
 

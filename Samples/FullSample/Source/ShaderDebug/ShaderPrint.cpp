@@ -204,7 +204,13 @@ static std::string MakeString(const char* format, ...)
     char buffer[1024 * 16] = { 0 };
     va_list args;
     va_start(args, format);
-    vsprintf_s(buffer, ArraySize_(buffer), format, args);
+
+    #ifdef _WIN32
+    	vsprintf_s(buffer, ArraySize_(buffer), format, args);
+    #else
+        vsnprintf(buffer, ArraySize_(buffer), format, args);
+    #endif
+
     return std::string(buffer);
 }
 

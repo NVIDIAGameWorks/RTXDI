@@ -11,5 +11,5 @@ if (EXISTS "${CMAKE_CURRENT_LIST_DIR}/NRD/CMakeLists.txt")
 	option(NRD_SUPPORTS_BASECOLOR_METALNESS "" OFF)
 	option(NRD_STATIC_LIBRARY "" ON)
 
-	add_subdirectory(external/NRD)
+	add_subdirectory(External/NRD)
 endif()

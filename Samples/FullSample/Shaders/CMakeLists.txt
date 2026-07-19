@@ -59,7 +59,7 @@ set(shaders
    ShaderDebug/ShaderDebugPrint/ShaderDebugPrint.hlsli
    ShaderDebug/VisualizeConfidence.hlsl
    ShaderDebug/VisualizeHdrSignals.hlsl
-   SharedShaderInclude/SharedShaderInclude/ShaderDebug/PTPathViz/PTPathViZConstants.h
+   SharedShaderInclude/SharedShaderInclude/ShaderDebug/PTPathViz/PTPathVizConstants.h
    SharedShaderInclude/SharedShaderInclude/ShaderDebug/PTPathViz/PTPathVertexRecord.h
    SharedShaderInclude/SharedShaderInclude/ShaderDebug/PTPathViz/PTPathSetRecord.h
    SharedShaderInclude/SharedShaderInclude/ShaderDebug/ReSTIRShaderDebugParameters.h
@@ -79,8 +79,6 @@ set(shaders
    GBufferHelpers.hlsli
    GlassPass.hlsl
    HelperFunctions.hlsli
-   GlassPass.hlsl
-   Helperfunctions.hlsli
    LightShaping.hlsli
    PolymorphicLight.hlsli
    PostprocessGBuffer.hlsl
@@ -110,7 +108,7 @@ set(FULL_SAMPLE_SHARED_INCLUDE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/SharedShaderInc
 set(FULL_SAMPLE_SHARED_INCLUDE_PATH ${FULL_SAMPLE_SHARED_INCLUDE_PATH} PARENT_SCOPE)
 
 if(TARGET NRD)
-   set(NRD_OPTIONS -I "${CMAKE_CURRENT_SOURCE_DIR}/../../../external/NRD/Shaders" -D WITH_NRD)
+   set(NRD_OPTIONS -I "${CMAKE_CURRENT_SOURCE_DIR}/../../../External/NRD/Shaders" -D WITH_NRD)
 else()
    set(NRD_OPTIONS --relaxedInclude NRD.hlsli)
 endif()

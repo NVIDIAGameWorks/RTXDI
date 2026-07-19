@@ -14,7 +14,7 @@
 #include <donut/core/math/math.h>
 
 using namespace dm;
-#include "../shaders/ShaderParameters.h"
+#include "../Shaders/ShaderParameters.h"
 
 RtxdiResources::RtxdiResources(
     nvrhi::IDevice* device, 

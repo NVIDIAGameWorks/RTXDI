@@ -3,7 +3,7 @@
 
 #include "../GBufferHelpers.hlsli"
 
-#include "Rtxdi/Utils/RandomSamplerstate.hlsli"
+#include "Rtxdi/Utils/RandomSamplerState.hlsli"
 #include "RAB_Material.hlsli"
 
 // A surface with enough information to evaluate BRDFs

@@ -95,7 +95,7 @@ For an academic presentation on the ReSTIR family of algorithms, see the SIGGRAP
 	- `mkdir build && cd build`
 
 5. Configure the project with CMake:
-	- `cmake ..`
+	- `cmake .. -DNVRHI_WITH_NVAPI=OFF`
 
 6. Build:
 	- `make -j8` (example for an 8-core CPU, or use [Ninja](https://ninja-build.org) instead)

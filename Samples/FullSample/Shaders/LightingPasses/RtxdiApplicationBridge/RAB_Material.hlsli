@@ -14,7 +14,7 @@
 #define RAB_MATERIAL_HLSLI
 
 #include "donut/shaders/brdf.hlsli"
-#include "Rtxdi/Utils/RandomSamplerstate.hlsli"
+#include "Rtxdi/Utils/RandomSamplerState.hlsli"
 
 static const float kMinRoughness = 0.03f;
 

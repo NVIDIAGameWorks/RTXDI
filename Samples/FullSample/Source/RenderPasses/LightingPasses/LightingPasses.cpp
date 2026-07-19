@@ -29,7 +29,9 @@
 #include "ShaderDebug/ShaderPrint.h"
 #include "ShaderDebug/PTPathViz/PTPathVizPass.h"
 
+#ifdef _WIN32
 #include "nvapi.h"
+#endif
 
 #include <utility>
 

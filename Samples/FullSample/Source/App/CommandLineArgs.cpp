@@ -20,13 +20,16 @@ static void toupper(std::string& s)
         [](unsigned char c) { return std::toupper(c); });
 }
 
-std::istream& operator>> (std::istream& is, float3& vec)
-{
-    is >> vec.x;
-    is >> vec.y;
-    is >> vec.z;
-
-    return is;
+namespace donut::math {
+    template <typename T, int n>
+    std::istream& operator>> (std::istream& is, vector<T, n>& vec)
+    {
+        for (int i = 0; i < n; ++i)
+        {
+            is >> vec[i];
+        }
+        return is;
+    }
 }
 
 std::istream& operator>> (std::istream& is, AntiAliasingMode& mode)

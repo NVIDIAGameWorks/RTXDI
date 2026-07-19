@@ -1,7 +1,7 @@
 #ifndef RTXDI_RAB_SURFACE_HLSLI
 #define RTXDI_RAB_SURFACE_HLSLI
 
-#include "Rtxdi/Utils/RandomSamplerstate.hlsli"
+#include "Rtxdi/Utils/RandomSamplerState.hlsli"
 #include "RAB_Material.hlsli"
 
 struct RAB_Surface

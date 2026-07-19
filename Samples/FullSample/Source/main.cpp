@@ -17,7 +17,11 @@
 #include "App/CommandLineArgs.h"
 #include "App/LoggingCallback.h"
 #include "App/SceneRenderer.h"
+
+#ifdef _WIN32
 #include "nvapi.h"
+#endif
+
 #include "SharedShaderInclude/NvapiIntegration.h"
 
 #include <donut/render/DLSS.h>

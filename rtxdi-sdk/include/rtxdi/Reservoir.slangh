@@ -30,6 +30,7 @@ struct RTXDI_Reservoir
   float weightSum;
   float targetPdf;
   uint16_t M;
+  uint2 lightIdentity;
 };
 
 RTXDI_PackedReservoir RTXDI_PackReservoir(RTXDI_Reservoir reservoir)
@@ -38,7 +39,8 @@ RTXDI_PackedReservoir RTXDI_PackReservoir(RTXDI_Reservoir reservoir)
   packedReservoir.data0 = asuint(float4(reservoir.uv, reservoir.weightSum, reservoir.targetPdf));
   packedReservoir.data1.x = ((uint(reservoir.lightIdx) << 16) | (reservoir.M & 0xffff));
   packedReservoir.data1.y = uint(reservoir.portalIdx);
-  packedReservoir.data1.zw = 0;
+  packedReservoir.data1.z = reservoir.lightIdentity.x;
+  packedReservoir.data1.w = reservoir.lightIdentity.y;
   return packedReservoir;
 }
 
@@ -51,6 +53,7 @@ RTXDI_Reservoir RTXDI_EmptyReservoir()
   s.weightSum = 0.0f;
   s.M = uint16_t(0);
   s.portalIdx = RTXDI_INVALID_PORTAL_INDEX;
+  s.lightIdentity = uint2(0);
   return s;
 }
 
@@ -64,6 +67,7 @@ RTXDI_Reservoir RTXDI_UnpackReservoir(RTXDI_PackedReservoir packedReservoir)
   reservoir.M = uint16_t(packedReservoir.data1.x & 0xffff);
 
   reservoir.portalIdx = uint8_t(packedReservoir.data1.y);
+  reservoir.lightIdentity = uint2(packedReservoir.data1.z, packedReservoir.data1.w);
   return reservoir;
 }
 

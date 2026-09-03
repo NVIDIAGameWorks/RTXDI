@@ -56,7 +56,7 @@ bool ShadeSurfaceWithLightSample(
     RAB_Surface surface,
 	RTXDI_ShadingParameters shadingParams,
     RAB_LightSample lightSample,
-    bool previousFrameTLAS,
+    bool prevFrameTLAS,
     bool enableVisibilityReuse,
     bool enableVisibilityShortcut,
     out float3 diffuse,
@@ -88,7 +88,7 @@ bool ShadeSurfaceWithLightSample(
 
         if (!visibilityReused)
         {
-            if (previousFrameTLAS && g_Const.enablePreviousTLAS)
+            if (prevFrameTLAS && g_Const.enablePrevTLAS)
                 visibility = GetFinalVisibility(PrevSceneBVH, surface, lightSample.position);
             else
                 visibility = GetFinalVisibility(SceneBVH, surface, lightSample.position);
@@ -145,10 +145,10 @@ void StoreShadingOutput(
         float4 priorDiffuse = u_DiffuseLighting[lightingTexturePos];
         float4 priorSpecular = u_SpecularLighting[lightingTexturePos];
 
-        if (calcLuminance(diffuse) > calcLuminance(priorDiffuse.rgb) || lightDistance == 0)
+        if (CalcLuminance(diffuse) > CalcLuminance(priorDiffuse.rgb) || lightDistance == 0)
             diffuseHitT = priorDiffuse.w;
 
-        if (calcLuminance(specular) > calcLuminance(priorSpecular.rgb) || lightDistance == 0)
+        if (CalcLuminance(specular) > CalcLuminance(priorSpecular.rgb) || lightDistance == 0)
             specularHitT = priorSpecular.w;
 
         diffuse += priorDiffuse.rgb;
@@ -225,7 +225,7 @@ void StoreShadingOutput(
     if (!isFirstPassDiffuse)
     {
         float4 priorDiffuse = u_DiffuseLighting[lightingTexturePos];
-        if (calcLuminance(diffuse) > calcLuminance(priorDiffuse.rgb) || diffuseHitT == 0)
+        if (CalcLuminance(diffuse) > CalcLuminance(priorDiffuse.rgb) || diffuseHitT == 0)
             diffuseHitT = priorDiffuse.w;
         diffuse += priorDiffuse.rgb;
     }
@@ -233,7 +233,7 @@ void StoreShadingOutput(
     if (!isFirstPassSpecular)
     {
         float4 priorSpecular = u_SpecularLighting[lightingTexturePos];
-        if (calcLuminance(specular) > calcLuminance(priorSpecular.rgb) || specularHitT == 0)
+        if (CalcLuminance(specular) > CalcLuminance(priorSpecular.rgb) || specularHitT == 0)
             specularHitT = priorSpecular.w;
         specular += priorSpecular.rgb;
     }

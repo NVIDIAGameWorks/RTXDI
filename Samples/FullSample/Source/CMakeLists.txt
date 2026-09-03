@@ -32,6 +32,8 @@ set(sources
 	"ShaderDebug/VisualizationPass.h"
 	"RenderPasses/DenoisingPasses/ConfidencePass.cpp"
 	"RenderPasses/DenoisingPasses/ConfidencePass.h"
+	"RenderPasses/DenoisingPasses/DLSSRRInputFormattingPass.cpp"
+	"RenderPasses/DenoisingPasses/DLSSRRInputFormattingPass.h"
 	"RenderPasses/DenoisingPasses/FilterGradientsPass.cpp"
 	"RenderPasses/DenoisingPasses/FilterGradientsPass.h"
 	"RenderPasses/DenoisingPasses/NrdIntegration.cpp"
@@ -56,8 +58,8 @@ set(sources
 	"RenderPasses/GlassPass.h"
 	"RenderPasses/PrepareLightsPass.cpp"
 	"RenderPasses/PrepareLightsPass.h"
-	"RenderPasses/RaytracingPass.cpp"
-	"RenderPasses/RaytracingPass.h"
+	"RenderPasses/RayTracingPass.cpp"
+	"RenderPasses/RayTracingPass.h"
 	"RenderPasses/RenderEnvironmentMapPass.cpp"
 	"RenderPasses/RenderEnvironmentMapPass.h"
 	"Scene/Lights.h"
@@ -100,13 +102,16 @@ add_dependencies(${project} FullSampleShaders)
 set_target_properties(${project} PROPERTIES FOLDER ${folder})
 target_include_directories(${project} PRIVATE ${FULL_SAMPLE_SHARED_INCLUDE_PATH})
 target_include_directories(${project} PRIVATE .)
+if (WIN32)
+    target_include_directories(${project} PRIVATE ${NVAPI_INCLUDE_DIR})
+endif()
 
 if (TARGET NRD)
 	target_compile_definitions(${project} PRIVATE WITH_NRD=1)
 	target_link_libraries(${project} NRD)
 	
 	# NRD doesn't add a public include path at this time, work around that
-	target_include_directories(${project} PRIVATE "${CMAKE_SOURCE_DIR}/NRD/Include")
+	target_include_directories(${project} PRIVATE "${CMAKE_SOURCE_DIR}/External/NRD/Include")
 endif()
 
 if (DONUT_WITH_DLSS)
@@ -114,8 +119,20 @@ if (DONUT_WITH_DLSS)
 		COMMAND ${CMAKE_COMMAND} -E copy_if_different
 		"${DLSS_SHARED_LIBRARY_PATH}"
 		"$<TARGET_FILE_DIR:${project}>/")
+	add_custom_command(TARGET ${project} POST_BUILD
+		COMMAND ${CMAKE_COMMAND} -E copy_if_different
+		"${DLSS_RR_SHARED_LIBRARY_PATH}"
+		"$<TARGET_FILE_DIR:${project}>/")
 endif()
 
 if(DONUT_WITH_AFTERMATH)
 	file(COPY ${AFTERMATH_RUNTIME_LIBRARY} DESTINATION ${CMAKE_BINARY_DIR}/bin)
+endif()
+
+if (UNIX AND NOT APPLE AND NOT NVRHI_BUILD_SHARED)
+    if (CMAKE_VERSION VERSION_GREATER_EQUAL "3.24")
+        target_link_libraries(${project} "$<LINK_GROUP:RESCAN,nvrhi_vk,nvrhi>")
+    else()
+        target_link_libraries(${project} "-Wl,--start-group" nvrhi_vk nvrhi "-Wl,--end-group")
+    endif()
 endif()

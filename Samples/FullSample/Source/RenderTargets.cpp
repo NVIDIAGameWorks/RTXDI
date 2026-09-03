@@ -129,8 +129,28 @@ RenderTargets::RenderTargets(nvrhi::IDevice* device, int2 size)
     desc.useClearValue = false;
     desc.debugName = "PTSampleIDTexture";
     PTSampleIDTexture = device->createTexture(desc);
+
+    desc.format = nvrhi::Format::RG8_UNORM;
     desc.debugName = "PTDuplicationMap";
     PTDuplicationMap = device->createTexture(desc);
+
+    // Temporally-smoothed version of the dupmap.y channel. Two copies
+    // ping-pong so we can read the previous frame's result while writing this frame.
+    desc.format = nvrhi::Format::R16_FLOAT;
+    desc.debugName = "SmoothedPTDuplicationMap";
+    SmoothedPTDuplicationMap = device->createTexture(desc);
+    desc.debugName = "PrevSmoothedPTDuplicationMap";
+    PrevSmoothedPTDuplicationMap = device->createTexture(desc);
+
+    // Debug-only: final per-pixel decorrelation probability written by FinalShading.
+    desc.debugName = "PTDecorrelationFactor";
+    PTDecorrelationFactor = device->createTexture(desc);
+
+    desc.format = nvrhi::Format::RGBA32_FLOAT;
+    desc.debugName = "NeighborSelectionGBuffer";
+    NeighborSelectionGBuffer = device->createTexture(desc);
+    desc.debugName = "PrevNeighborSelectionGBuffer";
+    PrevNeighborSelectionGBuffer = device->createTexture(desc);
 
     desc.format = nvrhi::Format::RGBA16_FLOAT;
     desc.debugName = "ResolvedColor";
@@ -139,6 +159,12 @@ RenderTargets::RenderTargets(nvrhi::IDevice* device, int2 size)
     desc.format = nvrhi::Format::RGBA16_FLOAT;
     desc.debugName = "ReferenceColor";
     ReferenceColor = device->createTexture(desc);
+
+    desc.format = nvrhi::Format::RGBA16_FLOAT;
+    desc.debugName = "PSRDiffuseAlbedo_DLSSRR";
+    PSRDiffuseAlbedo_RR = device->createTexture(desc);
+    desc.debugName = "PSRSpecularF0_DLSSRR";
+    PSRSpecularF0_RR = device->createTexture(desc);
 
     // Debug render targets
     desc.format = nvrhi::Format::RGBA16_FLOAT;
@@ -273,4 +299,6 @@ void RenderTargets::NextFrame()
     std::swap(GBufferFramebuffer, PrevGBufferFramebuffer);
     std::swap(DiffuseConfidence, PrevDiffuseConfidence);
     std::swap(SpecularConfidence, PrevSpecularConfidence);
+    std::swap(NeighborSelectionGBuffer, PrevNeighborSelectionGBuffer);
+    std::swap(SmoothedPTDuplicationMap, PrevSmoothedPTDuplicationMap);
 }

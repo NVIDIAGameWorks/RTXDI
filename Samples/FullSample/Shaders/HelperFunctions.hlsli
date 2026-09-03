@@ -18,72 +18,26 @@
 
 static const float c_pi = 3.1415926535;
 
-float3 sampleTriangle(float2 rndSample)
-{
-    float sqrtx = sqrt(rndSample.x);
-
-    return float3(
-        1 - sqrtx,
-        sqrtx * (1 - rndSample.y),
-        sqrtx * rndSample.y);
-}
-
 // Maps ray hit UV into triangle barycentric coordinates
-float3 hitUVToBarycentric(float2 hitUV)
+float3 HitUVToBarycentric(float2 hitUV)
 {
     return float3(1 - hitUV.x - hitUV.y, hitUV.x, hitUV.y);
 }
 
-// Inverse of sampleTriangle
-float2 randomFromBarycentric(float3 barycentric)
+// Inverse of SampleTriangle
+float2 RandomFromBarycentric(float3 barycentric)
 {
     float sqrtx = 1 - barycentric.x;
     return float2(sqrtx * sqrtx, barycentric.z / sqrtx);
 }
 
-float2 sampleDisk(float2 rand)
-{
-    float angle = 2 * c_pi * rand.x;
-    return float2(cos(angle), sin(angle)) * sqrt(rand.y);
-}
-
-float3 sampleCosHemisphere(float2 rand, out float solidAnglePdf)
-{
-    float2 tangential = sampleDisk(rand);
-    float elevation = sqrt(saturate(1.0 - rand.y));
-
-    solidAnglePdf = elevation / c_pi;
-
-    return float3(tangential.xy, elevation);
-}
-
-float3 sampleSphere(float2 rand, out float solidAnglePdf)
-{
-    // See (6-8) in https://mathworld.wolfram.com/SpherePointPicking.html
-
-    rand.y = rand.y * 2.0 - 1.0;
-
-    float2 tangential = sampleDisk(float2(rand.x, 1.0 - square(rand.y)));
-    float elevation = rand.y;
-
-    solidAnglePdf = 0.25f / c_pi;
-
-    return float3(tangential.xy, elevation);
-}
-
-// For converting an area measure pdf to solid angle measure pdf
-float pdfAtoW(float pdfA, float distance_, float cosTheta)
-{
-    return pdfA * square(distance_) / cosTheta;
-}
-
-float calcLuminance(float3 color)
+float CalcLuminance(float3 color)
 {
     return dot(color.xyz, float3(0.299f, 0.587f, 0.114f));
 }
 
 /*https://graphics.pixar.com/library/OrthonormalB/paper.pdf*/
-void branchlessONB(in float3 n, out float3 b1, out float3 b2)
+void BranchlessONB(in float3 n, out float3 b1, out float3 b2)
 {
     float sign = n.z >= 0.0f ? 1.0f : -1.0f;
     float a = -1.0f / (sign + n.z);
@@ -92,12 +46,12 @@ void branchlessONB(in float3 n, out float3 b1, out float3 b2)
     b2 = float3(b, sign + n.y * n.y * a, -n.y);
 }
 
-float3 sphericalDirection(float sinTheta, float cosTheta, float sinPhi, float cosPhi, float3 x, float3 y, float3 z)
+float3 SphericalDirection(float sinTheta, float cosTheta, float sinPhi, float cosPhi, float3 x, float3 y, float3 z)
 {
     return sinTheta * cosPhi * x + sinTheta * sinPhi * y + cosTheta * z;
 }
 
-void getReflectivity(float metalness, float3 baseColor, out float3 o_albedo, out float3 o_baseReflectivity)
+void GetReflectivity(float metalness, float3 baseColor, out float3 o_albedo, out float3 o_baseReflectivity)
 {
     const float dielectricSpecular = 0.04;
     o_albedo = lerp(baseColor * (1.0 - dielectricSpecular), 0, metalness);
@@ -105,18 +59,18 @@ void getReflectivity(float metalness, float3 baseColor, out float3 o_albedo, out
 }
 
 // an approximate of the metalness based on diffuseAlbedo and specularF0
-float getMetalness(float3 diffuseAlbedo, float3 specularF0)
+float GetMetalness(float3 diffuseAlbedo, float3 specularF0)
 {
     // special case for perfect mirror
     if (all(diffuseAlbedo == 0.f)) return 1.f;
 
-    float F0 = calcLuminance(specularF0);
+    float F0 = CalcLuminance(specularF0);
     float metalness = saturate(1.0417 * (F0 - 0.04)); // 1/0.96 = 1.0417
 
     return metalness;
 }
 
-float3 sampleGGX_VNDF(float3 Ve, float roughness, float2 random)
+float3 SampleGGX_VNDF(float3 Ve, float roughness, float2 random)
 {
     float alpha = square(roughness);
 
@@ -140,7 +94,7 @@ float3 sampleGGX_VNDF(float3 Ve, float roughness, float2 random)
     return Ne;
 }
 
-float2 directionToEquirectUV(float3 normalizedDirection)
+float2 DirectionToEquirectUV(float3 normalizedDirection)
 {
     float elevation = asin(normalizedDirection.y);
     float azimuth = 0;
@@ -154,7 +108,7 @@ float2 directionToEquirectUV(float3 normalizedDirection)
     return uv;
 }
 
-float3 equirectUVToDirection(float2 uv, out float cosElevation)
+float3 EquirectUVToDirection(float2 uv, out float cosElevation)
 {
     float azimuth = (uv.x + 0.25) * (2 * c_pi);
     float elevation = (0.5 - uv.y) * c_pi;

@@ -4,7 +4,8 @@
 #include "Rtxdi/PT/PathTracerContext.hlsli"
 #include "Rtxdi/PT/PathTracerRandomContext.hlsli"
 
-void RAB_PathTrace(inout RTXDI_PathTracerContext ctx, inout RTXDI_PathTracerRandomContext ptRandContext, inout RAB_PathTracerUserData ptud)
+template<typename PTContextType>
+void RAB_PathTrace(inout RTXDI_PathTracerContext<PTContextType> ctx, inout RTXDI_PathTracerRandomContext ptRandContext, inout RAB_PathTracerUserData ptud)
 {
 
 }

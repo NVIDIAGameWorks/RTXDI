@@ -1,6 +1,6 @@
 # RTXDI Shader API for ReSTIR GI
 
-This document lists the macros, structures and functions that are specific to the ReSTIR GI subsystem of RTXDI.
+This document lists the macros, structures and functions that are specific to the ReSTIR GI subsystem of RTXDI. Signatures match the headers under [`Libraries/Rtxdi/Include/Rtxdi/GI/`](../Libraries/Rtxdi/Include/Rtxdi/GI/).
 
 ## User-Defined Macros
 
@@ -10,7 +10,7 @@ When defined, includes the [ReSTIR GI](RestirGI.md) implementation, with all of 
 
 ### `RTXDI_ENABLE_STORE_RESERVOIR`
 
-Define this macro to `0` in order to remove the `RTXDI_GI_StoreReservoir` function. This is useful in shaders that have read-only access to the light reservoir buffer, e.g. for debugging purposes.
+Define this macro to `0` in order to remove the `RTXDI_StoreGIReservoir` functions. This is useful in shaders that have read-only access to the GI reservoir buffer, e.g. for debugging purposes.
 
 ### `RTXDI_GI_ALLOWED_BIAS_CORRECTION`
 
@@ -27,9 +27,9 @@ Define this macro to a resource name for the neighbor offset buffer, which shoul
 
 ## Structures
 
-### `RTXDI_ResamplingRuntimeParameters`
+### `RTXDI_RuntimeParameters` and `RTXDI_ReservoirBufferParameters`
 
-See [Shader API](ShaderAPI.md)
+Shared with ReSTIR DI; see [`RtxdiParameters.h`](../Libraries/Rtxdi/Include/Rtxdi/RtxdiParameters.h) and the [Shader API](ShaderAPI.md).
 
 ### `RTXDI_PackedGIReservoir`
 
@@ -48,7 +48,7 @@ This structure represents a single surface reservoir that stores the surface pos
 
 Returns an empty reservoir object.
 
-### `RTXDI_IsValidReservoir`
+### `RTXDI_IsValidGIReservoir`
 
     bool RTXDI_IsValidGIReservoir(const RTXDI_GIReservoir reservoir)
 
@@ -57,12 +57,12 @@ Returns `true` if the provided reservoir contains a valid GI sample.
 ### `RTXDI_LoadGIReservoir`
 
     RTXDI_GIReservoir RTXDI_LoadGIReservoir(
-        RTXDI_ResamplingRuntimeParameters params,
+        RTXDI_ReservoirBufferParameters reservoirParams,
         uint2 reservoirPosition,
         uint reservoirArrayIndex)
 
     RTXDI_GIReservoir RTXDI_LoadGIReservoir(
-        RTXDI_ResamplingRuntimeParameters params,
+        RTXDI_ReservoirBufferParameters reservoirParams,
         uint2 reservoirPosition,
         uint reservoirArrayIndex,
         out uint miscFlags)
@@ -73,14 +73,14 @@ Loads and unpacks a GI reservoir from the provided reservoir storage buffer. The
 
     void RTXDI_StoreGIReservoir(
         const RTXDI_GIReservoir reservoir,
-        RTXDI_ResamplingRuntimeParameters params,
+        RTXDI_ReservoirBufferParameters reservoirParams,
         uint2 reservoirPosition,
         uint reservoirArrayIndex)
 
     void RTXDI_StoreGIReservoir(
         const RTXDI_GIReservoir reservoir,
         const uint miscFlags,
-        RTXDI_ResamplingRuntimeParameters params,
+        RTXDI_ReservoirBufferParameters reservoirParams,
         uint2 reservoirPosition,
         uint reservoirArrayIndex)
 
@@ -127,93 +127,65 @@ Creates a GI reservoir from a raw light sample.
 
 ## High-Level Sampling and Resampling Functions
 
+Parameter structs (`RTXDI_GITemporalResamplingParameters`, `RTXDI_GISpatialResamplingParameters`, `RTXDI_GISpatioTemporalResamplingParameters`) are defined in [`GI/ReSTIRGIParameters.h`](../Libraries/Rtxdi/Include/Rtxdi/GI/ReSTIRGIParameters.h).
+
 ### `RTXDI_GITemporalResampling`
 
-    struct RTXDI_GITemporalResamplingParameters
-    {
-        float3 screenSpaceMotion;
-        uint sourceBufferIndex;
-        uint maxHistoryLength;
-        uint biasCorrectionMode;
-        float depthThreshold;
-        float normalThreshold;
-        uint maxReservoirAge;
-        bool enablePermutationSampling;
-        bool enableFallbackSampling;
-    };
-    GI_GIReservoir RTXDI_GITemporalResampling(
+    RTXDI_GIReservoir RTXDI_GITemporalResampling(
         const uint2 pixelPosition,
         const RAB_Surface surface,
+        float3 screenSpaceMotion,
+        uint sourceBufferIndex,
         const RTXDI_GIReservoir inputReservoir,
-        inout RAB_RandomSamplerState rng,
-        const RTXDI_GITemporalResamplingParameters tparams,
-        const RTXDI_ResamplingRuntimeParameters params)
+        inout RTXDI_RandomSamplerState rng,
+        const RTXDI_RuntimeParameters rParams,
+        const RTXDI_ReservoirBufferParameters reservoirParams,
+        const RTXDI_GITemporalResamplingParameters tparams)
 
 Implements the core functionality of the temporal resampling pass. Takes the previous G-buffer, motion vectors, and two GI reservoir buffers - current and previous - as inputs. Tries to match the surfaces in the current frame to surfaces in the previous frame. If a match is found for a given pixel, the current and previous reservoirs are combined.
 
 An optional visibility ray may be cast if enabled with the `tparams.biasCorrectionMode` setting, to reduce the resampling bias. That visibility ray should ideally be traced through the previous frame BVH, but can also use the current frame BVH if the previous is not available - that will produce more bias.
 
-For more information on the members of the `RTXDI_GITemporalResamplingParameters` structure, see the comments in the source code.
+Motion and buffer selection use `screenSpaceMotion` and `sourceBufferIndex` as separate arguments. For member documentation, see [`GI/ReSTIRGIParameters.h`](../Libraries/Rtxdi/Include/Rtxdi/GI/ReSTIRGIParameters.h).
 
-### `RTXDI_SpatialResampling`
+### `RTXDI_GISpatialResampling`
 
-    struct RTXDI_GISpatialResamplingParameters
-    {
-        uint sourceBufferIndex;
-        float depthThreshold;
-        float normalThreshold;
-        uint numSamples;
-        float samplingRadius;
-        uint biasCorrectionMode;
-    };
     RTXDI_GIReservoir RTXDI_GISpatialResampling(
         const uint2 pixelPosition,
         const RAB_Surface surface,
+        uint sourceBufferIndex,
         const RTXDI_GIReservoir inputReservoir,
-        inout RAB_RandomSamplerState rng,
-        const RTXDI_GISpatialResamplingParameters sparams,
-        const RTXDI_ResamplingRuntimeParameters params)
+        inout RTXDI_RandomSamplerState rng,
+        const RTXDI_RuntimeParameters rParams,
+        const RTXDI_ReservoirBufferParameters reservoirParams,
+        const RTXDI_GISpatialResamplingParameters sparams)
 
 Implements the core functionality of the spatial resampling pass. Operates on the current frame G-buffer and its reservoirs. For each pixel, considers a number of its neighbors and, if their surfaces are similar enough to the current pixel, combines their reservoirs.
 
 Optionally, one visibility ray is traced for each neighbor being considered, to reduce bias, if enabled with the `sparams.biasCorrectionMode` setting.
 
-For more information on the members of the `RTXDI_GISpatialResamplingParameters` structure, see the comments in the source code.
+### `RTXDI_GISpatioTemporalResampling`
 
-
-### `RTXDI_SpatioTemporalResampling`
-
-
-    struct RTXDI_GISpatioTemporalResamplingParameters
-    {
-        float3 screenSpaceMotion;
-        uint sourceBufferIndex;
-        uint maxHistoryLength;
-        float depthThreshold;
-        float normalThreshold;
-        uint maxReservoirAge;
-        uint numSpatialSamples;
-        float samplingRadius;
-        uint biasCorrectionMode;
-        bool enablePermutationSampling;
-        bool enableFallbackSampling;
-    };
     RTXDI_GIReservoir RTXDI_GISpatioTemporalResampling(
         const uint2 pixelPosition,
         const RAB_Surface surface,
+        const uint sourceBufferIndex,
+        const float3 screenSpaceMotion,
         RTXDI_GIReservoir inputReservoir,
-        inout RAB_RandomSamplerState rng,
-        const RTXDI_GISpatioTemporalResamplingParameters stparams,
-        const RTXDI_ResamplingRuntimeParameters params)
+        inout RTXDI_RandomSamplerState rng,
+        const RTXDI_RuntimeParameters rParams,
+        const RTXDI_ReservoirBufferParameters reservoirParams,
+        const RTXDI_GISpatioTemporalResamplingParameters stparams)
 
 Implements the core functionality of a combined spatiotemporal resampling pass. This is similar to a sequence of `RTXDI_GITemporalResampling` and `RTXDI_GISpatialResampling`, with the exception that the input reservoirs are all taken from the previous frame. This function is useful for implementing a lighting solution in a single shader, which generates the initial samples, applies spatiotemporal resampling, and shades the final samples.
 
 ### `RTXDI_GIBoilingFilter`
 
+Compiled only when `RTXDI_ENABLE_BOILING_FILTER` is defined.
+
     void RTXDI_GIBoilingFilter(
         uint2 LocalIndex,
         float filterStrength,
-        RTXDI_ResamplingRuntimeParameters params,
         inout RTXDI_GIReservoir reservoir)
 
 Applies a boiling filter over all threads in the compute shader thread group. This filter attempts to reduce boiling by removing reservoirs whose weighted radiance is significantly higher than the weighted radiances of their neighbors.

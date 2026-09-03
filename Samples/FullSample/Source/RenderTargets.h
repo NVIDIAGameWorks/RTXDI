@@ -49,6 +49,10 @@ public:
     nvrhi::TextureHandle PSRSpecularF0;
     nvrhi::TextureHandle PSRLightDir;
 
+    // DLSS RR buffers in float3 format, rather than uint used by the rest of the pipeline
+    nvrhi::TextureHandle PSRDiffuseAlbedo_RR;
+    nvrhi::TextureHandle PSRSpecularF0_RR;
+
     nvrhi::TextureHandle HdrColor;
     nvrhi::TextureHandle LdrColor;
     nvrhi::TextureHandle DiffuseLighting;
@@ -68,6 +72,11 @@ public:
 
     nvrhi::TextureHandle PTSampleIDTexture;
     nvrhi::TextureHandle PTDuplicationMap;
+    nvrhi::TextureHandle SmoothedPTDuplicationMap;
+    nvrhi::TextureHandle PrevSmoothedPTDuplicationMap;
+    nvrhi::TextureHandle PTDecorrelationFactor;
+    nvrhi::TextureHandle NeighborSelectionGBuffer;
+    nvrhi::TextureHandle PrevNeighborSelectionGBuffer;
 
     nvrhi::TextureHandle Gradients;
     nvrhi::TextureHandle TemporalSamplePositions;

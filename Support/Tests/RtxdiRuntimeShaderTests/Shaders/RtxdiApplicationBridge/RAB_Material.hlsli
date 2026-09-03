@@ -30,7 +30,7 @@ float GetRoughness(RAB_Material material)
     return 0.0;
 }
 
-RAB_Material RAB_GetGBufferMaterial(int2 pixelPosition, bool previousFrame)
+RAB_Material RAB_GetGBufferMaterial(int2 pixelPosition, bool prevFrame)
 {
     return RAB_EmptyMaterial();
 }

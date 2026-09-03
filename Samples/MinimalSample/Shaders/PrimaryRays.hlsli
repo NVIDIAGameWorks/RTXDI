@@ -19,7 +19,7 @@ struct PrimarySurfaceOutput
 
 PrimarySurfaceOutput TracePrimaryRay(int2 pixelPosition)
 {
-    RayDesc ray = setupPrimaryRay(pixelPosition, g_Const.view);
+    RayDesc ray = SetupPrimaryRay(pixelPosition, g_Const.view);
     
     uint instanceMask = INSTANCE_MASK_OPAQUE;
     uint rayFlags = RAY_FLAG_CULL_NON_OPAQUE;
@@ -45,9 +45,9 @@ PrimarySurfaceOutput TracePrimaryRay(int2 pixelPosition)
             rayQuery.CommittedTriangleBarycentrics(), 
             GeomAttr_All, t_InstanceData, t_GeometryData, t_MaterialConstants);
         
-        RayDesc ray_0 = setupPrimaryRay(pixelPosition, g_Const.view);
-        RayDesc ray_x = setupPrimaryRay(pixelPosition + uint2(1, 0), g_Const.view);
-        RayDesc ray_y = setupPrimaryRay(pixelPosition + uint2(0, 1), g_Const.view);
+        RayDesc ray_0 = SetupPrimaryRay(pixelPosition, g_Const.view);
+        RayDesc ray_x = SetupPrimaryRay(pixelPosition + uint2(1, 0), g_Const.view);
+        RayDesc ray_y = SetupPrimaryRay(pixelPosition + uint2(0, 1), g_Const.view);
         float3 worldSpacePositions[3];
         worldSpacePositions[0] = mul(gs.instance.transform, float4(gs.vertexPositions[0], 1.0)).xyz;
         worldSpacePositions[1] = mul(gs.instance.transform, float4(gs.vertexPositions[1], 1.0)).xyz;
@@ -66,7 +66,7 @@ PrimarySurfaceOutput TracePrimaryRay(int2 pixelPosition)
 
         ms.shadingNormal = getBentNormal(gs.flatNormal, ms.shadingNormal, ray.Direction);
 
-        result.motionVector = getMotionVector(g_Const.view, g_Const.prevView, 
+        result.motionVector = GetMotionVector(g_Const.view, g_Const.prevView,
             gs.instance, gs.objectSpacePosition, gs.prevObjectSpacePosition, result.surface.viewDepth);
         
         result.surface.worldPos = mul(gs.instance.transform, float4(gs.objectSpacePosition, 1.0)).xyz;
@@ -76,7 +76,7 @@ PrimarySurfaceOutput TracePrimaryRay(int2 pixelPosition)
         result.surface.material.specularF0 = ms.specularF0;
         result.surface.material.roughness = ms.roughness;
         result.surface.viewDir = -ray.Direction;
-        result.surface.diffuseProbability = getSurfaceDiffuseProbability(result.surface);
+        result.surface.diffuseProbability = GetSurfaceDiffuseProbability(result.surface);
         result.emissiveColor = ms.emissiveColor;
     }
 

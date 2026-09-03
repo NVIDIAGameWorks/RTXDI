@@ -44,20 +44,20 @@ void PrintPathType(RTXDI_PTPathTraceInvocationType type)
 void PrintReservoir_(RTXDI_PTReservoir r)
 {
     DebugPrint_("Reservoir:");
-    DebugPrint_("- TWP: {0}", r.TranslatedWorldPosition);
-    DebugPrint_("- WS: {0}", r.WeightSum);
-    DebugPrint_("- WN: {0}", r.WorldNormal);
+    DebugPrint_("- TWP: {0}", r.translatedWorldPosition);
+    DebugPrint_("- WS: {0}", r.weightSum);
+    DebugPrint_("- WN: {0}", r.worldNormal);
     DebugPrint_("- M: {0}", r.M);
-    DebugPrint_("- R: {0}", r.Radiance);
-    DebugPrint_("- Age: {0}", r.Age);
-    DebugPrint_("- SBSS: {0}", r.ShouldBoostSpatialSamples);
-    DebugPrint_("- RcWiPdf: {0}", r.RcWiPdf);
-    DebugPrint_("- PJ: {0}", r.PartialJacobian);
-    DebugPrint_("- RcVL: {0}", r.RcVertexLength);
-    DebugPrint_("- PL: {0}", r.PathLength);
-    DebugPrint_("- RS: {0}", r.RandomSeed);
-    DebugPrint_("- RI: {0}", r.RandomIndex);
-    DebugPrint_("- TF: {0}", r.TargetFunction);
+    DebugPrint_("- R: {0}", r.radiance);
+    DebugPrint_("- Age: {0}", r.age);
+    DebugPrint_("- AuxFlag: {0}", r.auxFlag);
+    DebugPrint_("- RcWiPdf: {0}", r.rcWiPdf);
+    DebugPrint_("- PJ: {0}", r.partialJacobian);
+    DebugPrint_("- RcVL: {0}", r.rcVertexLength);
+    DebugPrint_("- PL: {0}", r.pathLength);
+    DebugPrint_("- RS: {0}", r.randomSeed);
+    DebugPrint_("- RI: {0}", r.randomIndex);
+    DebugPrint_("- TF: {0}", r.targetFunction);
 }
 
 #endif // RUNTIME_SHADER_DEBUG_PRINT_UTILITIES_HLSLI

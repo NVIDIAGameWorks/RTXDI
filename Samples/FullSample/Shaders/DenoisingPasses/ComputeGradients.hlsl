@@ -21,14 +21,14 @@
 
 #if USE_RAY_QUERY
 [numthreads(RTXDI_SCREEN_SPACE_GROUP_SIZE, RTXDI_SCREEN_SPACE_GROUP_SIZE, 1)]
-void main(uint2 GlobalIndex : SV_DispatchThreadID, uint2 LocalIndex : SV_GroupThreadID, uint2 GroupIdx : SV_GroupID)
+void main(uint2 globalIndex : SV_DispatchThreadID, uint2 localIndex : SV_GroupThreadID, uint2 groupIdx : SV_GroupID)
 #else
 [shader("raygeneration")]
 void RayGen()
 #endif
 {
 #if !USE_RAY_QUERY
-    uint2 GlobalIndex = DispatchRaysIndex().xy;
+    uint2 globalIndex = DispatchRaysIndex().xy;
 #endif
 
     const RTXDI_RuntimeParameters params = g_Const.runtimeParams;
@@ -48,8 +48,8 @@ void RayGen()
     for (int yy = 0; yy < RTXDI_GRAD_FACTOR; yy++)
     for (int xx = 0; xx < RTXDI_GRAD_FACTOR; xx++)
     {
-        // Translate the gradient stratum index (GlobalIndex) into reservoir and pixel positions.
-        int2 srcReservoirPos = GlobalIndex * RTXDI_GRAD_FACTOR + int2(xx, yy);
+        // Translate the gradient stratum index (globalIndex) into reservoir and pixel positions.
+        int2 srcReservoirPos = globalIndex * RTXDI_GRAD_FACTOR + int2(xx, yy);
         int2 srcPixelPos = RTXDI_ReservoirPosToPixelPos(srcReservoirPos, params.activeCheckerboardField);
 
         if (any(srcPixelPos >= int2(g_Const.view.viewportSize)))
@@ -95,7 +95,7 @@ void RayGen()
     {
         int2 selectedCurrentOrPrevPixelPos = usePrevSample ? selectedPrevPixelPos : selectedPixelPos;
 
-        // Translate the pixel pos into reservoir pos - the math the same for both current and prev frames,
+        // Translate the pixel pos into reservoir pos - the math is the same for both current and previous frames,
         // unlike the reverse translation that has to take the active checkerboard field into account.
         int2 selectedCurrentOrPrevReservoirPos = RTXDI_PixelPosToReservoirPos(selectedCurrentOrPrevPixelPos, params.activeCheckerboardField);
 
@@ -118,9 +118,9 @@ void RayGen()
             float3 motionVector = t_MotionVectors[selectedPixelPos].xyz;
             motionVector.xy += g_Const.prevView.pixelOffset - g_Const.view.pixelOffset;
 
-            motionVector = convertMotionVectorToPixelSpace(g_Const.view, g_Const.prevView, selectedPixelPos, motionVector);
+            motionVector = ConvertMotionVectorToPixelSpace(g_Const.view, g_Const.prevView, selectedPixelPos, motionVector);
 
-            float3 prevWorldPos = getPreviousWorldPos(g_Const.prevView, selectedPixelPos, surface.viewDepth, motionVector);
+            float3 prevWorldPos = GetPreviousWorldPos(g_Const.prevView, selectedPixelPos, surface.viewDepth, motionVector);
             float3 worldMotion = surface.worldPos - prevWorldPos;
 
             if (usePrevSample)
@@ -148,10 +148,10 @@ void RayGen()
             float3 specular = 0;
             float lightDistance = 0;
             ShadeSurfaceWithLightSample(selectedReservoir, surface, g_Const.restirDI.shadingParams, lightSample,
-                /* previousFrameTLAS = */ !usePrevSample, /* enableVisibilityReuse = */ false, g_Const.restirDI.temporalResamplingParams.enableVisibilityShortcut, diffuse, specular, lightDistance);
+                /* prevFrameTLAS = */ !usePrevSample, /* enableVisibilityReuse = */ false, g_Const.restirDI.temporalResamplingParams.enableVisibilityShortcut, diffuse, specular, lightDistance);
 
             // Calculate the sampled lighting luminance for the other surface
-            float2 newDiffSpecLum = float2(calcLuminance(diffuse * surface.material.diffuseAlbedo), calcLuminance(specular));
+            float2 newDiffSpecLum = float2(CalcLuminance(diffuse * surface.material.diffuseAlbedo), CalcLuminance(specular));
 
             // Convert to FP16 and back to avoid false-positive gradients due to precision loss in the
             // u_RestirLuminance and t_PrevRestirLuminance textures where selectedDiffSpecLum comes from.
@@ -171,5 +171,5 @@ void RayGen()
     }
 
     // Store the output
-    u_Gradients[int3(GlobalIndex, 0)] = min(gradient * RTXDI_GRAD_STORAGE_SCALE, RTXDI_GRAD_MAX_VALUE);
+    u_Gradients[int3(globalIndex, 0)] = min(gradient * RTXDI_GRAD_STORAGE_SCALE, RTXDI_GRAD_MAX_VALUE);
 }

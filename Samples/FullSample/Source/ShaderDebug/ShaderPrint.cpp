@@ -11,6 +11,7 @@
 
 #include <cstdarg>
 #include <cstdint>
+#include <cstdio>
 #include <string>
 
 #include <donut/engine/ShaderFactory.h>
@@ -204,7 +205,13 @@ static std::string MakeString(const char* format, ...)
     char buffer[1024 * 16] = { 0 };
     va_list args;
     va_start(args, format);
+
+#ifdef _WIN32
     vsprintf_s(buffer, ArraySize_(buffer), format, args);
+#else
+    vsnprintf(buffer, ArraySize_(buffer), format, args);
+#endif
+    va_end(args);
     return std::string(buffer);
 }
 

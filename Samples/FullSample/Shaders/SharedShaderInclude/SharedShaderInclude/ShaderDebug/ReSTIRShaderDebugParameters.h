@@ -20,9 +20,9 @@ struct ReSTIRShaderDebugParameters
     uint  outputDebugDirectLighting;
 
     uint  outputDebugIndirectLighting;
+    uint  visualizePTDecorrelationFactor;
     uint  pad1;
     uint  pad2;
-    uint  pad3;
 };
 
 #endif // RTXDI_RESTIR_SHADER_DEBUG_PARAMETERS_HLSLI

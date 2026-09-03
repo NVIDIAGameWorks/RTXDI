@@ -85,6 +85,7 @@ UIData::UIData()
 
     restirPT.resamplingMode = rtxdi::ReSTIRPT_ResamplingMode::TemporalAndSpatial;
     restirPT.initialSampling = rtxdi::GetDefaultReSTIRPTInitialSamplingParams();
+    restirPT.decorrelation = rtxdi::GetDefaultReSTIRPTDecorrelationParams();
     restirPT.temporalResampling = rtxdi::GetDefaultReSTIRPTTemporalResamplingParams();
     restirPT.hybridShift = rtxdi::GetDefaultReSTIRPTHybridShiftParams();
     restirPT.reconnection = rtxdi::GetDefaultReSTIRPTReconnectionParameters();
@@ -256,14 +257,19 @@ void UIData::ApplyPreset()
 
 void UIData::ApplyReSTIRPTPreset()
 {
+    // Base defaults depend on the active denoiser (DLSS-RR vs NRD); the quality-preset switch below
+    // only tweaks orthogonal fields (sample counts, radius, bounce budget, etc.).
+    const bool dlssRREnabled = (denoiserMode == DenoiserMode::DLSS_RR);
+
     // Reset everything to defaults, then apply preset-specific optimizations
     lightingSettings.ptParameters = GetDefaultPTParameters();
     restirPT.initialSampling = rtxdi::GetDefaultReSTIRPTInitialSamplingParams();
+    restirPT.decorrelation = rtxdi::GetDefaultReSTIRPTDecorrelationParams(dlssRREnabled);
     restirPT.reconnection = rtxdi::GetDefaultReSTIRPTReconnectionParameters();
-    restirPT.temporalResampling = rtxdi::GetDefaultReSTIRPTTemporalResamplingParams();
+    restirPT.temporalResampling = rtxdi::GetDefaultReSTIRPTTemporalResamplingParams(dlssRREnabled);
     restirPT.hybridShift = rtxdi::GetDefaultReSTIRPTHybridShiftParams();
-    restirPT.boilingFilter = rtxdi::GetDefaultReSTIRPTBoilingFilterParams();
-    restirPT.spatialResampling = rtxdi::GetDefaultReSTIRPTSpatialResamplingParams();
+    restirPT.boilingFilter = rtxdi::GetDefaultReSTIRPTBoilingFilterParams(dlssRREnabled);
+    restirPT.spatialResampling = rtxdi::GetDefaultReSTIRPTSpatialResamplingParams(dlssRREnabled);
     restirPT.hybridMirrorInitial = true;
 
     // Always enable MIS mode, even for fast mode
@@ -329,12 +335,43 @@ void UIData::ApplyReSTIRPTPreset()
         restirPT.spatialResampling.numDisocclusionBoostSamples = 8;
         restirPT.spatialResampling.samplingRadius = 32;
         restirPT.spatialResampling.numSpatialSamples = 1;
+        restirPT.spatialResampling.enableSpatialHeuristicMode = 1;
         break;
     case ReSTIRPTQualityPreset::Custom:
         // Don't change anything
         break;
     }
 
+}
+
+void UIData::ApplyDLSSRRPreset()
+{
+    ApplyDenoiserCompatDefaults(/* dlssRREnabled = */ true);
+}
+
+void UIData::ApplyNonDLSSRRPreset()
+{
+    ApplyDenoiserCompatDefaults(/* dlssRREnabled = */ false);
+}
+
+// Applies just the denoiser-dependent fields (independent of the quality preset), sourced from the
+// library defaults so the DLSS-RR / NRD profiles live in one place (GetDefaultReSTIRPT*Params).
+// The quality preset owns the orthogonal spatial fields (sample counts, radius, boost), so those are
+// left untouched here.
+void UIData::ApplyDenoiserCompatDefaults(bool dlssRREnabled)
+{
+    const RTXDI_PTTemporalResamplingParameters temporalDefaults = rtxdi::GetDefaultReSTIRPTTemporalResamplingParams(dlssRREnabled);
+    const RTXDI_PTSpatialResamplingParameters spatialDefaults = rtxdi::GetDefaultReSTIRPTSpatialResamplingParams(dlssRREnabled);
+
+    restirPT.temporalResampling.maxHistoryLength = temporalDefaults.maxHistoryLength;
+    restirPT.temporalResampling.enableAgeBasedRejection = temporalDefaults.enableAgeBasedRejection;
+    restirPT.temporalResampling.duplicationBasedHistoryReduction = temporalDefaults.duplicationBasedHistoryReduction;
+
+    restirPT.spatialResampling.duplicationBasedHistoryReduction = spatialDefaults.duplicationBasedHistoryReduction;
+    restirPT.spatialResampling.maxTemporalHistory = temporalDefaults.maxHistoryLength;
+
+    restirPT.decorrelation = rtxdi::GetDefaultReSTIRPTDecorrelationParams(dlssRREnabled);
+    restirPT.boilingFilter = rtxdi::GetDefaultReSTIRPTBoilingFilterParams(dlssRREnabled);
 }
 
 #ifdef WITH_NRD
@@ -519,35 +556,35 @@ void UserInterface::SamplingSettings()
             if (ImGui::Button("Apply Settings"))
                 m_ui.resetISContext = true;
 
-            ImGui::DragInt("Lights per Cell", (int*)&m_ui.regirStaticParams.LightsPerCell, 1, 32, 8192);
+            ImGui::DragInt("Lights per Cell", (int*)&m_ui.regirStaticParams.lightsPerCell, 1, 32, 8192);
 
             static const char* regirShapeOptions[] = { "Disabled", "Grid", "Onion" };
-            const char* currentReGIRShapeOption = regirShapeOptions[static_cast<int>(m_ui.regirStaticParams.Mode)];
+            const char* currentReGIRShapeOption = regirShapeOptions[static_cast<int>(m_ui.regirStaticParams.mode)];
             if (ImGui::BeginCombo("ReGIR Mode", currentReGIRShapeOption))
             {
                 for (int i = 0; i < sizeof(regirShapeOptions) / sizeof(regirShapeOptions[0]); i++)
                 {
                     int enumIndex = i;
-                    bool is_selected = (enumIndex == static_cast<int>(m_ui.regirStaticParams.Mode));
+                    bool is_selected = (enumIndex == static_cast<int>(m_ui.regirStaticParams.mode));
                     if (ImGui::Selectable(regirShapeOptions[i], is_selected))
-                        *(int*)&m_ui.regirStaticParams.Mode = enumIndex;
+                        *(int*)&m_ui.regirStaticParams.mode = enumIndex;
                     if (is_selected)
                         ImGui::SetItemDefaultFocus();
                 }
                 ImGui::EndCombo();
             }
 
-            if (m_ui.regirStaticParams.Mode == rtxdi::ReGIRMode::Grid)
+            if (m_ui.regirStaticParams.mode == rtxdi::ReGIRMode::Grid)
             {
-                ImGui::DragInt3("Grid Resolution", (int*)&m_ui.regirStaticParams.gridParameters.GridSize.x, 1, 1, 64);
+                ImGui::DragInt3("Grid Resolution", (int*)&m_ui.regirStaticParams.gridParameters.gridSize.x, 1, 1, 64);
             }
-            else if (m_ui.regirStaticParams.Mode == rtxdi::ReGIRMode::Onion)
+            else if (m_ui.regirStaticParams.mode == rtxdi::ReGIRMode::Onion)
             {
-                ImGui::SliderInt("Onion Layers - Detail", (int*)&m_ui.regirStaticParams.onionParameters.OnionDetailLayers, 0, 8);
-                ImGui::SliderInt("Onion Layers - Coverage", (int*)&m_ui.regirStaticParams.onionParameters.OnionCoverageLayers, 0, 20);
+                ImGui::SliderInt("Onion Layers - Detail", (int*)&m_ui.regirStaticParams.onionParameters.onionDetailLayers, 0, 8);
+                ImGui::SliderInt("Onion Layers - Coverage", (int*)&m_ui.regirStaticParams.onionParameters.onionCoverageLayers, 0, 20);
             }
 
-            ImGui::Text("Total ReGIR Cells: %d", m_ui.regirLightSlotCount / m_ui.regirStaticParams.LightsPerCell);
+            ImGui::Text("Total ReGIR Cells: %d", m_ui.regirLightSlotCount / m_ui.regirStaticParams.lightsPerCell);
 
             ImGui::TreePop();
         }
@@ -586,6 +623,11 @@ void UserInterface::SamplingSettings()
         if (ImGui::Combo("Preset", (int*)&m_ui.preset, "(Custom)\0Fast\0Medium\0Unbiased\0Ultra\0Reference\0"))
         {
             m_ui.ApplyPreset();
+#if DONUT_WITH_DLSS
+            // Re-apply the DLSS-RR preset so its overrides survive the quality preset.
+            if (m_ui.autoApplyDLSSRRPreset && m_ui.denoiserMode == DenoiserMode::DLSS_RR)
+                m_ui.ApplyDLSSRRPreset();
+#endif
             m_ui.resetAccumulation = true;
         }
 
@@ -692,14 +734,14 @@ void UserInterface::SamplingSettings()
 
             if (ImGui::TreeNode("Temporal Resampling"))
             {
-                samplingSettingsChanged |= ImGui::Checkbox("Enable Previous Frame TLAS/BLAS", (bool*)&m_ui.lightingSettings.enablePreviousTLAS);
+                samplingSettingsChanged |= ImGui::Checkbox("Enable Previous Frame TLAS/BLAS", (bool*)&m_ui.lightingSettings.enablePrevTLAS);
                 ShowHelpMarker(
                     "Use the previous frame TLAS for bias correction rays during temporal resampling and gradient computation. "
                     "Resutls in less biased results under motion and brighter, more complete gradients.");
 
                 samplingSettingsChanged |= ImGui::Checkbox("Enable Permutation Sampling", (bool*)&m_ui.restirDI.temporalResamplingParams.enablePermutationSampling);
                 ShowHelpMarker(
-                    "Shuffle the pixels from the previous frame when resampling from them. This makes pixel colors less correllated "
+                    "Shuffle the pixels from the previous frame when resampling from them. This makes pixel colors less correlated "
                     "temporally and therefore better suited for temporal accumulation and denoising. Also results in a higher positive "
                     "bias when the Reuse Final Visibility setting is on, which somewhat counteracts the negative bias from spatial resampling.");
 
@@ -779,13 +821,7 @@ void UserInterface::SamplingSettings()
                     samplingSettingsChanged |= ImGui::SliderFloat("Spatial Normal Threshold", &m_ui.restirDI.spatialResamplingParams.normalThreshold, 0.f, 1.f);
                     ShowHelpMarker("Lower values result in accepting samples with normals more different from the center pixel.");
 
-                    samplingSettingsChanged |= ImGui::Checkbox("Discount Naive Samples", reinterpret_cast<bool*>(&m_ui.restirDI.spatialResamplingParams.discountNaiveSamples));
-                    ShowHelpMarker("Prevents samples which are from the current frame or have no reasonable temporal history merged being spread to neighbors.");
-                }
-
-                if (m_showAdvancedSamplingSettings && m_ui.restirDI.resamplingMode != rtxdi::ReSTIRDI_ResamplingMode::Temporal)
-                {
-                    samplingSettingsChanged |= ImGui::Checkbox("Discount Naive Samples", (bool*)&m_ui.restirDI.spatialResamplingParams.discountNaiveSamples);
+                    samplingSettingsChanged |= ImGui::Checkbox("Discount Naive Samples", (bool*)(&m_ui.restirDI.spatialResamplingParams.discountNaiveSamples));
                     ShowHelpMarker("Prevents samples which are from the current frame or have no reasonable temporal history merged being spread to neighbors.");
                 }
 
@@ -997,6 +1033,11 @@ void UserInterface::SamplingSettings()
             if (ImGui::Combo("Preset", (int*)&m_ui.restirPtQualityPreset, "(Custom)\0Fast\0Medium\0Ultra\0"))
             {
                 m_ui.ApplyReSTIRPTPreset();
+#if DONUT_WITH_DLSS
+                // Re-apply the DLSS-RR preset so its overrides survive the PT preset.
+                if (m_ui.autoApplyDLSSRRPreset && m_ui.denoiserMode == DenoiserMode::DLSS_RR)
+                    m_ui.ApplyDLSSRRPreset();
+#endif
                 m_ui.resetAccumulation = true;
             }
 
@@ -1064,6 +1105,61 @@ void UserInterface::SamplingSettings()
                 }
                 ImGui::TreePop();
             }
+            if (ImGui::TreeNodeEx("Decorrelation", ImGuiTreeNodeFlags_None))
+            {
+                samplingSettingsChanged |= ImGui::Combo("Decorrelation mode", (int*)&m_ui.restirPT.decorrelation.decorrelationMode,
+                    "None\0"
+                    "Uniform\0"
+                    "Stagnancy-based\0");
+                ShowHelpMarker("How to compute the per-pixel decorrelation probability for final shading.\n"
+                               "None: feature disabled, regardless of the slider.\n"
+                               "Uniform: constant probability equal to the slider across all pixels.\n"
+                               "Stagnancy-based: slider modulated by the temporally/spatially-smoothed reservoir Stagnancy signal, "
+                               "so decorrelation only fires where samples have been reused heavily.");
+
+                const bool decorrelationEnabled = m_ui.restirPT.decorrelation.decorrelationMode != RTXDI_PTDecorrelationMode::None;
+                const bool stagnancyModeActive = m_ui.restirPT.decorrelation.decorrelationMode == RTXDI_PTDecorrelationMode::Stagnancy;
+
+                ImGui::BeginDisabled(!decorrelationEnabled);
+                samplingSettingsChanged |= ImGui::SliderFloat("Decorrelation factor", &m_ui.restirPT.decorrelation.decorrelationFactor, 0.0f, 1.0f);
+                ShowHelpMarker("Maximum probability that final shading falls back to the unresampled initial-sampling reservoir "
+                               "(bypassing temporal/spatial resampling). In Uniform mode this value is used directly across all "
+                               "pixels; in Stagnancy mode it is further scaled by the smoothed duplication signal (0 where "
+                               "reservoirs are fresh, ramping up to this slider value where reservoirs have been reused heavily).");
+                ImGui::EndDisabled();
+
+                ImGui::BeginDisabled(!stagnancyModeActive);
+                samplingSettingsChanged |= ImGui::SliderFloat("Decorrelation stagnancy exponent", &m_ui.restirPT.decorrelation.decorrelationStagnancyExponent, 0.1f, 8.0f);
+                ShowHelpMarker("Stagnancy mode only. Power exponent applied to the normalized smoothed Stagnancy (in [0, 1]) "
+                               "before it scales the decorrelation probability. Values < 1 make decorrelation ramp up earlier "
+                               "(more sensitive); values > 1 delay it (less sensitive). 1.0 is linear.");
+                samplingSettingsChanged |= ImGui::SliderFloat("Decorrelation EMA factor", &m_ui.restirPT.decorrelation.decorrelationEmaFactor, 0.0f, 1.0f);
+                ShowHelpMarker("Stagnancy mode only. Exponential-moving-average blend factor for the temporally-smoothed "
+                               "duplication map. 1 fully uses the current frame's age/40 (no smoothing, more noisy); "
+                               "smaller values keep more history (smoother, slower to react). 0 means never update "
+                               "(not useful in practice).");
+                samplingSettingsChanged |= ImGui::Checkbox("Decorrelation firefly replacement", (bool*)&m_ui.restirPT.decorrelation.fireflyReplacementFilterEnable);
+                ShowHelpMarker("Stagnancy mode only. When enabled, the FinalShading pass runs an additional boiling filter "
+                               "and forces full decorrelation on pixels whose contribution looks like an outlier within their "
+                               "tile. Independent of the temporal-resampling boiling filter.");
+                ImGui::BeginDisabled(!m_ui.restirPT.decorrelation.fireflyReplacementFilterEnable);
+                samplingSettingsChanged |= ImGui::SliderFloat("Decorrelation firefly filter strength", &m_ui.restirPT.decorrelation.fireflyReplacementFilterStrength, 0.0f, 1.0f);
+                ShowHelpMarker("Strength of the FinalShading boiling filter. Higher values reject more pixels as outliers.");
+                ImGui::EndDisabled();
+                samplingSettingsChanged |= ImGui::Checkbox("Firefly replacement bias reduction", (bool*)&m_ui.restirPT.decorrelation.fireflyReplacementBiasReduction);
+                ShowHelpMarker("Stagnancy mode only. When the decorrelation path swaps in the preserved initial-sampling "
+                               "reservoir, clamp its WeightSum to at most `multiplier bound * previous WeightSum` on pixels "
+                               "whose duplication value indicates fresh reservoirs (age == 0). Reduces bias "
+                               "from replacing resampled (filtered) firefly with higher value initial firefly.");
+                ImGui::BeginDisabled(!m_ui.restirPT.decorrelation.fireflyReplacementBiasReduction);
+                samplingSettingsChanged |= ImGui::SliderFloat("Firefly replacement multiplier bound", &m_ui.restirPT.decorrelation.fireflyReplacementMultiplyBound, 1.0f, 100.0f);
+                ShowHelpMarker("Upper-bound multiplier used by the firefly-replacement bias-reduction clamp. The replacement "
+                               "reservoir's WeightSum is limited to `multiplier bound * previous WeightSum`. Smaller values "
+                               "reduces bias but can introduce more post-denoise correlation artifacts.");
+                ImGui::EndDisabled();
+                ImGui::EndDisabled();
+                ImGui::TreePop();
+            }
             if (ImGui::TreeNodeEx("Reconnection Parameters", ImGuiTreeNodeFlags_None))
             {
                 int* reconnectionMode = (int*)&m_ui.restirPT.reconnection.reconnectionMode;
@@ -1107,7 +1203,7 @@ void UserInterface::SamplingSettings()
                 samplingSettingsChanged |= ImGui::SliderFloat("Boiling filter strength", &m_ui.restirPT.boilingFilter.boilingFilterStrength, 0.0f, 1.0f);
                 samplingSettingsChanged |= ImGui::Checkbox("Enable fallback sampling", (bool*)&m_ui.restirPT.temporalResampling.enableFallbackSampling);
                 samplingSettingsChanged |= ImGui::Checkbox("Enable permutation sampling", (bool*)&m_ui.restirPT.temporalResampling.enablePermutationSampling);
-                if (ImGui::Checkbox("Duplication based hsitory reduction", (bool*)&m_ui.restirPT.temporalResampling.duplicationBasedHistoryReduction))
+                if (ImGui::Checkbox("Duplication based history reduction", (bool*)&m_ui.restirPT.temporalResampling.duplicationBasedHistoryReduction))
                 {
                     samplingSettingsChanged = true;
                     m_ui.restirPT.spatialResampling.duplicationBasedHistoryReduction = m_ui.restirPT.temporalResampling.duplicationBasedHistoryReduction;
@@ -1120,13 +1216,28 @@ void UserInterface::SamplingSettings()
                     samplingSettingsChanged = true;
                     m_ui.restirPT.spatialResampling.maxTemporalHistory = m_ui.restirPT.temporalResampling.maxHistoryLength;
                 }
-                samplingSettingsChanged |= ImGui::SliderInt("Max reservoir age", (int*)&m_ui.restirPT.temporalResampling.maxReservoirAge, 1, 64);
+                // The reservoir shares a single "age" field for both age-based rejection and the duplication
+                // map's temporal (stagnancy) channel. Whenever the duplication map is generated, age is
+                // repurposed as stagnancy, so age-based rejection must be disabled to keep the two consistent.
+                bool ageRejectionForcedOff = rtxdi::NeedsDuplicationMap(m_ui.restirPT.temporalResampling, m_ui.restirPT.decorrelation);
+                bool ageRejectionEnabled = m_ui.restirPT.temporalResampling.enableAgeBasedRejection != 0 && !ageRejectionForcedOff;
+                ImGui::BeginDisabled(ageRejectionForcedOff);
+                if (ImGui::Checkbox("Enable age-based sample rejection", &ageRejectionEnabled) && !ageRejectionForcedOff)
+                {
+                    m_ui.restirPT.temporalResampling.enableAgeBasedRejection = ageRejectionEnabled;
+                    samplingSettingsChanged = true;
+                }
+                ImGui::EndDisabled();
+                ImGui::BeginDisabled(!ageRejectionEnabled);
+                samplingSettingsChanged |= ImGui::SliderInt("Max reservoir age", (int*)&m_ui.restirPT.temporalResampling.maxReservoirAge, 1, 31);
+                ImGui::EndDisabled();
                 ImGui::TreePop();
             }
             if ((m_ui.restirPT.resamplingMode == rtxdi::ReSTIRPT_ResamplingMode::Spatial ||
                 m_ui.restirPT.resamplingMode == rtxdi::ReSTIRPT_ResamplingMode::TemporalAndSpatial) &&
                 ImGui::TreeNodeEx("Spatial Resampling", ImGuiTreeNodeFlags_None))
             {
+                samplingSettingsChanged |= ImGui::Checkbox("Compatibility-guided neighbor selection", (bool*)&m_ui.restirPT.spatialResampling.enableSpatialHeuristicMode);
                 samplingSettingsChanged |= ImGui::SliderInt("Num spatial samples", (int*)&m_ui.restirPT.spatialResampling.numSpatialSamples, 1, 32);
                 samplingSettingsChanged |= ImGui::SliderInt("Num disocclusion boost samples", (int*)&m_ui.restirPT.spatialResampling.numDisocclusionBoostSamples, 1, 32);
 
@@ -1152,7 +1263,13 @@ void UserInterface::PostProcessSettings()
 {
     if (ImGui_ColoredTreeNode("Post-Processing", c_ColorRegularHeader))
     {
-        AntiAliasingMode previousAAMode = m_ui.aaMode;
+        AntiAliasingMode prevAAMode = m_ui.aaMode;
+#if DONUT_WITH_DLSS
+        // When DLSS-RR is the active denoiser, it performs the post-processing resolve itself, so the
+        // AA options below don't apply. Disable them and tell the user where post-processing comes from.
+        const bool postProcessingByDLSSRR = (m_ui.denoiserMode == DenoiserMode::DLSS_RR);
+        ImGui::BeginDisabled(postProcessingByDLSSRR);
+#endif
         ImGui::RadioButton("No AA", (int*)&m_ui.aaMode, (int)AntiAliasingMode::None);
         ImGui::SameLine();
         ImGui::RadioButton("Accumulation", (int*)&m_ui.aaMode, (int)AntiAliasingMode::Accumulation);
@@ -1162,11 +1279,16 @@ void UserInterface::PostProcessSettings()
         if (m_ui.dlssAvailable)
         {
             ImGui::SameLine();
-            ImGui::RadioButton("DLSS", (int*)&m_ui.aaMode, (int)AntiAliasingMode::DLSS);
+            ImGui::RadioButton("DLSS SR", (int*)&m_ui.aaMode, (int)AntiAliasingMode::DLSS_SR);
         }
+        ImGui::EndDisabled();
+        if (postProcessingByDLSSRR)
+            ImGui::TextDisabled("Post processing provided by DLSS-RR");
 #endif
-        if (m_ui.aaMode != previousAAMode)
+        if (m_ui.aaMode != prevAAMode)
+        {
             m_ui.resetAccumulation = true;
+        }
 
         ImGui::PushItemWidth(50.f);
         m_ui.resetAccumulation |= ImGui::DragInt("Accum. Frame Limit", (int*)&m_ui.framesToAccumulate, 1.f, 0, 1024);
@@ -1178,7 +1300,7 @@ void UserInterface::PostProcessSettings()
             ImGui::TextDisabled("// %d frame(s)", m_ui.numAccumulatedFrames);
         }
 #if DONUT_WITH_DLSS
-        else if (m_ui.dlssAvailable && m_ui.aaMode == AntiAliasingMode::DLSS)
+        else if (m_ui.dlssAvailable && m_ui.aaMode == AntiAliasingMode::DLSS_SR)
         {
             ImGui::SliderFloat("DLSS Exposure Scale", &m_ui.dlssExposureScale, 0.125f, 16.f, "%.3f", ImGuiSliderFlags_Logarithmic);
             ImGui::SliderFloat("DLSS Sharpness", &m_ui.dlssSharpness, 0.f, 1.f);
@@ -1352,7 +1474,10 @@ void UserInterface::DebugSettings()
                 "PSRDiffuseAlbedo\0"
                 "PSRSpecularF0\0"
                 "PT Duplication Map\0"
+                "Smoothed PT Duplication Map\0"
+                "PT Decorrelation Factor\0"
                 "PT Sample ID\0"
+                "Neighbor Selection GBuffer\0"
             );
             if (m_ui.debugOutputSettings.renderOutputMode != DebugRenderOutputMode::TextureBlit)
             {
@@ -1361,6 +1486,7 @@ void UserInterface::DebugSettings()
 
             m_ui.lightingSettings.restirShaderDebugParams.outputDebugDirectLighting = m_ui.debugOutputSettings.textureBlitMode == DebugTextureBlitMode::DirectLightingRaw;
             m_ui.lightingSettings.restirShaderDebugParams.outputDebugIndirectLighting = m_ui.debugOutputSettings.textureBlitMode == DebugTextureBlitMode::IndirectLightingRaw;
+            m_ui.lightingSettings.restirShaderDebugParams.visualizePTDecorrelationFactor = m_ui.debugOutputSettings.textureBlitMode == DebugTextureBlitMode::PTDecorrelationFactor;
 
             ImGui::RadioButton("Reservoir Subfield Display", (int*)&m_ui.debugOutputSettings.renderOutputMode, DebugRenderOutputMode::ReservoirSubfield);
             ShowHelpMarker("Display a component of one of the ReSTIR reservoirs.\n");
@@ -1437,13 +1563,49 @@ void UserInterface::DenoiserSettings()
     char s[128];
     snprintf(s, sizeof(s) - 1, "Denoising (NRD v%u.%u.%u)", nrdLibraryDesc.versionMajor, nrdLibraryDesc.versionMinor, nrdLibraryDesc.versionBuild);
 
+    std::string denoiserCombo;
+    denoiserCombo += "Off";
+    denoiserCombo.push_back(0);
+#if WITH_NRD
+    denoiserCombo += "NRD ReLAX\0";
+    denoiserCombo.push_back(0);
+    denoiserCombo += "NRD ReBLUR\0";
+    denoiserCombo.push_back(0);
+#endif
+#if DONUT_WITH_DLSS
+    if (m_ui.dlssRRSupported)
+    {
+        denoiserCombo += "DLSS-RR\0";
+        denoiserCombo.push_back(0);
+    }
+#endif
+
     if (ImGui_ColoredTreeNode(s, c_ColorAttentionHeader))
     {
-        ImGui::Checkbox("Enable", &m_ui.enableDenoiser);
-
-        if (m_ui.enableDenoiser)
+        if (ImGui::Combo("Denoiser mode", (int*)&m_ui.denoiserMode, denoiserCombo.c_str()))
         {
-            ImGui::SameLine();
+            m_ui.resetAccumulation = true;
+#if DONUT_WITH_DLSS
+            // Auto-apply the denoiser compatibility preset on mode change: DLSS-RR wants the
+            // decorrelation / firefly-replacement settings, every other denoiser wants them off.
+            if (m_ui.autoApplyDLSSRRPreset)
+            {
+                if (m_ui.denoiserMode == DenoiserMode::DLSS_RR)
+                    m_ui.ApplyDLSSRRPreset();
+                else if (m_ui.denoiserMode != DenoiserMode::NONE)
+                    m_ui.ApplyNonDLSSRRPreset();
+            }
+#endif
+        }
+
+#if DONUT_WITH_DLSS
+        if (m_ui.dlssRRSupported)
+            ImGui::Checkbox("Auto-apply denoiser compatibility preset", &m_ui.autoApplyDLSSRRPreset);
+#endif
+
+#ifdef WITH_NRD
+        if (m_ui.denoiserMode == DenoiserMode::NRD_RELAX || m_ui.denoiserMode == DenoiserMode::NRD_REBLUR)
+        {
             ImGui::Checkbox("Advanced Settings", &m_showAdvancedDenoisingSettings);
 
             ImGui::Checkbox("Enable PSR", (bool*)&m_ui.lightingSettings.enableDenoiserPSR);
@@ -1456,9 +1618,14 @@ void UserInterface::DenoiserSettings()
                 ImGui::TreePop();
             }
 
-            int useReLAX = (m_ui.denoisingMethod == nrd::Denoiser::RELAX_DIFFUSE_SPECULAR) ? 1 : 0;
-            ImGui::Combo("Denoiser", &useReLAX, "ReBLUR\0ReLAX\0");
-            m_ui.denoisingMethod = useReLAX ? nrd::Denoiser::RELAX_DIFFUSE_SPECULAR : nrd::Denoiser::REBLUR_DIFFUSE_SPECULAR;
+            bool useReLAX = false;
+            if (m_ui.denoiserMode == DenoiserMode::NRD_RELAX)
+            {
+                m_ui.nrdDenoisingMethod = nrd::Denoiser::RELAX_DIFFUSE_SPECULAR;
+                useReLAX = true;
+            }
+            else if(m_ui.denoiserMode == DenoiserMode::NRD_REBLUR)
+                m_ui.nrdDenoisingMethod = nrd::Denoiser::REBLUR_DIFFUSE_SPECULAR;
 
             ImGui::SameLine();
             if (ImGui::Button("Reset Settings"))
@@ -1553,7 +1720,7 @@ void UserInterface::DenoiserSettings()
                 ImGui::SliderFloat("Confidence History Length", &m_ui.lightingSettings.confidenceHistoryLength, 0.f, 3.f);
             }
         }
-
+#endif // WITH_NRD
         ImGui::TreePop();
     }
 

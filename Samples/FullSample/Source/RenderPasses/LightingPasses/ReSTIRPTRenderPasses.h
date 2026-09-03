@@ -54,7 +54,8 @@ public:
     void Render(nvrhi::ICommandList* commandList,
         const donut::engine::IView& view,
         rtxdi::ReSTIRPTContext& context,
-        nvrhi::BufferHandle giReservoirBuffer);
+        nvrhi::BufferHandle ptReservoirBuffer,
+        nvrhi::BufferHandle spatialNeighborSelectionBuffer);
 
     void EnableRayCounts(bool enable);
     bool RayCountsEnabled() const;
@@ -69,8 +70,9 @@ private:
 
     RayTracingPass m_PTGenerateInitialSamplesPass;
     RayTracingPass m_PTTemporalResamplingPass;
-    RayTracingPass m_PTFillSampleIDPass;
     RayTracingPass m_PTComputeDuplicationMapPass;
+    RayTracingPass m_PTComputeSmoothedDuplicationMapPass;
+    RayTracingPass m_PTSpatialNeighborSelectionPass;
     RayTracingPass m_PTSpatialResamplingPass;
     RayTracingPass m_PTFinalShadingPass;
 };

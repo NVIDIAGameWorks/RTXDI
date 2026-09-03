@@ -12,6 +12,7 @@
 #define TRIANGLE_LIGHT_HLSLI
 
 #include "HelperFunctions.hlsli"
+#include <donut/shaders/brdf.hlsli>
 #include <donut/shaders/packing.hlsli>
 
 struct TriangleLight
@@ -25,7 +26,7 @@ struct TriangleLight
 
     // Interface methods
 
-    float calcSolidAnglePdf(in const float3 viewerPosition,
+    float CalcSolidAnglePdf(in const float3 viewerPosition,
                             in const float3 lightSamplePosition,
                             in const float3 lightSampleNormal)
     {
@@ -36,7 +37,7 @@ struct TriangleLight
         const float areaPdf = 1.0 / surfaceArea;
         const float sampleCosTheta = saturate(dot(L, -lightSampleNormal));
 
-        return pdfAtoW(areaPdf, Ldist, sampleCosTheta);
+        return PdfAtoW(areaPdf, Ldist, sampleCosTheta);
     }
 
     // Helper methods

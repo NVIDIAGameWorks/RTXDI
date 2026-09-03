@@ -27,7 +27,7 @@ RAB_LightInfo RAB_EmptyLightInfo()
 }
 
 // Loads polymorphic light data from the global light buffer.
-RAB_LightInfo RAB_LoadLightInfo(uint index, bool previousFrame)
+RAB_LightInfo RAB_LoadLightInfo(uint index, bool prevFrame)
 {
     return t_LightDataBuffer[index];
 }
@@ -38,7 +38,7 @@ RAB_LightInfo RAB_LoadCompactLightInfo(uint linearIndex)
     uint4 packedData1, packedData2;
     packedData1 = u_RisLightDataBuffer[linearIndex * 2 + 0];
     packedData2 = u_RisLightDataBuffer[linearIndex * 2 + 1];
-    return unpackCompactLightInfo(packedData1, packedData2);
+    return UnpackCompactLightInfo(packedData1, packedData2);
 }
 
 // Stores triangle light data into a tile.
@@ -48,7 +48,7 @@ RAB_LightInfo RAB_LoadCompactLightInfo(uint linearIndex)
 bool RAB_StoreCompactLightInfo(uint linearIndex, RAB_LightInfo lightInfo)
 {
     uint4 data1, data2;
-    if (!packCompactLightInfo(lightInfo, data1, data2))
+    if (!PackCompactLightInfo(lightInfo, data1, data2))
         return false;
 
     u_RisLightDataBuffer[linearIndex * 2 + 0] = data1;
@@ -61,7 +61,7 @@ bool RAB_StoreCompactLightInfo(uint linearIndex, RAB_LightInfo lightInfo)
 // the specified volume. Used for world-space light grid construction.
 float RAB_GetLightTargetPdfForVolume(RAB_LightInfo light, float3 volumeCenter, float volumeRadius)
 {
-    return PolymorphicLight::getWeightForVolume(light, volumeCenter, volumeRadius);
+    return PolymorphicLight::GetWeightForVolume(light, volumeCenter, volumeRadius);
 }
 
 // Samples a polymorphic light relative to the given receiver surface.
@@ -71,14 +71,14 @@ float RAB_GetLightTargetPdfForVolume(RAB_LightInfo light, float3 volumeCenter, f
 // in the PDF texture, normalized to the (0..1) range.
 RAB_LightSample RAB_SamplePolymorphicLight(RAB_LightInfo lightInfo, RAB_Surface surface, float2 uv)
 {
-    PolymorphicLightSample pls = PolymorphicLight::calcSample(lightInfo, uv, surface.worldPos);
+    PolymorphicLightSample pls = PolymorphicLight::CalcSample(lightInfo, uv, surface.worldPos);
 
     RAB_LightSample lightSample;
     lightSample.position = pls.position;
     lightSample.normal = pls.normal;
     lightSample.radiance = pls.radiance;
     lightSample.solidAnglePdf = pls.solidAnglePdf;
-    lightSample.lightType = getLightType(lightInfo);
+    lightSample.lightType = GetLightType(lightInfo);
     return lightSample;
 }
 

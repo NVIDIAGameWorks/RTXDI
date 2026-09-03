@@ -32,6 +32,8 @@ Texture2D<uint> t_PrevGBufferSpecularRough : register(t9);
 Texture2D<float2> t_PrevRestirLuminance : register(t10);
 Texture2D<float4> t_MotionVectors : register(t11);
 Texture2D<float4> t_DenoiserNormalRoughness : register(t12);
+Texture2D<float4> t_PrevNeighborSelectionGBuffer : register(t13);
+Texture2D<float> t_PrevSmoothedPTDuplicationMap : register(t14);
 
 // Scene resources
 RaytracingAccelerationStructure SceneBVH : register(t30);
@@ -57,6 +59,7 @@ RWTexture2DArray<float4> u_Gradients : register(u4);
 RWTexture2D<float2> u_RestirLuminance : register(u5);
 RWStructuredBuffer<RTXDI_PackedGIReservoir> u_GIReservoirs : register(u6);
 RWStructuredBuffer<RTXDI_PackedPTReservoir> u_PTReservoirs : register(u7);
+RWByteAddressBuffer u_SpatialNeighborSelection : register(u8);
 
 // PSR UAVs
 RWTexture2D<float> u_PSRDepth : register(u20);
@@ -67,13 +70,16 @@ RWTexture2D<uint> u_PSRDiffuseAlbedo : register(u24);
 RWTexture2D<uint> u_PSRSpecularF0 : register(u25);
 RWTexture2D<uint> u_PSRLightDir : register(u26);
 RWTexture2D<uint> u_PTSampleIDTexture : register(u27);
-RWTexture2D<uint> u_PTDuplicationMap : register(u28);
+RWTexture2D<float2> u_PTDuplicationMap : register(u28);
+RWTexture2D<float4> u_NeighborSelectionGBuffer : register(u29);
 
 // RTXDI UAVs
 RWBuffer<uint2> u_RisBuffer : register(u10);
 RWBuffer<uint4> u_RisLightDataBuffer : register(u11);
 RWBuffer<uint> u_RayCountBuffer : register(u12);
 RWStructuredBuffer<SecondaryGBufferData> u_SecondaryGBuffer : register(u13);
+RWTexture2D<float> u_SmoothedPTDuplicationMap : register(u19);
+RWTexture2D<float> u_PTDecorrelationFactor : register(u30); // for debug viz
 
 // Constant buffer
 ConstantBuffer<ResamplingConstants> g_Const : register(b0);
@@ -104,6 +110,12 @@ SamplerState s_EnvironmentSampler : register(s1);
 #define RTXDI_NEIGHBOR_OFFSETS_BUFFER t_NeighborOffsets
 #define RTXDI_GI_RESERVOIR_BUFFER u_GIReservoirs
 #define RTXDI_PT_RESERVOIR_BUFFER u_PTReservoirs
+#define RTXDI_SPATIAL_NEIGHBOR_SELECTION_BUFFER u_SpatialNeighborSelection
+#define RTXDI_PREV_NEIGHBOR_SELECTION_GBUFFER t_PrevNeighborSelectionGBuffer
+#define RTXDI_PT_SAMPLE_ID_TEXTURE u_PTSampleIDTexture
+#define RTXDI_PT_DUPLICATION_MAP u_PTDuplicationMap
+#define RTXDI_PT_SMOOTHED_DUPLICATION_MAP u_SmoothedPTDuplicationMap
+#define RTXDI_PT_PREV_SMOOTHED_DUPLICATION_MAP t_PrevSmoothedPTDuplicationMap
 #define RTXDI_PT_DEBUG u_debug
 
 #define IES_SAMPLER s_EnvironmentSampler
@@ -123,14 +135,14 @@ int RAB_TranslateLightIndex(uint lightIndex, bool currentToPrevious)
     return int(mappedIndexPlusOne) - 1;
 }
 
-// Duplication map: count of pixels sharing the same sample ID in a neighborhood (max 288).
+// Duplication map: count of pixels sharing the same sample ID in a neighborhood (max 255 after RG8_UNORM compression).
 // Used for duplication-based temporal history reduction (MCap). prevPixelPos is in pixel space.
 uint RAB_GetDuplicationMapCount(int2 prevPixelPos)
 {
     int2 dim = int2(g_Const.view.viewportSize);
     if (any(prevPixelPos < 0) || any(prevPixelPos >= dim))
         return 0u;
-    return u_PTDuplicationMap[prevPixelPos];
+    return uint(round(saturate(u_PTDuplicationMap[prevPixelPos].x) * 255.0));
 }
 
 #endif // RAB_BUFFER_HLSLI

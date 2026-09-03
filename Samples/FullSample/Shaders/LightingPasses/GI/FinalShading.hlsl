@@ -37,7 +37,7 @@ float GetMISWeight(const SplitBrdf roughBrdf, const SplitBrdf trueBrdf, const fl
     combinedRoughBrdf = clamp(combinedRoughBrdf, 1e-4, kMaxBrdfValue);
     combinedTrueBrdf = clamp(combinedTrueBrdf, 0, kMaxBrdfValue);
 
-    const float initWeight = saturate(calcLuminance(combinedTrueBrdf) / calcLuminance(combinedTrueBrdf + combinedRoughBrdf));
+    const float initWeight = saturate(CalcLuminance(combinedTrueBrdf) / CalcLuminance(combinedTrueBrdf + combinedRoughBrdf));
     return initWeight * initWeight * initWeight;
 }
 
@@ -56,16 +56,16 @@ RTXDI_GIReservoir LoadInitialSampleReservoir(int2 reservoirPosition, RAB_Surface
 
 #if USE_RAY_QUERY
 [numthreads(RTXDI_SCREEN_SPACE_GROUP_SIZE, RTXDI_SCREEN_SPACE_GROUP_SIZE, 1)]
-void main(uint2 GlobalIndex : SV_DispatchThreadID)
+void main(uint2 globalIndex : SV_DispatchThreadID)
 #else
 [shader("raygeneration")]
 void RayGen()
 #endif
 {
 #if !USE_RAY_QUERY
-    uint2 GlobalIndex = DispatchRaysIndex().xy;
+    uint2 globalIndex = DispatchRaysIndex().xy;
 #endif
-    uint2 pixelPosition = RTXDI_ReservoirPosToPixelPos(GlobalIndex, g_Const.runtimeParams.activeCheckerboardField);
+    uint2 pixelPosition = RTXDI_ReservoirPosToPixelPos(globalIndex, g_Const.runtimeParams.activeCheckerboardField);
 
     if (any(pixelPosition > int2(g_Const.view.viewportSize)))
         return;
@@ -124,7 +124,7 @@ void RayGen()
         specular = DemodulateSpecular(primarySurface.material.specularF0, specular);
     }
 
-    StoreShadingOutput(GlobalIndex, pixelPosition,
+    StoreShadingOutput(globalIndex, pixelPosition,
         primarySurface.viewDepth, primarySurface.material.roughness, diffuse, specular, 0, false, true);
 
     if (g_Const.debug.outputDebugIndirectLighting)

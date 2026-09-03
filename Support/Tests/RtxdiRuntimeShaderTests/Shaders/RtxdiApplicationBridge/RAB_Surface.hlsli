@@ -1,7 +1,7 @@
 #ifndef RTXDI_RAB_SURFACE_HLSLI
 #define RTXDI_RAB_SURFACE_HLSLI
 
-#include "Rtxdi/Utils/RandomSamplerstate.hlsli"
+#include "Rtxdi/Utils/RandomSamplerState.hlsli"
 #include "RAB_Material.hlsli"
 
 struct RAB_Surface
@@ -60,7 +60,7 @@ float RAB_GetSurfaceLinearDepth(RAB_Surface surface)
     return 0.0;
 }
 
-RAB_Surface RAB_GetGBufferSurface(int2 pixelPosition, bool previousFrame)
+RAB_Surface RAB_GetGBufferSurface(int2 pixelPosition, bool prevFrame)
 {
     return RAB_EmptySurface();
 }

@@ -1,7 +1,7 @@
 #ifndef RAB_SPATIAL_HELPERS_HLSLI
 #define RAB_SPATIAL_HELPERS_HLSLI
 
-int2 RAB_ClampSamplePositionIntoView(int2 pixelPosition, bool previousFrame)
+int2 RAB_ClampSamplePositionIntoView(int2 pixelPosition, bool prevFrame)
 {
     return int2(0, 0);
 }

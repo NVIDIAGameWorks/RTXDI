@@ -4,6 +4,7 @@ include("${DONUT_PATH}/compileshaders.cmake")
 set(shaders
    DenoisingPasses/ComputeGradients.hlsl
    DenoisingPasses/ConfidencePass.hlsl
+   DenoisingPasses/DLSSRRInputFormattingPass.hlsl
    DenoisingPasses/FilterGradientsPass.hlsl
    LightingPasses/DI/FusedResampling.hlsl
    LightingPasses/DI/GenerateInitialSamples.hlsl
@@ -18,10 +19,11 @@ set(shaders
    LightingPasses/Presampling/PresampleLights.hlsl
    LightingPasses/Presampling/PresampleReGIR.hlsl
    LightingPasses/PT/ComputeDuplicationMap.hlsl
-   LightingPasses/PT/FillSampleID.hlsl
+   LightingPasses/PT/ComputeSmoothedDuplicationMap.hlsl
    LightingPasses/PT/FinalShading.hlsl
    LightingPasses/PT/GenerateInitialSamples.hlsl
    LightingPasses/PT/PSRUtils.hlsli
+   LightingPasses/PT/SpatialNeighborSelection.hlsl
    LightingPasses/PT/SpatialResampling.hlsl
    LightingPasses/PT/TemporalResampling.hlsl
    LightingPasses/RtxdiApplicationBridge/RAB_Buffers.hlsli
@@ -29,6 +31,7 @@ set(shaders
    LightingPasses/RtxdiApplicationBridge/RAB_LightSample.hlsli
    LightingPasses/RtxdiApplicationBridge/RAB_LightSampling.hlsli
    LightingPasses/RtxdiApplicationBridge/RAB_Material.hlsli
+   LightingPasses/RtxdiApplicationBridge/RAB_NeighborSelection.hlsli
    LightingPasses/RtxdiApplicationBridge/RAB_RayPayload.hlsli
    LightingPasses/RtxdiApplicationBridge/RAB_RTShaders.hlsli
    LightingPasses/RtxdiApplicationBridge/RAB_SpatialHelpers.hlsli
@@ -46,6 +49,8 @@ set(shaders
    ShaderDebug/PackedDataVizPasses/PackedR11G11B10UFloatViz.hlsl
    ShaderDebug/PackedDataVizPasses/PackedR8G8B8A8GammaUFloatViz.hlsl
    ShaderDebug/PackedDataVizPasses/DuplicationMapViz.hlsl
+   ShaderDebug/PackedDataVizPasses/SmoothedDuplicationMapViz.hlsl
+   ShaderDebug/PackedDataVizPasses/DecorrelationFactorViz.hlsl
    ShaderDebug/PackedDataVizPasses/SampleIDViz.hlsl
    ShaderDebug/PTPathViz/PTPathVizLines_ps.hlsl
    ShaderDebug/PTPathViz/PTPathVizLines_vs.hlsl
@@ -59,7 +64,7 @@ set(shaders
    ShaderDebug/ShaderDebugPrint/ShaderDebugPrint.hlsli
    ShaderDebug/VisualizeConfidence.hlsl
    ShaderDebug/VisualizeHdrSignals.hlsl
-   SharedShaderInclude/SharedShaderInclude/ShaderDebug/PTPathViz/PTPathViZConstants.h
+   SharedShaderInclude/SharedShaderInclude/ShaderDebug/PTPathViz/PTPathVizConstants.h
    SharedShaderInclude/SharedShaderInclude/ShaderDebug/PTPathViz/PTPathVertexRecord.h
    SharedShaderInclude/SharedShaderInclude/ShaderDebug/PTPathViz/PTPathSetRecord.h
    SharedShaderInclude/SharedShaderInclude/ShaderDebug/ReSTIRShaderDebugParameters.h
@@ -79,8 +84,6 @@ set(shaders
    GBufferHelpers.hlsli
    GlassPass.hlsl
    HelperFunctions.hlsli
-   GlassPass.hlsl
-   Helperfunctions.hlsli
    LightShaping.hlsli
    PolymorphicLight.hlsli
    PostprocessGBuffer.hlsl
@@ -110,7 +113,7 @@ set(FULL_SAMPLE_SHARED_INCLUDE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/SharedShaderInc
 set(FULL_SAMPLE_SHARED_INCLUDE_PATH ${FULL_SAMPLE_SHARED_INCLUDE_PATH} PARENT_SCOPE)
 
 if(TARGET NRD)
-   set(NRD_OPTIONS -I "${CMAKE_CURRENT_SOURCE_DIR}/../../../external/NRD/Shaders" -D WITH_NRD)
+   set(NRD_OPTIONS -I "${CMAKE_CURRENT_SOURCE_DIR}/../../../External/NRD/Shaders" -D WITH_NRD)
 else()
    set(NRD_OPTIONS --relaxedInclude NRD.hlsli)
 endif()

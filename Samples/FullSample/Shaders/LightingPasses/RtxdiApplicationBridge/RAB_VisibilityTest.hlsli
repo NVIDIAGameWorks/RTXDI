@@ -68,12 +68,12 @@ bool RAB_GetConservativeVisibility(RAB_Surface surface, RAB_LightSample lightSam
 // Same as RAB_GetConservativeVisibility but for temporal resampling.
 // When the previous frame TLAS and BLAS are available, the implementation should use the previous position and the previous AS.
 // When they are not available, use the current AS. That will result in transient bias.
-bool RAB_GetTemporalConservativeVisibility(RAB_Surface currentSurface, RAB_Surface previousSurface, RAB_LightSample lightSample)
+bool RAB_GetTemporalConservativeVisibility(RAB_Surface curSurface, RAB_Surface prevSurface, RAB_LightSample lightSample)
 {
-    if (g_Const.enablePreviousTLAS)
-        return GetConservativeVisibility(PrevSceneBVH, previousSurface, lightSample.position);
+    if (g_Const.enablePrevTLAS)
+        return GetConservativeVisibility(PrevSceneBVH, prevSurface, lightSample.position);
     else
-        return GetConservativeVisibility(SceneBVH, currentSurface, lightSample.position);
+        return GetConservativeVisibility(SceneBVH, curSurface, lightSample.position);
 }
 
 // Traces an expensive visibility ray that considers all alpha tested  and transparent geometry along the way.
@@ -108,7 +108,7 @@ float3 GetFinalVisibility(RaytracingAccelerationStructure accelStruct, RAB_Surfa
     {
         if (rayQuery.CandidateType() == CANDIDATE_NON_OPAQUE_TRIANGLE)
         {
-            if (considerTransparentMaterial(
+            if (ConsiderTransparentMaterial(
                 rayQuery.CandidateInstanceID(),
                 rayQuery.CandidateGeometryIndex(),
                 rayQuery.CandidatePrimitiveIndex(), 
@@ -153,12 +153,12 @@ bool RAB_GetConservativeVisibility(RAB_Surface surface, float3 samplePosition)
 // Same as RAB_GetConservativeVisibility but for temporal resampling.
 // When the previous frame TLAS and BLAS are available, the implementation should use the previous position and the previous AS.
 // When they are not available, use the current AS. That will result in transient bias.
-bool RAB_GetTemporalConservativeVisibility(RAB_Surface currentSurface, RAB_Surface previousSurface, float3 samplePosition)
+bool RAB_GetTemporalConservativeVisibility(RAB_Surface curSurface, RAB_Surface prevSurface, float3 samplePosition)
 {
-    if (g_Const.enablePreviousTLAS)
-        return GetConservativeVisibility(PrevSceneBVH, previousSurface, samplePosition);
+    if (g_Const.enablePrevTLAS)
+        return GetConservativeVisibility(PrevSceneBVH, prevSurface, samplePosition);
     else
-        return GetConservativeVisibility(SceneBVH, currentSurface, samplePosition);
+        return GetConservativeVisibility(SceneBVH, curSurface, samplePosition);
 }
 
 #endif // RAB_VISIBILITY_TEST_HLSLI

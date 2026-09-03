@@ -21,8 +21,8 @@
 #define RTXDI_GLSL
 #define RTXDI_REGIR_MODE RTXDI_REGIR_ONION
 
-#include "rtxdi/DI/ReSTIRDIParameters.h"
-#include "rtxdi/GI/ReSTIRGIParameters.h"
+#include "Rtxdi/DI/ReSTIRDIParameters.h"
+#include "Rtxdi/GI/ReSTIRGIParameters.h"
 
 #include "RtxdiApplicationBridge/RtxdiApplicationBridge.glsli"
 
@@ -34,11 +34,11 @@
 #define RTXDI_NEIGHBOR_OFFSETS_BUFFER t_NeighborOffsets
 #define RTXDI_GI_RESERVOIR_BUFFER u_GIReservoirs
 
-#include "rtxdi/LightSampling/PresamplingFunctions.hlsli"
-#include "rtxdi/DI/InitialSampling.hlsli"
-#include "rtxdi/DI/SpatialResampling.hlsli"
-#include "rtxdi/DI/SpatiotemporalResampling.hlsli"
-#include "rtxdi/DI/TemporalResampling.hlsli"
+#include "Rtxdi/LightSampling/PresamplingFunctions.hlsli"
+#include "Rtxdi/DI/InitialSampling.hlsli"
+#include "Rtxdi/DI/SpatialResampling.hlsli"
+#include "Rtxdi/DI/SpatioTemporalResampling.hlsli"
+#include "Rtxdi/DI/TemporalResampling.hlsli"
 
 layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
 

@@ -13,7 +13,7 @@
 #ifndef RESERVOIR_VIZ_UTILS_HLSLI
 #define RESERVOIR_VIZ_UTILS_HLSLI
 
-uint murmur3(uint r)
+uint Murmur3(uint r)
 {
 #define ROT32(x, y) ((x << y) | (x >> (32 - y)))
 
@@ -46,7 +46,7 @@ uint murmur3(uint r)
     return hash;
 }
 
-float randU2F(uint u)
+float RandU2F(uint u)
 {
     const uint one = asuint(1.f);
     const uint mask = (1 << 23) - 1;
@@ -56,13 +56,13 @@ float randU2F(uint u)
 // Draws a random number X from the sampler, so that (0 <= X < 1).
 float4 IndexToColor(uint index)
 {
-    float r = randU2F(murmur3(index));
-    float g = randU2F(murmur3(index + 239));
-    float b = randU2F(murmur3(index + 701));
+    float r = RandU2F(Murmur3(index));
+    float g = RandU2F(Murmur3(index + 239));
+    float b = RandU2F(Murmur3(index + 701));
     return float4(r, g, b, 1.0);
 }
 
-float4 rgLerp(float t)
+float4 RgLerp(float t)
 {
     float3 red = float3(1.0, 0.0, 0.0);
     float3 green = float3(0.0, 1.0, 0.0);

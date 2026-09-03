@@ -19,27 +19,33 @@
 #include <Rtxdi/Utils/RandomSamplerPerPassSeeds.hlsli>
 
 #include "Rtxdi/PT/InitialSampling.hlsli"
+#include "Rtxdi/PT/Decorrelation.hlsli"
 
 #if USE_RAY_QUERY
 [numthreads(RTXDI_SCREEN_SPACE_GROUP_SIZE, RTXDI_SCREEN_SPACE_GROUP_SIZE, 1)]
-void main(uint2 GlobalIndex : SV_DispatchThreadID)
+void main(uint2 globalIndex : SV_DispatchThreadID)
 #else
 [shader("raygeneration")]
 void RayGen()
 #endif
 {
 #if !USE_RAY_QUERY
-    const uint2 GlobalIndex = DispatchRaysIndex().xy;
+    const uint2 globalIndex = DispatchRaysIndex().xy;
 #endif
-    const uint2 pixelPosition = RTXDI_ReservoirPosToPixelPos(GlobalIndex, g_Const.runtimeParams.activeCheckerboardField);
+    const uint2 pixelPosition = RTXDI_ReservoirPosToPixelPos(globalIndex, g_Const.runtimeParams.activeCheckerboardField);
     const uint2 reservoirPosition = RTXDI_PixelPosToReservoirPos(pixelPosition, g_Const.runtimeParams.activeCheckerboardField);
 
     ShaderDebug::SetDebugShaderPrintCurrentThreadCursorXY(pixelPosition);
 
     RAB_Surface surface = RAB_GetGBufferSurface(pixelPosition, false);
 
+    const bool needsNeighborSelectionGBuffer =
+        g_Const.restirPT.spatialResampling.enableSpatialHeuristicMode;
+
     if (!RAB_IsSurfaceValid(surface))
     {
+        if (needsNeighborSelectionGBuffer)
+            u_NeighborSelectionGBuffer[pixelPosition] = float4(0, 0, 0, BACKGROUND_DEPTH);
     	return;
     }
 
@@ -63,7 +69,22 @@ void RayGen()
 
     RTXDI_StorePTReservoir(reservoir, g_Const.restirPT.reservoirBuffer, reservoirPosition, g_Const.restirPT.bufferIndices.initialPathTracerOutputBufferIndex);
 
+    // Preserve the unresampled initial-sampling reservoir in a dedicated slot so final shading can
+    // fall back to it when the decorrelation factor decides to bypass temporal/spatial resampling.
+    if (RTXDI_PTNeedsPreservedInitialSample(g_Const.restirPT.decorrelation))
+    {
+        RTXDI_StorePTReservoir(reservoir, g_Const.restirPT.reservoirBuffer, reservoirPosition, g_Const.restirPT.bufferIndices.initialPathTracerPreservedBufferIndex);
+    }
+
     FinalizePSRForInitialSampling(ptud.psr, reservoir);
 
     UpdatePSRBuffers(ptud.psr, pixelPosition, ptud.pathType);
+
+    if (needsNeighborSelectionGBuffer)
+    {
+        if (g_Const.enableDenoiserPSR && ptud.psr.additionalViewZ > 0.0f)
+            u_NeighborSelectionGBuffer[pixelPosition] = float4(ptud.psr.normal, ptud.psr.depth);
+        else
+            u_NeighborSelectionGBuffer[pixelPosition] = float4(RAB_GetSurfaceNormal(surface), surface.viewDepth);
+    }
 }

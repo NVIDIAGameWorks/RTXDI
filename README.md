@@ -1,7 +1,7 @@
 
 # RTXDI SDK and Sample Applications
 
-Version 3.0.0
+Version 3.1.0
 
 [Change Log](ChangeLog.md)
 

@@ -22,7 +22,7 @@ struct LightShaping
     int iesProfileIndex;
 };
 
-LightShaping unpackLightShaping(PolymorphicLightInfo lightInfo)
+LightShaping UnpackLightShaping(PolymorphicLightInfo lightInfo)
 {
     LightShaping shaping;
     shaping.isSpot = (lightInfo.colorTypeAndFlags & kPolymorphicLightShapingEnableBit) != 0;
@@ -33,14 +33,14 @@ LightShaping unpackLightShaping(PolymorphicLightInfo lightInfo)
     return shaping;
 }
 
-float evaluateIesProfile(int profileIndex, float3 emissionDirection_, float3 lightPrimaryAxis)
+float EvaluateIesProfile(int profileIndex, float3 emissionDirection_, float3 lightPrimaryAxis)
 {
     if (profileIndex < 0)
         return 1.0;
 
     float3 xAxis;
     float3 yAxis;
-    branchlessONB(lightPrimaryAxis, xAxis, yAxis);
+    BranchlessONB(lightPrimaryAxis, xAxis, yAxis);
 
     float3 emissionDirection;
     emissionDirection.x = dot(emissionDirection_, xAxis);
@@ -61,7 +61,7 @@ float evaluateIesProfile(int profileIndex, float3 emissionDirection_, float3 lig
     return iesMultiplier;
 }
 
-float3 evaluateLightShaping(LightShaping shaping, float3 surfacePosition, float3 lightSamplePosition)
+float3 EvaluateLightShaping(LightShaping shaping, float3 surfacePosition, float3 lightSamplePosition)
 {
     if (!shaping.isSpot)
         return 1.0;
@@ -76,7 +76,7 @@ float3 evaluateLightShaping(LightShaping shaping, float3 surfacePosition, float3
     if (softSpotlight <= 0)
         return 0.0;
 
-    const float iesMultiplier = evaluateIesProfile(shaping.iesProfileIndex,
+    const float iesMultiplier = EvaluateIesProfile(shaping.iesProfileIndex,
         lightToSurface, shaping.primaryAxis);
 
     return softSpotlight * iesMultiplier;
@@ -86,7 +86,7 @@ float3 evaluateLightShaping(LightShaping shaping, float3 surfacePosition, float3
 // The cone angle and axis are the same as the shaping angle and axis, and the cone vertex is the
 // light center offset against the axis by the distance that is necessary to inscribe the sphere into the cone.
 // Assumes nonzero cone angle.
-float3 getConeVertexForSphericalSource(float3 sphereCenter, float sphereRadius, float3 coneAxis, float coneHalfAngle)
+float3 GetConeVertexForSphericalSource(float3 sphereCenter, float sphereRadius, float3 coneAxis, float coneHalfAngle)
 {
     // Compute the sine of the clamped half angle. When the angle is more than 90 degrees (half a pi),
     // the offset should be exactly one sphere radius.
@@ -103,7 +103,7 @@ float3 getConeVertexForSphericalSource(float3 sphereCenter, float sphereRadius, 
 }
 
 // Tests whether a sphere intersects with a cone. Returns true if they do intersect.
-bool testSphereConeIntersection(float3 coneVertex, float3 coneAxis, float coneHalfAngle, float3 sphereCenter, float sphereRadius)
+bool TestSphereConeIntersection(float3 coneVertex, float3 coneAxis, float coneHalfAngle, float3 sphereCenter, float sphereRadius)
 {
     // The intersection is determined by comparing three angles in the plane that goes through the cone axis
     // and the sphere center. The geometry and solution should be clear from the variable names.
@@ -130,7 +130,7 @@ bool testSphereConeIntersection(float3 coneVertex, float3 coneAxis, float coneHa
 // The test is a bit conservative, i.e. some volume behind the light will be considered intersecting.
 // That volume is coming from the conservative cone of influence, and it gets larger for wide lights
 // with a small shaping angle because the cone goes further back to include the light sphere.
-bool testSphereIntersectionForShapedLight(float3 lightCenter, float lightRadius, LightShaping shaping, float3 sphereCenter, float sphereRadius)
+bool TestSphereIntersectionForShapedLight(float3 lightCenter, float lightRadius, LightShaping shaping, float3 sphereCenter, float sphereRadius)
 {
     if (!shaping.isSpot)
         return true;
@@ -139,14 +139,14 @@ bool testSphereIntersectionForShapedLight(float3 lightCenter, float lightRadius,
     float coneHalfAngle = acos(shaping.cosConeAngle);
 
     // Compute the conservative cone of influence.
-    float3 coneVertex = getConeVertexForSphericalSource(lightCenter, lightRadius, shaping.primaryAxis, coneHalfAngle);
+    float3 coneVertex = GetConeVertexForSphericalSource(lightCenter, lightRadius, shaping.primaryAxis, coneHalfAngle);
 
     // Test the intersection of the given sphere with the cone of influence.
-    return testSphereConeIntersection(coneVertex, shaping.primaryAxis, coneHalfAngle, sphereCenter, sphereRadius);
+    return TestSphereConeIntersection(coneVertex, shaping.primaryAxis, coneHalfAngle, sphereCenter, sphereRadius);
 }
 
 // Returns the approximate ratio of the flux of a shaped sphere light and onmidirectional sphere light.
-float getShapingFluxFactor(LightShaping shaping)
+float GetShapingFluxFactor(LightShaping shaping)
 {
     if (!shaping.isSpot)
         return 1.0;

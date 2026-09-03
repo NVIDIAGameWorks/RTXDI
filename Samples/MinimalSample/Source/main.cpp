@@ -413,7 +413,7 @@ int main(int argc, char** argv)
     ProcessCommandLine(argc, argv, deviceParams, api);
 #endif
 
-    app::DeviceManager* deviceManager = app::DeviceManager::Create(api);
+    std::unique_ptr<app::DeviceManager> deviceManager(app::DeviceManager::Create(api));
     
     const char* apiString = nvrhi::utils::GraphicsAPIToString(deviceManager->GetGraphicsAPI());
 
@@ -436,10 +436,10 @@ int main(int argc, char** argv)
     }
 
     {
-        SceneRenderer sceneRenderer(deviceManager, ui);
+        SceneRenderer sceneRenderer(deviceManager.get(), ui);
         if (sceneRenderer.Init())
         {
-            UserInterface userInterface(deviceManager, *sceneRenderer.GetRootFs(), ui);
+            UserInterface userInterface(deviceManager.get(), *sceneRenderer.GetRootFs(), ui);
             userInterface.Init(sceneRenderer.GetShaderFactory());
 
             deviceManager->AddRenderPassToBack(&sceneRenderer);
@@ -452,8 +452,6 @@ int main(int argc, char** argv)
     }
     
     deviceManager->Shutdown();
-
-    delete deviceManager;
 
     return 0;
 }

@@ -17,10 +17,10 @@
 #include <Rtxdi/LightSampling/PresamplingFunctions.hlsli>
 
 [numthreads(256, 1, 1)]
-void main(uint GlobalIndex : SV_DispatchThreadID)
+void main(uint globalIndex : SV_DispatchThreadID)
 {
-    RTXDI_RandomSamplerState rng = RTXDI_InitRandomSampler(uint2(GlobalIndex & 0xfff, GlobalIndex >> 12), g_Const.runtimeParams.frameIndex, 1);
-    RTXDI_RandomSamplerState coherentRng = RTXDI_InitRandomSampler(uint2(GlobalIndex >> 8, 0), g_Const.runtimeParams.frameIndex, 1);
+    RTXDI_RandomSamplerState rng = RTXDI_InitRandomSampler(uint2(globalIndex & 0xfff, globalIndex >> 12), g_Const.runtimeParams.frameIndex, 1);
+    RTXDI_RandomSamplerState coherentRng = RTXDI_InitRandomSampler(uint2(globalIndex >> 8, 0), g_Const.runtimeParams.frameIndex, 1);
 
-    RTXDI_PresampleLocalLightsForReGIR(rng, coherentRng, GlobalIndex, g_Const.lightBufferParams.localLightBufferRegion, g_Const.localLightsRISBufferSegmentParams, g_Const.regir);
+    RTXDI_PresampleLocalLightsForReGIR(rng, coherentRng, globalIndex, g_Const.lightBufferParams.localLightBufferRegion, g_Const.localLightsRISBufferSegmentParams, g_Const.regir);
 }

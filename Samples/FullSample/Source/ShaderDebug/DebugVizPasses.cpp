@@ -33,6 +33,8 @@ DebugVizPasses::DebugVizPasses(
     m_psrDiffuseAlbedoViz(std::make_unique<PackedDataVizPass>(device, shaderFactory, scene, bindlessLayout)),
     m_psrSpecularF0Viz(std::make_unique<PackedDataVizPass>(device, shaderFactory, scene, bindlessLayout)),
     m_ptDuplicationMapViz(std::make_unique<PackedDataVizPass>(device, shaderFactory, scene, bindlessLayout)),
+    m_smoothedPtDuplicationMapViz(std::make_unique<PackedDataVizPass>(device, shaderFactory, scene, bindlessLayout)),
+    m_ptDecorrelationFactorViz(std::make_unique<PackedDataVizPass>(device, shaderFactory, scene, bindlessLayout)),
     m_ptSampleIDViz(std::make_unique<PackedDataVizPass>(device, shaderFactory, scene, bindlessLayout))
 {
 
@@ -47,6 +49,8 @@ void DebugVizPasses::CreatePipelines()
     m_psrDiffuseAlbedoViz->CreatePipeline("app/ShaderDebug/PackedDataVizPasses/PackedR11G11B10UFloatViz.hlsl");
     m_psrSpecularF0Viz->CreatePipeline("app/ShaderDebug/PackedDataVizPasses/PackedR11G11B10UFloatViz.hlsl");
     m_ptDuplicationMapViz->CreatePipeline("app/ShaderDebug/PackedDataVizPasses/DuplicationMapViz.hlsl");
+    m_smoothedPtDuplicationMapViz->CreatePipeline("app/ShaderDebug/PackedDataVizPasses/SmoothedDuplicationMapViz.hlsl");
+    m_ptDecorrelationFactorViz->CreatePipeline("app/ShaderDebug/PackedDataVizPasses/DecorrelationFactorViz.hlsl");
     m_ptSampleIDViz->CreatePipeline("app/ShaderDebug/PackedDataVizPasses/SampleIDViz.hlsl");
 }
 
@@ -59,6 +63,10 @@ void DebugVizPasses::CreateBindingSets(RenderTargets& renderTargets, RtxdiResour
     m_psrDiffuseAlbedoViz->CreateBindingSet(renderTargets.PSRDiffuseAlbedo, renderTargets.PSRDiffuseAlbedo, dst);
     m_psrSpecularF0Viz->CreateBindingSet(renderTargets.PSRSpecularF0, renderTargets.PSRSpecularF0, dst);
     m_ptDuplicationMapViz->CreateBindingSet(renderTargets.PTDuplicationMap, renderTargets.PTDuplicationMap, dst);
+    // Smoothed PT dupmap ping-pongs: pass the two swapping textures so the viz pass
+    // always reads the freshly-written one after its own NextFrame() swap.
+    m_smoothedPtDuplicationMapViz->CreateBindingSet(renderTargets.SmoothedPTDuplicationMap, renderTargets.PrevSmoothedPTDuplicationMap, dst);
+    m_ptDecorrelationFactorViz->CreateBindingSet(renderTargets.PTDecorrelationFactor, renderTargets.PTDecorrelationFactor, dst);
     m_ptSampleIDViz->CreateBindingSet(renderTargets.PTSampleIDTexture, renderTargets.PTSampleIDTexture, dst);
 }
 
@@ -97,6 +105,16 @@ void DebugVizPasses::RenderPTDuplicationMap(nvrhi::ICommandList* commandList, co
     m_ptDuplicationMapViz->Render(commandList, view);
 }
 
+void DebugVizPasses::RenderSmoothedPTDuplicationMap(nvrhi::ICommandList* commandList, const donut::engine::IView& view)
+{
+    m_smoothedPtDuplicationMapViz->Render(commandList, view);
+}
+
+void DebugVizPasses::RenderPTDecorrelationFactor(nvrhi::ICommandList* commandList, const donut::engine::IView& view)
+{
+    m_ptDecorrelationFactorViz->Render(commandList, view);
+}
+
 void DebugVizPasses::RenderPTSampleID(nvrhi::ICommandList* commandList, const donut::engine::IView& view)
 {
     m_ptSampleIDViz->Render(commandList, view);
@@ -111,5 +129,7 @@ void DebugVizPasses::NextFrame()
     m_psrDiffuseAlbedoViz->NextFrame();
     m_psrSpecularF0Viz->NextFrame();
     m_ptDuplicationMapViz->NextFrame();
+    m_smoothedPtDuplicationMapViz->NextFrame();
+    m_ptDecorrelationFactorViz->NextFrame();
     m_ptSampleIDViz->NextFrame();
 }

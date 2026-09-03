@@ -42,10 +42,13 @@
 #define INSTANCE_MASK_ALL 0xFF
 
 #define DENOISER_MODE_OFF 0
-#define DENOISER_MODE_REBLUR 1
-#define DENOISER_MODE_RELAX 2
+#define DENOISER_MODE_RELAX 1
+#define DENOISER_MODE_REBLUR 2
 
 #define BACKGROUND_DEPTH 65504.f
+
+#define SPATIAL_HEURISTIC_MAX_NEIGHBORS 4
+#define SPATIAL_HEURISTIC_INVALID_NEIGHBOR 0xFFFFFFFFu
 
 #define RAY_COUNT_TRACED(index) ((index) * 2)
 #define RAY_COUNT_HITS(index) ((index) * 2 + 1)
@@ -83,7 +86,7 @@ struct PrepareLightsConstants
 {
     uint numTasks;
     uint currentFrameLightOffset;
-    uint previousFrameLightOffset;
+    uint prevFrameLightOffset;
 };
 
 struct PrepareLightsTask
@@ -91,7 +94,7 @@ struct PrepareLightsTask
     uint instanceAndGeometryIndex; // low 12 bits are geometryIndex, mid 19 bits are instanceIndex, high bit is TASK_PRIMITIVE_LIGHT_BIT
     uint triangleCount;
     uint lightBufferOffset;
-    int previousLightBufferOffset; // -1 means no previous data
+    int prevLightBufferOffset; // -1 means no previous data
 };
 
 struct RenderEnvironmentMapConstants
@@ -175,6 +178,13 @@ struct FilterGradientsConstants
     uint checkerboard;
 };
 
+struct DLSSRRInputFormattingConstants
+{
+    uint2 viewportSize;
+    uint pad1;
+    uint pad2;
+};
+
 struct ConfidenceConstants
 {
     uint2 viewportSize;
@@ -224,7 +234,7 @@ struct ResamplingConstants
     float4 reblurHitDistParams;
 
     uint pad3;
-    uint enablePreviousTLAS;
+    uint enablePrevTLAS;
     uint denoiserMode;
     uint discountNaiveSamples;
     

@@ -23,9 +23,9 @@ RWTexture2DArray<float4> u_Gradients : register(u0);
 // The filter is applied repeatedly to get a wide blur with relatively few texture samples.
 
 [numthreads(8, 8, 1)]
-void main(uint2 globalIdx : SV_DispatchThreadID)
+void main(uint2 globalIndex : SV_DispatchThreadID)
 {
-    if (any(globalIdx.xy >= g_Const.viewportSize))
+    if (any(globalIndex.xy >= g_Const.viewportSize))
         return;
 
     // The filtering step increases with each pass
@@ -43,7 +43,7 @@ void main(uint2 globalIdx : SV_DispatchThreadID)
     [unroll] for (int yy = -1; yy <= 1; ++yy)
     [unroll] for (int xx = -1; xx <= 1; ++xx)
     {
-        int2 pos = globalIdx.xy + int2(xx, yy) * step;
+        int2 pos = globalIndex.xy + int2(xx, yy) * step;
         float4 c = u_Gradients[int3(pos, inputBuffer)];
 
         if (all(pos >= 0) && all(pos < int2(g_Const.viewportSize)))
@@ -59,5 +59,5 @@ void main(uint2 globalIdx : SV_DispatchThreadID)
     // Normalize and store the output into the output buffer
     acc /= wSum;
 
-    u_Gradients[int3(globalIdx, !inputBuffer)] = acc;
+    u_Gradients[int3(globalIndex, !inputBuffer)] = acc;
 }

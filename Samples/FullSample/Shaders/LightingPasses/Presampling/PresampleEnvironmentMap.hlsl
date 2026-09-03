@@ -15,15 +15,15 @@
 #include <Rtxdi/LightSampling/PresamplingFunctions.hlsli>
 
 [numthreads(RTXDI_PRESAMPLING_GROUP_SIZE, 1, 1)] 
-void main(uint2 GlobalIndex : SV_DispatchThreadID) 
+void main(uint2 globalIndex : SV_DispatchThreadID)
 {    
-    RTXDI_RandomSamplerState rng = RTXDI_InitRandomSampler(GlobalIndex.xy, g_Const.runtimeParams.frameIndex, 0);
+    RTXDI_RandomSamplerState rng = RTXDI_InitRandomSampler(globalIndex.xy, g_Const.runtimeParams.frameIndex, 0);
 
     RTXDI_PresampleEnvironmentMap(
         rng,
         t_EnvironmentPdfTexture,
         g_Const.environmentPdfTextureSize,
-        GlobalIndex.y,
-        GlobalIndex.x,
+        globalIndex.y,
+        globalIndex.x,
         g_Const.environmentLightRISBufferSegmentParams);
 }

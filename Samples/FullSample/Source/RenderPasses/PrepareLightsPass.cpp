@@ -391,7 +391,7 @@ RTXDI_LightBufferParameters PrepareLightsPass::Process(
             task.instanceAndGeometryIndex = (instance->GetInstanceIndex() << 12) | uint32_t(geometryIndex & 0xfff);
             task.lightBufferOffset = lightBufferOffset;
             task.triangleCount = geometry->numIndices / 3;
-            task.previousLightBufferOffset = (pOffset != m_instanceLightBufferOffsets.end()) ? int(pOffset->second) : -1;
+            task.prevLightBufferOffset = (pOffset != m_instanceLightBufferOffsets.end()) ? int(pOffset->second) : -1;
 
             // record the current offset of this instance for use on the next frame
             m_instanceLightBufferOffsets[instanceHash] = lightBufferOffset;
@@ -429,7 +429,7 @@ RTXDI_LightBufferParameters PrepareLightsPass::Process(
         task.instanceAndGeometryIndex = TASK_PRIMITIVE_LIGHT_BIT | uint32_t(primitiveLightInfos.size());
         task.lightBufferOffset = lightBufferOffset;
         task.triangleCount = 1; // technically zero, but we need to allocate 1 thread in the grid to process this light
-        task.previousLightBufferOffset = (pOffset != m_primitiveLightBufferOffsets.end()) ? pOffset->second : -1;
+        task.prevLightBufferOffset = (pOffset != m_primitiveLightBufferOffsets.end()) ? pOffset->second : -1;
 
         // record the current offset of this instance for use on the next frame
         m_primitiveLightBufferOffsets[pLight.get()] = lightBufferOffset;
@@ -478,7 +478,7 @@ RTXDI_LightBufferParameters PrepareLightsPass::Process(
     PrepareLightsConstants constants;
     constants.numTasks = uint32_t(tasks.size());
     constants.currentFrameLightOffset = m_maxLightsInBuffer * m_oddFrame;
-    constants.previousFrameLightOffset = m_maxLightsInBuffer * !m_oddFrame;
+    constants.prevFrameLightOffset = m_maxLightsInBuffer * !m_oddFrame;
     commandList->setPushConstants(&constants, sizeof(constants));
 
     commandList->dispatch(dm::div_ceil(lightBufferOffset, 256));

@@ -11,7 +11,7 @@
 #ifndef G_BUFFER_HELPERS_HLSLI
 #define G_BUFFER_HELPERS_HLSLI
 
-RayDesc setupPrimaryRay(uint2 pixelPosition, PlanarViewConstants view)
+RayDesc SetupPrimaryRay(uint2 pixelPosition, PlanarViewConstants view)
 {
     float2 uv = (float2(pixelPosition) + 0.5) * view.viewportSizeInv;
     float4 clipPos = float4(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0, (1.0 / 256.0), 1);
@@ -26,7 +26,7 @@ RayDesc setupPrimaryRay(uint2 pixelPosition, PlanarViewConstants view)
     return ray;
 }
 
-float3 getMotionVector(
+float3 GetMotionVector(
     PlanarViewConstants view,
     PlanarViewConstants viewPrev,
     InstanceData instance,
@@ -57,7 +57,7 @@ float3 getMotionVector(
     return motion;
 }
 
-float3 viewDepthToWorldPos(
+float3 ViewDepthToWorldPos(
     PlanarViewConstants view,
     int2 pixelPosition,
     float viewDepth)

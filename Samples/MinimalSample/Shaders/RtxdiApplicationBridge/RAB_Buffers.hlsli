@@ -45,8 +45,8 @@ int RAB_TranslateLightIndex(uint lightIndex, bool currentToPrevious)
 }
 
 // Load the packed light information from the buffer.
-// Ignore the previousFrame parameter as our lights are static in this sample.
-RAB_LightInfo RAB_LoadLightInfo(uint index, bool previousFrame)
+// Ignore the prevFrame parameter as our lights are static in this sample.
+RAB_LightInfo RAB_LoadLightInfo(uint index, bool prevFrame)
 {
     return t_LightDataBuffer[index];
 }

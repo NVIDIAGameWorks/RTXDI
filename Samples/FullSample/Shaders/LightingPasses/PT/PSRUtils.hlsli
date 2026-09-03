@@ -182,7 +182,7 @@ void UpdatePSRFromRaySample(
     {
         if (psr.active && psr.hasRecorded())
         {
-            float3 L = raySample.OutDirection;
+            float3 L = raySample.outDirection;
             psr.mainPathPackedL = ndirToOctUnorm32(mul(L, psr.mirrorMatrix));
         }
 
@@ -229,12 +229,13 @@ void UpdatePSRFromHit(
         float4 prevWorldPos = float4(mul(gs.instance.prevTransform, float4(gs.prevObjectSpacePosition, 1.0)), 1.0);
 
         float4 virtualPos = float4(psr.primarySurfaceWorldPos - (psr.additionalViewZ * psr.primarySurfaceViewDir), 1.0f);
-        float4 virtualPosPrev = float4(virtualPos.xyz + prevWorldPos.xyz - surface.worldPos, 1.0f);
-        psr.motionVectors.xyz = GetPSRMotionVector(virtualPos, virtualPosPrev);
 
         psr.depth = mul(virtualPos, matWorldToView).z;
 
         psr.mirrorMatrix = mul(psr.mirrorMatrix, GetMirrorMatrix(prevSurface.normal));
+
+        float4 virtualPosPrev = float4(virtualPos.xyz + mul(prevWorldPos.xyz - surface.worldPos, psr.mirrorMatrix), 1.0f);
+        psr.motionVectors.xyz = GetPSRMotionVector(virtualPos, virtualPosPrev);
 
         psr.normal = mul(RAB_GetSurfaceNormal(surface), psr.mirrorMatrix);
         psr.roughness = RAB_GetRoughness(RAB_GetMaterial(surface));

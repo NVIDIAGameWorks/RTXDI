@@ -19,6 +19,7 @@
 #include <donut/app/ApplicationBase.h>
 #include <donut/app/Camera.h>
 #include <donut/engine/View.h>
+#include <donut/render/DLSS.h>
 
 #include <Rtxdi/ImportanceSamplingContext.h>
 
@@ -31,6 +32,7 @@ class RaytracedGBufferPass;
 
 class GlassPass;
 class FilterGradientsPass;
+class DLSSRRInputFormattingPass;
 class ConfidencePass;
 class CompositingPass;
 class AccumulationPass;
@@ -184,7 +186,7 @@ private:
 
     // Camera data
     app::FirstPersonCamera m_camera;
-    bool m_previousViewValid = false;
+    bool m_prevViewValid = false;
     engine::PlanarView m_view;
     engine::PlanarView m_viewPrevious;
     engine::PlanarView m_viewPreviousPrevious;
@@ -211,6 +213,7 @@ private:
     std::unique_ptr<GenerateMipsPass> m_localLightPdfMipmapPass;
     std::unique_ptr<LightingPasses> m_lightingPasses;
     std::unique_ptr<FilterGradientsPass> m_filterGradientsPass;
+    std::unique_ptr<DLSSRRInputFormattingPass> m_DLSSRRInputFormattingPass;
     std::unique_ptr<ConfidencePass> m_confidencePass;
 #if WITH_NRD
     std::unique_ptr<NrdIntegration> m_nrd;
@@ -220,7 +223,8 @@ private:
     std::unique_ptr<AccumulationPass> m_accumulationPass;
     std::unique_ptr<render::TemporalAntiAliasingPass> m_temporalAntiAliasingPass;
 #if DONUT_WITH_DLSS
-    std::unique_ptr<donut::render::DLSS> m_dlss;
+    std::unique_ptr<donut::render::DLSS> m_dlssSR;
+    std::unique_ptr<donut::render::DLSS> m_dlssRR;
 #endif
     std::unique_ptr<render::BloomPass> m_bloomPass;
     std::unique_ptr<render::ToneMappingPass> m_toneMappingPass;
@@ -245,7 +249,7 @@ private:
 
     // Profiling
     std::shared_ptr<Profiler> m_profiler;
-    time_point<steady_clock> m_previousFrameTimeStamp;
+    time_point<steady_clock> m_prevFrameTimeStamp;
     uint32_t m_renderFrameIndex = 0;
 
     // Settings
@@ -263,6 +267,8 @@ private:
     void UpdateRtxdiResources();
 #if DONUT_WITH_DLSS
     void InitDLSS();
+    donut::render::DLSS::EvaluateParameters GetDLSSSRParams() const;
+    donut::render::DLSS::EvaluateParameters GetDLSSRRParams() const;
 #endif
     void LoadInitialCameraSettings();
 

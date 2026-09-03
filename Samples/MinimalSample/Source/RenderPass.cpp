@@ -21,7 +21,7 @@
 #include <Rtxdi/DI/ReSTIRDI.h>
 
 using namespace donut::math;
-#include "../shaders/ShaderParameters.h"
+#include "../Shaders/ShaderParameters.h"
 
 using namespace donut::engine;
 
@@ -171,13 +171,13 @@ void RenderPass::Render(
     nvrhi::ICommandList* commandList,
     rtxdi::ReSTIRDIContext& context,
     const donut::engine::IView& view,
-    const donut::engine::IView& previousView,
+    const donut::engine::IView& prevView,
     const Settings& localSettings,
     const RTXDI_LightBufferParameters& lightBufferParams)
 {
     ResamplingConstants constants = {};
     view.FillPlanarViewConstants(constants.view);
-    previousView.FillPlanarViewConstants(constants.prevView);
+    prevView.FillPlanarViewConstants(constants.prevView);
 
     constants.enableResampling = localSettings.enableResampling;
     constants.initialSamplingParams = localSettings.initialSamplingParams;

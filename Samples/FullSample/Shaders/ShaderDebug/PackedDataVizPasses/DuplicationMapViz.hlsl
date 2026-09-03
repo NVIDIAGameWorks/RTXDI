@@ -11,18 +11,16 @@
  */
 
 /*
- * Visualize PT duplication map: R32_UINT count (max 288) as grayscale.
+ * Visualize PT duplication map RG channels as normalized values.
  */
 
-Texture2D<uint> t_DuplicationMap : register(t0);
+Texture2D<float2> t_DuplicationMap : register(t0);
 RWTexture2D<float4> t_Output : register(u0);
 
-static const float c_maxCount = 288.0;
+// red and green channels visualize spatial and temporal duplication respectively
 
 [numthreads(16, 16, 1)]
 void main(uint2 pixelPosition : SV_DispatchThreadID)
 {
-    uint count = t_DuplicationMap[pixelPosition];
-    float n = saturate(float(count) / c_maxCount);
-    t_Output[pixelPosition] = float4(n, n, n, 1.0);
+    t_Output[pixelPosition] = float4(t_DuplicationMap[pixelPosition].xy, 0.f, 1.0);
 }

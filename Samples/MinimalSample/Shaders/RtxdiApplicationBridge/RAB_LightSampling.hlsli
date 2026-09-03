@@ -63,7 +63,7 @@ float RAB_GetLightSampleTargetPdfForSurface(RAB_LightSample lightSample, RAB_Sur
     // Second-best implementation: the PDF is proportional to the reflected radiance.
     // The best implementation would be taking visibility into account,
     // but that would be prohibitively expensive.
-    return calcLuminance(ShadeSurfaceWithLightSample(lightSample, surface));
+    return CalcLuminance(ShadeSurfaceWithLightSample(lightSample, surface));
 }
 
 float RAB_GetGISampleTargetPdfForSurface(float3 samplePosition, float3 sampleRadiance, RAB_Surface surface)
@@ -92,7 +92,7 @@ bool IsComplexSurface(int2 pixelPosition, RAB_Surface surface)
     return true;
 }
 
-uint getLightIndex(uint instanceID, uint geometryIndex, uint primitiveIndex)
+uint GetLightIndex(uint instanceID, uint geometryIndex, uint primitiveIndex)
 {
     uint lightIndex = RTXDI_InvalidLightIndex;
     InstanceData hitInstance = t_InstanceData[instanceID];
@@ -125,11 +125,11 @@ bool RAB_TraceRayForLocalLight(float3 origin, float3 direction, float tMin, floa
     bool hitAnything = rayQuery.CommittedStatus() == COMMITTED_TRIANGLE_HIT;
     if (hitAnything)
     {
-        o_lightIndex = getLightIndex(rayQuery.CommittedInstanceID(), rayQuery.CommittedGeometryIndex(), rayQuery.CommittedPrimitiveIndex());
+        o_lightIndex = GetLightIndex(rayQuery.CommittedInstanceID(), rayQuery.CommittedGeometryIndex(), rayQuery.CommittedPrimitiveIndex());
         if (o_lightIndex != RTXDI_InvalidLightIndex)
         {
             float2 hitUV = rayQuery.CommittedTriangleBarycentrics();
-            o_randXY = randomFromBarycentric(hitUVToBarycentric(hitUV));
+            o_randXY = RandomFromBarycentric(HitUVToBarycentric(hitUV));
         }
     }
 

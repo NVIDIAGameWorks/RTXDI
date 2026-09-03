@@ -78,7 +78,7 @@ public:
     {
         uint32_t denoiserMode = 0;
 
-        ibool enablePreviousTLAS = true;
+        ibool enablePrevTLAS = true;
         ibool enableAlphaTestedGeometry = true;
         ibool enableTransparentGeometry = true;
         ibool enableRayCounts = true;
@@ -125,7 +125,7 @@ public:
         nvrhi::ICommandList* commandList,
         rtxdi::ImportanceSamplingContext& context,
         const donut::engine::IView& view,
-        const donut::engine::IView& previousView,
+        const donut::engine::IView& prevView,
         const RenderSettings& localSettings,
         bool enableAccumulation);
 
@@ -139,8 +139,8 @@ public:
         nvrhi::ICommandList* commandList,
         rtxdi::ImportanceSamplingContext& isContext,
         const donut::engine::IView& view,
-        const donut::engine::IView& previousView,
-        const donut::engine::IView& previousPreviousView,
+        const donut::engine::IView& prevView,
+        const donut::engine::IView& prevPrevView,
         const RenderSettings& localSettings,
         const GBufferSettings& gbufferSettings,
         const EnvironmentLight& environmentLight,
@@ -205,7 +205,7 @@ private:
     nvrhi::BufferHandle m_secondarySurfaceBuffer;
     nvrhi::BufferHandle m_GIReservoirBuffer;
     nvrhi::BufferHandle m_PTReservoirBuffer;
-
+    nvrhi::BufferHandle m_SpatialNeighborSelectionBuffer;
     dm::uint2 m_environmentPdfTextureSize;
     dm::uint2 m_localLightPdfTextureSize;
 

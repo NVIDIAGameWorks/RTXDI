@@ -13,7 +13,7 @@
 #ifndef RAB_RT_SHADERS_HLSLI
 #define RAB_RT_SHADERS_HLSLI
 
-bool considerTransparentMaterial(uint instanceIndex, uint geometryIndex, uint triangleIndex, float2 rayBarycentrics, inout float3 throughput)
+bool ConsiderTransparentMaterial(uint instanceIndex, uint geometryIndex, uint triangleIndex, float2 rayBarycentrics, inout float3 throughput)
 {
     GeometrySample gs = getGeometryFromHit(
         instanceIndex,
@@ -80,7 +80,7 @@ void ClosestHit(inout RAB_RayPayload payload : SV_RayPayload, in RayAttributes a
 [shader("anyhit")]
 void AnyHit(inout RAB_RayPayload payload : SV_RayPayload, in RayAttributes attrib : SV_IntersectionAttributes)
 {
-    if (!considerTransparentMaterial(InstanceID(), GeometryIndex(), PrimitiveIndex(), attrib.uv, payload.throughput))
+    if (!ConsiderTransparentMaterial(InstanceID(), GeometryIndex(), PrimitiveIndex(), attrib.uv, payload.throughput))
         IgnoreHit();
 }
 #endif

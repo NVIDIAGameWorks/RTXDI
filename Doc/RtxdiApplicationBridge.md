@@ -7,6 +7,8 @@ A reference implementation of the bridge functions and structures with support f
 
 Below is a list of structures and functions that need to be implemented by the application, by category.
 
+Most of the functions below are shared by ReSTIR DI, GI, and PT. ReSTIR PT additionally requires a path tracer and a handful of PT-specific bridge functions; those are documented in the [ReSTIR PT Bridge](#restir-pt-bridge) section at the end of this page. See [RestirPT.md](RestirPT.md) for the integration flow and [ShaderAPI-RestirPT.md](ShaderAPI-RestirPT.md) for the runtime functions they interact with.
+
 ## Structures
 
 All these structures are opaque, i.e. the library code makes no assumption about their members. Instances of these structures are only generated and consumed by other functions defined by the application.
@@ -70,13 +72,13 @@ Returns an empty `RAB_Material` object.
 
 ### `RAB_GetGBufferSurface`
 
-`RAB_Surface RAB_GetGBufferSurface(int2 pixelPosition, bool previousFrame)`
+`RAB_Surface RAB_GetGBufferSurface(int2 pixelPosition, bool prevFrame)`
 
 Loads a surface from the current or previous G-buffer at the specified pixel position. Pixel positions may be out-of-bounds or negative, in which case the function is supposed to return an invalid surface. Invalid surfaces are identified by `RAB_IsSurfaceValid` returning `false`. Should call RAB_GetGBufferMaterial to fill in its RAB_Material data.
 
 ### `RAB_GetGBufferMaterial`
 
-`RAB_Material RAB_GetGBufferMaterial(int2 pixelPosition, bool previousFrame)`
+`RAB_Material RAB_GetGBufferMaterial(int2 pixelPosition, bool prevFrame)`
 
 Loads the material data from the current or previous G-buffer at the specified pixel position. Pixel positions may be out-of-bounds or negative, in which case the function is supposed to return an invalid surface.
 
@@ -102,11 +104,11 @@ Returns the world space shading normal of the provided surface. Normals are used
 
 `float RAB_GetSurfaceLinearDepth(RAB_Surface surface)`
 
-Returns the linear depth of the provided surface. It doesn't have to be linear depth in a strict sense (i.e. `viewPosition.z`), and can be distance to the camera or primary path length instead. The motion vectors provided to `RTXDI_TemporalResampling` or `RTXDI_SpatioTemporalResampling` must have their .z component computed as the difference between the linear depth of the same surface computed on the previous frame and the current frame.
+Returns the linear depth of the provided surface. It doesn't have to be linear depth in a strict sense (i.e. `viewPosition.z`), and can be distance to the camera or primary path length instead. The motion vectors provided to `RTXDI_DITemporalResampling` or `RTXDI_DISpatioTemporalResampling` (ReSTIR DI), or to `RTXDI_GITemporalResampling` / `RTXDI_GISpatioTemporalResampling` (ReSTIR GI), must have their .z component computed as the difference between the linear depth of the same surface computed on the previous frame and the current frame.
 
 ### `RAB_ClampSamplePositionIntoView`
 
-`int2 RAB_ClampSamplePositionIntoView(int2 pixelPosition, bool previousFrame)`
+`int2 RAB_ClampSamplePositionIntoView(int2 pixelPosition, bool prevFrame)`
 
 This function is called in the spatial resampling passes to make sure that the samples actually land on the screen and not outside of its boundaries. It can clamp the position or reflect it about the nearest screen edge. The simplest implementation will just return the input pixelPosition.
 
@@ -114,7 +116,7 @@ This function is called in the spatial resampling passes to make sure that the s
 
 ### `RAB_LoadLightInfo`
 
-`RAB_LightInfo RAB_LoadLightInfo(uint index, bool previousFrame)`
+`RAB_LightInfo RAB_LoadLightInfo(uint index, bool prevFrame)`
 
 Loads the information about a polymorphic light based on its index, on the current or previous frame. See [`RAB_LightInfo`](#rab_lightinfo) for the description of what information is required. The indices passed to this function will be in one of the three ranges provided to `RTXDI_LightBufferParameters`.
 
@@ -126,7 +128,7 @@ These ranges do not have to be continuously packed in one buffer or start at zer
 
 Stores the information about a polymorphic light in a compacted form in the RIS buffer location at `linearIndex`. This buffer is populated during the local light presampling and ReGIR presampling passes. If the light can be compacted, this function does the store and returns `true`; if the light cannot be compacted, it doesn't store and returns `false`.
 
-What exactly does "compacted" mean here is up to the implementation, but the intent is to allow storage of the most common light types in a densely packed buffer: for example, if a light without shaping information can be stored in 2/3 of the memory required to store a light with shaping information, and 99% of lights in the scene are not shaped, then it makes sense to compact the unshaped lights and load the shaped lights from the source buffer using [`RAB_LoadLightInfo`](#rab_loadlightInfo).
+What exactly does "compacted" mean here is up to the implementation, but the intent is to allow storage of the most common light types in a densely packed buffer: for example, if a light without shaping information can be stored in 2/3 of the memory required to store a light with shaping information, and 99% of lights in the scene are not shaped, then it makes sense to compact the unshaped lights and load the shaped lights from the source buffer using [`RAB_LoadLightInfo`](#rab_loadlightinfo).
 
 ### `RAB_LoadCompactLightInfo`
 
@@ -171,11 +173,13 @@ This function is used in the spatial resampling functions for ray traced bias co
 
 ### `RAB_GetTemporalConservativeVisibility`
 
-`bool RAB_GetTemporalConservativeVisibility(RAB_Surface currentSurface, RAB_Surface previousSurface, RAB_LightSample lightSample)`
+`bool RAB_GetTemporalConservativeVisibility(RAB_Surface currentSurface, RAB_Surface prevSurface, RAB_LightSample lightSample)`
+
+`bool RAB_GetTemporalConservativeVisibility(RAB_Surface currentSurface, RAB_Surface prevSurface, float3 samplePosition)`
 
 Same visibility ray tracing as [`RAB_GetConservativeVisibility`](#rab_getconservativevisibility) but for surfaces and light samples originating from the previous frame.
 
-When the previous frame TLAS and BLAS data is available, the implementation should use that previous data and the `previousSurface` parameter. When the previous acceleration structures are not available, the implementation should use the `currentSurface` parameter, but that will make the results temporarily biased and, in some cases, more noisy. Specifically, the fused spatiotemporal resampling algorithm will produce very noisy results on animated objects.
+When the previous frame TLAS and BLAS data is available, the implementation should use that previous data and the `prevSurface` parameter. When the previous acceleration structures are not available, the implementation should use the `currentSurface` parameter, but that will make the results temporarily biased and, in some cases, more noisy. Specifically, the fused spatiotemporal resampling algorithm will produce very noisy results on animated objects.
 
 
 ## BRDF Sampling Related Functions
@@ -255,3 +259,140 @@ Returns the next random number from the provided RNG state. The numbers must be 
 `bool RAB_AreMaterialsSimilar(RAB_Surface a, RAB_Surface b)`
 
 Compares the materials of two surfaces, returns `true` if the surfaces are similar enough that it makes sense to share the light reservoirs between them. A conservative implementation would always return `true`, which might result in more noisy images than actually comparing the materials.
+
+
+# ReSTIR PT Bridge
+
+These structures and functions are only required when integrating [ReSTIR PT](RestirPT.md). They are in addition to the functions above (ReSTIR PT still uses `RAB_Surface`, the G-buffer accessors, light sampling, visibility, and RNG). The reference implementation lives in [`RtxdiApplicationBridge/PathTracer/`](../Samples/FullSample/Shaders/LightingPasses/RtxdiApplicationBridge/PathTracer/) and the surrounding bridge files; the runtime functions these interact with are documented in [ShaderAPI-RestirPT.md](ShaderAPI-RestirPT.md).
+
+## ReSTIR PT Structures
+
+### `RAB_PathTracerUserData`
+
+An application-defined, opaque struct used to carry information back out of internal invocations of [`RAB_PathTrace`](#rab_pathtrace) to the caller (in the reference implementation it collects Primary Surface Replacement data for the denoiser). It must store an `RTXDI_PTPathTraceInvocationType` that the runtime sets via [`RAB_PathTracerUserDataSetPathType`](#rab_pathtraceruserdatasetpathtype) to tell the path tracer which resampling stage is invoking it (initial sampling, temporal/spatial shift, inverse shift, etc.).
+
+### `RAB_RayPayload`
+
+An application-defined, opaque ray payload that stores the result of tracing one path segment (hit/miss, hit distance, front-face flag, and whatever else the path tracer needs). It is read back through `RAB_IsValidHit`, `RAB_RayPayloadGetCommittedHitT`, and `RAB_RayPayloadIsFrontFace`.
+
+
+## Path Tracing
+
+### `RAB_PathTrace`
+
+```
+template<typename PTContextType>
+void RAB_PathTrace(
+    inout RTXDI_PathTracerContext<PTContextType> ctx,
+    inout RTXDI_PathTracerRandomContext ptRandContext,
+    inout RAB_PathTracerUserData ptud)
+```
+
+The application's path tracer. It generates a path from the primary surface, driving the `RTXDI_PathTracerContext` (recording each bounce and the sampled light) so that at the end of the loop the context holds everything needed to build an `RTXDI_PTReservoir`. It is templated over `PTContextType` because the runtime instantiates it for both initial sampling and hybrid-shift random replay (with `RTXDI_InitialSamplingPathTracerContext` and `RTXDI_HybridShiftPathTracerContext`). See [RestirPT.md](RestirPT.md) for the required `RTXDI_PathTracerContext` call sequence.
+
+### `RAB_EmptyPathTracerUserData`
+
+`RAB_PathTracerUserData RAB_EmptyPathTracerUserData()`
+
+Returns a zero-initialized `RAB_PathTracerUserData`.
+
+### `RAB_PathTracerUserDataSetPathType`
+
+`void RAB_PathTracerUserDataSetPathType(inout RAB_PathTracerUserData ptud, RTXDI_PTPathTraceInvocationType type)`
+
+Records which resampling stage is currently invoking `RAB_PathTrace` (see `RTXDI_PTPathTraceInvocationType_*`). Applications use this to, for example, disable denoiser-guide updates during the inverse shifts that are only performed for bias correction.
+
+### `RAB_IsValidHit`, `RAB_RayPayloadGetCommittedHitT`, `RAB_RayPayloadIsFrontFace`
+
+```
+bool RAB_IsValidHit(RAB_RayPayload rayPayload)
+float RAB_RayPayloadGetCommittedHitT(RAB_RayPayload rayPayload)
+bool RAB_RayPayloadIsFrontFace(RAB_RayPayload rayPayload)
+```
+
+Accessors for the ray payload: whether the ray hit geometry, the committed hit distance, and whether the hit was on the front face.
+
+
+## MIS and Denoiser Callbacks
+
+### `RAB_GetMISWeightForNEE`
+
+```
+float RAB_GetMISWeightForNEE(
+    uint lightIndex,
+    const RAB_LightSample lightSample,
+    float3 lightDirection,
+    float lightSolidAnglePdf,
+    float scatterPdf)
+```
+
+Returns the multiple-importance-sampling weight for a next-event-estimation (NEE) light sample, balancing NEE against BRDF sampling. Called by the runtime when a shifted path reconnects to an NEE-sampled light (the last bounce is completed inside `RTXDI_ComputeHybridShift` rather than in `RAB_PathTrace`). The reference implementation also provides `GetMISWeightForEmissiveSurface` and `GetMISWeightForEnvironmentMap` for the emissive-hit and environment-miss cases, which are invoked from inside `RAB_PathTrace`; keep all three consistent with the path tracer's own MIS.
+
+### `RAB_ReconnectionDenoiserCallback`
+
+```
+void RAB_ReconnectionDenoiserCallback(
+    const RTXDI_PTReservoir neighborSample,
+    const RAB_Surface rcPrevSurface,
+    inout RAB_PathTracerUserData ptud)
+```
+
+Called during hybrid shift after random replay reaches the vertex before the reconnection vertex, giving the application a chance to update denoiser-guide data (e.g. PSR direction/hitT) with information the path tracer alone doesn't have. May be a no-op if the application doesn't need it.
+
+### `RAB_LastBounceDenoiserCallback`
+
+```
+void RAB_LastBounceDenoiserCallback(
+    const float3 lightPos,
+    const RAB_Surface preLightSurface,
+    inout RAB_PathTracerUserData ptud)
+```
+
+Called during hybrid shift after random replay reaches the last vertex before an NEE-sampled light, for the same purpose as `RAB_ReconnectionDenoiserCallback`.
+
+
+## Path Shading and Visibility
+
+### `RAB_GetPTSampleTargetPdfForSurface`
+
+`float3 RAB_GetPTSampleTargetPdfForSurface(float3 samplePosition, float3 sampleRadiance, RAB_Surface surface)`
+
+Evaluates the ReSTIR PT target function for a reconnection sample (incoming radiance from `samplePosition`) at the given surface. Unlike the DI `RAB_GetLightSampleTargetPdfForSurface`, this returns an RGB value and is evaluated against the BSDF (including delta lobes) so it works for the full path-traced signal.
+
+### `RAB_GetReflectedBsdfRadianceForSurface`
+
+`float3 RAB_GetReflectedBsdfRadianceForSurface(float3 incomingRadianceLocation, float3 incomingRadiance, RAB_Surface surface)`
+
+Multiplies incoming radiance by the surface BSDF and cosine term. This is the BSDF (delta-aware) counterpart of the DI `RAB_GetReflectedBrdfRadianceForSurface`, used by ReSTIR PT reconnection.
+
+### `RAB_GetConservativeVisibility` (position overload)
+
+`bool RAB_GetConservativeVisibility(RAB_Surface surface, float3 samplePosition)`
+
+Position-based overload of [`RAB_GetConservativeVisibility`](#rab_getconservativevisibility): traces a conservative visibility ray between `surface` and a world-space `samplePosition` (the reconnection vertex), rather than a `RAB_LightSample`.
+
+### `RAB_LightSamplePosition`, `RAB_LightSampleRadiance`
+
+```
+float3 RAB_LightSamplePosition(RAB_LightSample lightSample)
+float3 RAB_LightSampleRadiance(RAB_LightSample lightSample)
+```
+
+Return the world-space position and radiance of a light sample. Used by ReSTIR PT when a shifted path reconnects to an NEE light.
+
+
+## Neighbor Selection and Duplication Map
+
+These support the optional ReSTIR PT compatibility-guided neighbor selection and duplication map (see the corresponding runtime functions in [ShaderAPI-RestirPT.md](ShaderAPI-RestirPT.md#neighbor-selection-and-duplication-map)).
+
+### `RAB_GetNeighborSelectionSurface`
+
+`bool RAB_GetNeighborSelectionSurface(int2 pixel, out float3 worldNormal, out float3 worldPos, out float viewDepth)`
+
+Reads the dedicated neighbor-selection G-buffer for a pixel and reconstructs its world normal, world position, and view depth. Returns `false` for background pixels. Called by `RTXDI_PTSpatialNeighborSelection`. The Full Sample implements this in [`RAB_NeighborSelection.hlsli`](../Samples/FullSample/Shaders/LightingPasses/RtxdiApplicationBridge/RAB_NeighborSelection.hlsli).
+
+### `RAB_GetDuplicationMapCount`
+
+`uint RAB_GetDuplicationMapCount(int2 prevPixelPos)`
+
+Returns the spatial duplication count (0..255) previously written by `RTXDI_PTComputeDuplicationMap` at the given pixel, or 0 for out-of-bounds positions. Used by temporal resampling for duplication-based history reduction.

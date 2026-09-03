@@ -26,21 +26,21 @@ Texture2D<float4> t_CompositedColor : register(t0);
 SamplerState s_Sampler : register(s0);
 
 [numthreads(8, 8, 1)]
-void main(uint2 globalIdx : SV_DispatchThreadID)
+void main(uint2 globalIndex : SV_DispatchThreadID)
 {
-    if (any(globalIdx > int2(g_Const.outputSize)))
+    if (any(globalIndex > int2(g_Const.outputSize)))
         return;
 
-    float4 prevColor = u_AccumulatedColor[globalIdx];
+    float4 prevColor = u_AccumulatedColor[globalIndex];
 
     float4 compositedColor;
     if (all(g_Const.inputSize == g_Const.outputSize))
     {
-        compositedColor = t_CompositedColor[globalIdx];
+        compositedColor = t_CompositedColor[globalIndex];
     }
     else
     {
-        float2 inputPos = (float2(globalIdx) + 0.5) * (g_Const.inputSize / g_Const.outputSize) + g_Const.pixelOffset;
+        float2 inputPos = (float2(globalIndex) + 0.5) * (g_Const.inputSize / g_Const.outputSize) + g_Const.pixelOffset;
         float2 inputUV = inputPos * g_Const.inputTextureSizeInv;
         
         compositedColor = t_CompositedColor.SampleLevel(s_Sampler, inputUV, 0);
@@ -52,5 +52,5 @@ void main(uint2 globalIdx : SV_DispatchThreadID)
     else
         outputColor = compositedColor;
 
-    u_AccumulatedColor[globalIdx] = outputColor;
+    u_AccumulatedColor[globalIndex] = outputColor;
 }

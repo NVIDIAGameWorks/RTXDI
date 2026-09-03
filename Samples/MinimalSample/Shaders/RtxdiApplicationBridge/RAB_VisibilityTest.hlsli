@@ -33,10 +33,10 @@ bool RAB_GetConservativeVisibility(RAB_Surface surface, RAB_LightSample lightSam
 
 // Tests the visibility between a surface and a light sample on the previous frame.
 // Since the scene is static in this sample app, it's equivalent to RAB_GetConservativeVisibility.
-bool RAB_GetTemporalConservativeVisibility(RAB_Surface currentSurface, RAB_Surface previousSurface,
+bool RAB_GetTemporalConservativeVisibility(RAB_Surface curSurface, RAB_Surface prevSurface,
     RAB_LightSample lightSample)
 {
-    return RAB_GetConservativeVisibility(currentSurface, lightSample);
+    return RAB_GetConservativeVisibility(curSurface, lightSample);
 }
 
 bool RAB_GetConservativeVisibility(RAB_Surface surface, float3 samplePosition)
@@ -44,7 +44,7 @@ bool RAB_GetConservativeVisibility(RAB_Surface surface, float3 samplePosition)
     return true;
 }
 
-bool RAB_GetTemporalConservativeVisibility(RAB_Surface currentSurface, RAB_Surface previousSurface, float3 samplePosition)
+bool RAB_GetTemporalConservativeVisibility(RAB_Surface curSurface, RAB_Surface prevSurface, float3 samplePosition)
 {
     return true;
 }

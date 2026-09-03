@@ -20,15 +20,15 @@ VK_PUSH_CONSTANT ConstantBuffer<RenderEnvironmentMapConstants> g_Const : registe
 RWTexture2D<float4> u_EnvironmentMap : register(u0);
 
 [numthreads(16, 16, 1)]
-void main(uint2 GlobalIndex : SV_DispatchThreadId)
+void main(uint2 globalIndex : SV_DispatchThreadId)
 {
-    float2 uv = (float2(GlobalIndex) + 0.5) * g_Const.invTextureSize;
+    float2 uv = (float2(globalIndex) + 0.5) * g_Const.invTextureSize;
 
     float cosElevation;
-    float3 direction = equirectUVToDirection(uv, cosElevation);
+    float3 direction = EquirectUVToDirection(uv, cosElevation);
     float angularSizeOfPixel = g_Const.invTextureSize.y * M_PI;
 
     float3 color = ProceduralSky(g_Const.params, direction, angularSizeOfPixel * 4);
 
-    u_EnvironmentMap[GlobalIndex] = float4(color, 0);
+    u_EnvironmentMap[globalIndex] = float4(color, 0);
 }

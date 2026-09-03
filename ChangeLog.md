@@ -1,5 +1,38 @@
 # RTXDI SDK Change Log
 
+## 3.1.0
+
+**Release highlights:**
+
+- Added DLSS Ray Reconstruction (DLSS-RR) support to the Full Sample, including a dedicated DLSS-RR input-formatting pass and denoiser-compatibility presets.
+- Added ReSTIR PT features that keep the sample signal compatible with DLSS-RR (which prefers temporally independent samples), centered around stagnancy-driven decorrelation at final shading.
+- Added compatibility-guided spatial neighbor selection (CGNS) to the Ultra mode of ReSTIR PT to improve reuse quality of high-frequency geometry like foliage.
+
+**Breaking changes:**
+
+- Renamed runtime and sample identifiers to follow RTX Kit conventions (camelCase variables and parameters, PascalCase functions), affecting many `RTXDI_*` function and struct names across ReSTIR DI, GI, and PT.
+- Added `RTXDI_PTDecorrelationParameters` to `RTXDI_PTParameters` (as `decorrelation`) and `initialPathTracerPreservedBufferIndex` to `RTXDI_PTBufferIndices`. Constant-buffer layouts that copy these structs must be rebuilt.
+
+**Updating from 3.0.0 to 3.1.0:**
+
+1. Add `RTXDI_PTDecorrelationParameters` to the ReSTIR PT constant buffer as `RTXDI_PTParameters::decorrelation`. Host code can fill it with `rtxdi::GetDefaultReSTIRPTDecorrelationParams` and `ReSTIRPTContext::GetDecorrelationParameters` / `SetDecorrelationParameters`.
+2. Include [`PT/Decorrelation.hlsli`](Libraries/Rtxdi/Include/Rtxdi/PT/Decorrelation.hlsli) in ReSTIR PT shaders that store duplication-map inputs, preserve the initial sample, detect fireflies, or apply decorrelation. Call `RTXDI_PTNeedsDuplicationInputs` before `RTXDI_PTStoreDuplicationInputs`, `RTXDI_PTNeedsPreservedInitialSample` when writing the extra reservoir slot, `RTXDI_PTDetectDecorrelationFireflies` from spatial resampling, and `RTXDI_PTApplyDecorrelation` from final shading. Host code can call `rtxdi::NeedsDuplicationMap`.
+3. If using compatibility-guided spatial neighbor selection, implement `RAB_GetNeighborSelectionSurface` (see [`RAB_NeighborSelection.hlsli`](Samples/FullSample/Shaders/LightingPasses/RtxdiApplicationBridge/RAB_NeighborSelection.hlsli)), bind `RTXDI_SPATIAL_NEIGHBOR_SELECTION_BUFFER`, and call `RTXDI_PTSpatialNeighborSelection` before spatial resampling.
+
+**Fixed issues:**
+
+- Fixed transparent (glass) materials showing through occluding alpha-tested geometry such as foliage.
+- Fixed Primary Surface Replacement (PSR) motion vectors for objects moving within mirror reflections.
+
+**Misc improvements:**
+
+- Added command-line options for ReSTIR PT quality presets and DLSS-RR configuration.
+- Added a dedicated ReSTIR PT shader API reference ([ShaderAPI-RestirPT.md](Doc/ShaderAPI-RestirPT.md)) and expanded the ReSTIR PT and application-bridge documentation.
+- Added `RTXDI_PTDecorrelationParameters` (`RTXDI_PTParameters::decorrelation`) and `PT/Decorrelation.hlsli` (`RTXDI_PTNeedsDuplicationMap`, `RTXDI_PTNeedsDuplicationInputs`, `RTXDI_PTNeedsPreservedInitialSample`, `RTXDI_PTDetectDecorrelationFireflies`, `RTXDI_PTApplyDecorrelation`) so applications can integrate final-shading decorrelation.
+- Added [`RAB_NeighborSelection.hlsli`](Samples/FullSample/Shaders/LightingPasses/RtxdiApplicationBridge/RAB_NeighborSelection.hlsli) with the Full Sample `RAB_GetNeighborSelectionSurface` implementation used by compatibility-guided spatial neighbor selection.
+
+
+
 ## 3.0.0
 
 **Release highlights:**
@@ -25,6 +58,8 @@
 - DLSS integration replaced by Donut's DLSS integration
 - Added NVAPI for D3D12
 
+
+
 ## 2.3.0
 
 **Release highlights:**
@@ -43,6 +78,8 @@
 
 - Donut updated to latest version to include Blackwell support.
 
+
+
 ## 2.2.0
 
 **Release highlights:**
@@ -52,10 +89,10 @@
 - Removed Packman hosting of dependencies and the corresponding "update_dependencies" scripts.
 - DXC redistributable is now installed by CMake.
 - Assets are now installed from the new [RTXDI Assets]() submodule.
- 
+
 **Breaking changes:**
 
-- rtxdi-sdk folder moved into the [RTXDI Runtime](https://gitlab-master.nvidia.com/rtx/rtxdi-runtime) submodule. 
+- rtxdi-sdk folder moved into the [RTXDI Runtime](https://gitlab-master.nvidia.com/rtx/rtxdi-runtime) submodule.
 
 **Fixed issues:**
 
@@ -65,6 +102,8 @@
 **Misc improvements:**
 
 - Moved to [DXC v1.7.2212](https://github.com/microsoft/DirectXShaderCompiler/releases/tag/v1.7.2212).
+
+
 
 ## 2.1.0
 
@@ -92,6 +131,8 @@
 - Decoupled boiling filter, bias correction, and several other settings for ReSTIR DI and ReSTIR GI.
 - Broke down ReSTIR DI local light sampling code into smaller functions for easier reuse and expansion.
 
+
+
 ## 2.0.0
 
 **Release highlights:**
@@ -118,6 +159,7 @@
 - Updated [NRD](https://github.com/NVIDIAGameWorks/RayTracingDenoiser) to version 3.3.1.
 
 
+
 ## 1.3.0
 
 **Release highlights:**
@@ -134,6 +176,7 @@
 **Misc improvements:**
 
 - Removed the old "ReSTIR Direct + BRDF MIS" rendering mode, replaced by the new MIS mode.
+
 
 
 ## 1.2.1
@@ -154,6 +197,7 @@
 **Misc improvements:**
 
 - Updated [NRD](https://github.com/NVIDIAGameWorks/RayTracingDenoiser) to version 2.10.
+
 
 
 ## 1.2.0
@@ -200,6 +244,7 @@
 - Fixed the `packman` file permissions on Linux.
 
 
+
 ## 1.1.0
 
 **API changes:**
@@ -225,6 +270,7 @@
 - Added dependency packages and scripts to make the sample application easy to build on Linux.
 - Fixed some issues with the material model and BRDF evaluation.
 - Improved the BRDF ray importance sampling logic.
+
 
 
 ## 1.0.0

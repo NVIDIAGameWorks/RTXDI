@@ -6,6 +6,7 @@ set(sources
     Shaders/RtxdiApplicationBridge/RAB_LightSample.hlsli
     Shaders/RtxdiApplicationBridge/RAB_LightSampling.hlsli
     Shaders/RtxdiApplicationBridge/RAB_Material.hlsli
+    Shaders/RtxdiApplicationBridge/RAB_NeighborSelection.hlsli
     Shaders/RtxdiApplicationBridge/RAB_RayPayload.hlsli
     Shaders/RtxdiApplicationBridge/RAB_RTShaders.hlsli
     Shaders/RtxdiApplicationBridge/RAB_SpatialHelpers.hlsli

@@ -30,11 +30,11 @@ RAB_LightSample CalcSample(TriangleLight triLight, in const float2 random, in co
 {
     RAB_LightSample result;
 
-    float3 bary = sampleTriangle(random);
+    float3 bary = SampleTriangle(random);
     result.position = triLight.base + triLight.edge1 * bary.y + triLight.edge2 * bary.z;
     result.normal = triLight.normal;
 
-    result.solidAnglePdf = triLight.calcSolidAnglePdf(viewerPosition, result.position, result.normal);
+    result.solidAnglePdf = triLight.CalcSolidAnglePdf(viewerPosition, result.position, result.normal);
 
     result.radiance = triLight.radiance;
 

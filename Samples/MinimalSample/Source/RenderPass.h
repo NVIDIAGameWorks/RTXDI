@@ -67,7 +67,7 @@ public:
         nvrhi::ICommandList* commandList,
         rtxdi::ReSTIRDIContext& context,
         const donut::engine::IView& view,
-        const donut::engine::IView& previousView,
+        const donut::engine::IView& prevView,
         const Settings& localSettings,
         const RTXDI_LightBufferParameters& lightBufferParams);
 

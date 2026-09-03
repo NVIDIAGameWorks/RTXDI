@@ -31,13 +31,13 @@ SamplerState s_Sampler : register(s0);
 // has very short history, like 1 frame or less, just to reduce the flicker.
 
 [numthreads(8, 8, 1)]
-void main(uint2 globalIdx : SV_DispatchThreadID)
+void main(uint2 globalIndex : SV_DispatchThreadID)
 {
-    if (any(globalIdx.xy >= g_Const.viewportSize))
+    if (any(globalIndex.xy >= g_Const.viewportSize))
         return;
 
     // Convert the output pixel position into UV in the gradients texture.
-    float2 inputPos = (float2(globalIdx) + 0.5) / RTXDI_GRAD_FACTOR;
+    float2 inputPos = (float2(globalIndex) + 0.5) / RTXDI_GRAD_FACTOR;
 
     if (g_Const.checkerboard)
         inputPos.x *= 0.5;
@@ -62,9 +62,9 @@ void main(uint2 globalIdx : SV_DispatchThreadID)
     if (g_Const.blendFactor < 1.0)
     {
         // Find the previous input position using the motion vector.
-        float2 motionVector = t_MotionVectors[globalIdx].xy;
+        float2 motionVector = t_MotionVectors[globalIndex].xy;
         
-        int2 prevInputPos = int2(float2(globalIdx) + 0.5 + motionVector);
+        int2 prevInputPos = int2(float2(globalIndex) + 0.5 + motionVector);
 
         if (all(prevInputPos >= 0) && all(prevInputPos < g_Const.viewportSize))
         {
@@ -95,6 +95,6 @@ void main(uint2 globalIdx : SV_DispatchThreadID)
     }
 
     // Store the output
-    u_DiffuseConfidence[globalIdx] = diffuseConfidence;
-    u_SpecularConfidence[globalIdx] = specularConfidence;
+    u_DiffuseConfidence[globalIndex] = diffuseConfidence;
+    u_SpecularConfidence[globalIndex] = specularConfidence;
 }

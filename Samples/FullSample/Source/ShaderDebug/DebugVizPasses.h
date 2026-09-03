@@ -40,6 +40,8 @@ public:
     void RenderUnpackedPSRDiffuseAlbedo(nvrhi::ICommandList* commandList, const donut::engine::IView& view);
     void RenderUnpackedPSRSpecularF0(nvrhi::ICommandList* commandList, const donut::engine::IView& view);
     void RenderPTDuplicationMap(nvrhi::ICommandList* commandList, const donut::engine::IView& view);
+    void RenderSmoothedPTDuplicationMap(nvrhi::ICommandList* commandList, const donut::engine::IView& view);
+    void RenderPTDecorrelationFactor(nvrhi::ICommandList* commandList, const donut::engine::IView& view);
     void RenderPTSampleID(nvrhi::ICommandList* commandList, const donut::engine::IView& view);
 
     void NextFrame();
@@ -52,5 +54,7 @@ private:
     std::unique_ptr<PackedDataVizPass> m_psrDiffuseAlbedoViz;
     std::unique_ptr<PackedDataVizPass> m_psrSpecularF0Viz;
     std::unique_ptr<PackedDataVizPass> m_ptDuplicationMapViz;
+    std::unique_ptr<PackedDataVizPass> m_smoothedPtDuplicationMapViz;
+    std::unique_ptr<PackedDataVizPass> m_ptDecorrelationFactorViz;
     std::unique_ptr<PackedDataVizPass> m_ptSampleIDViz;
 };

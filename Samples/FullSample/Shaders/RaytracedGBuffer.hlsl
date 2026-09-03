@@ -39,7 +39,7 @@ StructuredBuffer<MaterialConstants> t_MaterialConstants : register(t3);
 SamplerState s_MaterialSampler : register(s0);
 
 
-void shadeSurface(
+void ShadeSurface(
     uint2 pixelPosition, 
     uint instanceIndex,
     uint geometryIndex,
@@ -51,9 +51,9 @@ void shadeSurface(
     GeometrySample gs = getGeometryFromHit(instanceIndex, geometryIndex, primitiveIndex, rayBarycentrics, 
         GeomAttr_All, t_InstanceData, t_GeometryData, t_MaterialConstants);
     
-    RayDesc ray_0 = setupPrimaryRay(pixelPosition, g_Const.view);
-    RayDesc ray_x = setupPrimaryRay(pixelPosition + uint2(1, 0), g_Const.view);
-    RayDesc ray_y = setupPrimaryRay(pixelPosition + uint2(0, 1), g_Const.view);
+    RayDesc ray_0 = SetupPrimaryRay(pixelPosition, g_Const.view);
+    RayDesc ray_x = SetupPrimaryRay(pixelPosition + uint2(1, 0), g_Const.view);
+    RayDesc ray_y = SetupPrimaryRay(pixelPosition + uint2(0, 1), g_Const.view);
     float3 worldSpacePositions[3];
     worldSpacePositions[0] = mul(gs.instance.transform, float4(gs.vertexPositions[0], 1.0)).xyz;
     worldSpacePositions[1] = mul(gs.instance.transform, float4(gs.vertexPositions[1], 1.0)).xyz;
@@ -84,12 +84,12 @@ void shadeSurface(
     if (g_Const.metalnessOverride >= 0)
     {
         ms.metalness = g_Const.metalnessOverride;
-        getReflectivity(ms.metalness, ms.baseColor, ms.diffuseAlbedo, ms.specularF0);
+        GetReflectivity(ms.metalness, ms.baseColor, ms.diffuseAlbedo, ms.specularF0);
     }
 
     float clipDepth = 0;
     float viewDepth = 0;
-    float3 motion = getMotionVector(g_Const.view, g_Const.viewPrev, 
+    float3 motion = GetMotionVector(g_Const.view, g_Const.viewPrev,
         gs.instance, gs.objectSpacePosition, gs.prevObjectSpacePosition, clipDepth, viewDepth);
 
     u_ViewDepth[pixelPosition] = viewDepth;
@@ -107,7 +107,7 @@ void shadeSurface(
     }
 }
 
-int evaluateNonOpaqueMaterials(uint instanceID, uint geometryIndex, uint primitiveIndex, float2 rayBarycentrics)
+int EvaluateNonOpaqueMaterials(uint instanceID, uint geometryIndex, uint primitiveIndex, float2 rayBarycentrics)
 {
     GeometrySample gs = getGeometryFromHit(instanceID, geometryIndex, primitiveIndex, rayBarycentrics, 
         GeomAttr_TexCoord, t_InstanceData, t_GeometryData, t_MaterialConstants);
@@ -152,9 +152,9 @@ struct RayPayload
     float2 barycentrics;
 };
 
-bool anyHitLogic(inout RayPayload payload, uint instanceID, uint geometryIndex, uint primitiveIndex, float2 rayBarycentrics, float rayT)
+bool AnyHitLogic(inout RayPayload payload, uint instanceID, uint geometryIndex, uint primitiveIndex, float2 rayBarycentrics, float rayT)
 {
-    int evaluatedMaterialDomain = evaluateNonOpaqueMaterials(instanceID, geometryIndex, primitiveIndex, rayBarycentrics);
+    int evaluatedMaterialDomain = EvaluateNonOpaqueMaterials(instanceID, geometryIndex, primitiveIndex, rayBarycentrics);
 
     if (evaluatedMaterialDomain == MaterialDomain_Transmissive || 
         evaluatedMaterialDomain == MaterialDomain_TransmissiveAlphaTested || 
@@ -194,7 +194,7 @@ void ClosestHit(inout RayPayload payload : SV_RayPayload, in Attributes attrib :
 [shader("anyhit")]
 void AnyHit(inout RayPayload payload : SV_RayPayload, in Attributes attrib : SV_IntersectionAttributes)
 {
-    if (!anyHitLogic(payload, InstanceID(), GeometryIndex(), PrimitiveIndex(), attrib.uv, RayTCurrent()))
+    if (!AnyHitLogic(payload, InstanceID(), GeometryIndex(), PrimitiveIndex(), attrib.uv, RayTCurrent()))
         IgnoreHit();
 }
 #endif
@@ -214,7 +214,7 @@ void RayGen()
     if (any(float2(pixelPosition) >= g_Const.view.viewportSize))
         return;
 
-    RayDesc ray = setupPrimaryRay(pixelPosition, g_Const.view);
+    RayDesc ray = SetupPrimaryRay(pixelPosition, g_Const.view);
     
     uint instanceMask = INSTANCE_MASK_OPAQUE;
     uint rayFlags = RAY_FLAG_NONE;
@@ -244,7 +244,7 @@ void RayGen()
     {
         if (rayQuery.CandidateType() == CANDIDATE_NON_OPAQUE_TRIANGLE)
         {
-            if (anyHitLogic(payload, 
+            if (AnyHitLogic(payload,
                 rayQuery.CandidateInstanceID(),
                 rayQuery.CandidateGeometryIndex(),
                 rayQuery.CandidatePrimitiveIndex(),
@@ -276,7 +276,7 @@ void RayGen()
 
     if (payload.instanceID != ~0u)
     {
-        shadeSurface(
+        ShadeSurface(
             pixelPosition,
             payload.instanceID,
             payload.geometryIndex,

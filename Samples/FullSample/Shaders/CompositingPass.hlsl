@@ -41,29 +41,29 @@ Texture2D<uint> t_PSRSpecularF0 : register(t10);
 SamplerState s_EnvironmentSampler : register(s0);
 
 [numthreads(8, 8, 1)]
-void main(uint2 globalIdx : SV_DispatchThreadID)
+void main(uint2 globalIndex : SV_DispatchThreadID)
 {
     float3 compositedColor = 0;
 
-    float depth = t_GBufferDepth[globalIdx];
+    float depth = t_GBufferDepth[globalIndex];
     if (depth != BACKGROUND_DEPTH)
     {
-        float3 normal = octToNdirUnorm32(t_GBufferNormals[globalIdx]);
-        float3 diffuseAlbedo = Unpack_R11G11B10_UFLOAT(t_GBufferDiffuseAlbedo[globalIdx]);
-        float3 specularF0 = Unpack_R8G8B8A8_Gamma_UFLOAT(t_GBufferSpecularRough[globalIdx]).rgb;
-        float3 emissive = t_GBufferEmissive[globalIdx].rgb;
+        float3 normal = octToNdirUnorm32(t_GBufferNormals[globalIndex]);
+        float3 diffuseAlbedo = Unpack_R11G11B10_UFLOAT(t_GBufferDiffuseAlbedo[globalIndex]);
+        float3 specularF0 = Unpack_R8G8B8A8_Gamma_UFLOAT(t_GBufferSpecularRough[globalIndex]).rgb;
+        float3 emissive = t_GBufferEmissive[globalIndex].rgb;
 
-        float3 PSRDiffuseAlbedo = Unpack_R11G11B10_UFLOAT(t_PSRDiffuseAlbedo[globalIdx]);
-        float3 PSRSpecularF0 = Unpack_R11G11B10_UFLOAT(t_PSRSpecularF0[globalIdx]);
+        float3 PSRDiffuseAlbedo = Unpack_R11G11B10_UFLOAT(t_PSRDiffuseAlbedo[globalIndex]);
+        float3 PSRSpecularF0 = Unpack_R11G11B10_UFLOAT(t_PSRSpecularF0[globalIndex]);
         // PSR surface
         if (any(PSRDiffuseAlbedo > 0.f) || any(PSRSpecularF0 > 0.f))
         {
-            float metalness = getMetalness(diffuseAlbedo, specularF0);
+            float metalness = GetMetalness(diffuseAlbedo, specularF0);
             diffuseAlbedo = lerp(diffuseAlbedo, PSRDiffuseAlbedo, metalness);
             specularF0 = lerp(specularF0, PSRSpecularF0, metalness);
         }
 
-        int2 illuminationPos = globalIdx;
+        int2 illuminationPos = globalIndex;
         if (g_Const.denoiserMode != DENOISER_MODE_OFF && g_Const.checkerboard)
         {
             // NRD takes the noisy input in checkerboard mode in one half of the screen.
@@ -77,8 +77,8 @@ void main(uint2 globalIdx : SV_DispatchThreadID)
 #ifdef WITH_NRD
         if(g_Const.denoiserMode != DENOISER_MODE_OFF)
         {
-            float4 denoised_diffuse = t_DenoisedDiffuse[globalIdx].rgba;
-            float4 denoised_specular = t_DenoisedSpecular[globalIdx].rgba;
+            float4 denoised_diffuse = t_DenoisedDiffuse[globalIndex].rgba;
+            float4 denoised_specular = t_DenoisedSpecular[globalIndex].rgba;
 
             if (g_Const.denoiserMode == DENOISER_MODE_REBLUR)
             {
@@ -107,23 +107,23 @@ void main(uint2 globalIdx : SV_DispatchThreadID)
     }
     else
     {
-        RayDesc primaryRay = setupPrimaryRay(globalIdx, g_Const.view);
+        RayDesc primaryRay = SetupPrimaryRay(globalIndex, g_Const.view);
 
         if (g_Const.enableEnvironmentMap)
         {
             Texture2D environmentLatLongMap = t_BindlessTextures[g_Const.environmentMapTextureIndex];
-            float2 uv = directionToEquirectUV(primaryRay.Direction);
+            float2 uv = DirectionToEquirectUV(primaryRay.Direction);
             uv.x -= g_Const.environmentRotation;
             compositedColor = environmentLatLongMap.SampleLevel(s_EnvironmentSampler, uv, 0).rgb;
             compositedColor *= g_Const.environmentScale;
         }
 
-        float2 motionVector = getEnvironmentMotionVector(g_Const.view, g_Const.viewPrev, float2(globalIdx) + 0.5);
-        u_MotionVectors[globalIdx] = float4(motionVector, 0, 0);
+        float2 motionVector = GetEnvironmentMotionVector(g_Const.view, g_Const.viewPrev, float2(globalIndex) + 0.5);
+        u_MotionVectors[globalIndex] = float4(motionVector, 0, 0);
     }
 
     if(any(isnan(compositedColor)))
         compositedColor = float3(0, 0, 1);
 
-    u_Output[globalIdx] = float4(compositedColor, 1.0);
+    u_Output[globalIndex] = float4(compositedColor, 1.0);
 }

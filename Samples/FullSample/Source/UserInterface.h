@@ -52,6 +52,14 @@ namespace donut::app {
     class FirstPersonCamera;
 }
 
+enum class DenoiserMode
+{
+    NONE,
+    NRD_RELAX,
+    NRD_REBLUR,
+    DLSS_RR
+};
+
 enum class QualityPreset : uint32_t
 {
     Custom = 0,
@@ -67,7 +75,7 @@ enum class ReSTIRPTQualityPreset : uint32_t
     Custom = 0,
     Fast = 1,
     Medium = 2,
-    Ultra = 3,
+    Ultra = 3
 };
 
 enum class AntiAliasingMode : uint32_t
@@ -76,7 +84,7 @@ enum class AntiAliasingMode : uint32_t
     Accumulation,
     TAA,
 #if DONUT_WITH_DLSS
-    DLSS,
+    DLSS_SR
 #endif
 };
 
@@ -131,7 +139,10 @@ enum DebugTextureBlitMode
     PSRDiffuseAlbedo,
     PSRSpecularF0,
     PTDuplicationMap,
-    PTSampleID
+    SmoothedPTDuplicationMap,
+    PTDecorrelationFactor,
+    PTSampleID,
+    NeighborSelectionGBuffer
 };
 
 #include "SharedShaderInclude/ShaderDebug/VisualizationOverlayMode.h"
@@ -200,7 +211,7 @@ struct UIData
     ReSTIRPTQualityPreset restirPtQualityPreset = ReSTIRPTQualityPreset::Medium;
 
 #if DONUT_WITH_DLSS
-    AntiAliasingMode aaMode = AntiAliasingMode::DLSS;
+    AntiAliasingMode aaMode = AntiAliasingMode::DLSS_SR;
 #else
     AntiAliasingMode aaMode = AntiAliasingMode::TAA;
 #endif
@@ -216,12 +227,11 @@ struct UIData
     float environmentIntensityBias = 0.f;
     float environmentRotation = 0.f;
 
-    bool enableDenoiser = true;
 #ifdef WITH_NRD
     NrdIntegrationDebugSettings nrdDebugSettings = {};
     float debug = 0.0f;
     float accumulationTime = 0.334f; // (sec) 20 frames @ 60 FPS
-    nrd::Denoiser denoisingMethod = nrd::Denoiser::REBLUR_DIFFUSE_SPECULAR;
+    nrd::Denoiser nrdDenoisingMethod = nrd::Denoiser::REBLUR_DIFFUSE_SPECULAR;
     nrd::ReblurSettings reblurSettings = {};
     nrd::RelaxSettings relaxSettings = {};
     void SetDefaultDenoiserSettings();
@@ -231,7 +241,16 @@ struct UIData
     bool dlssAvailable = false;
     float dlssExposureScale = 2.f;
     float dlssSharpness = 0.f;
+
+    bool dlssSRSupported = false;
+    bool dlssRRSupported = false;
+
+    // When true, ApplyDLSSRRPreset is auto-invoked on the transition into DLSS-RR
+    // AA mode and on quality-preset changes while DLSS-RR is the active AA mode.
+    bool autoApplyDLSSRRPreset = true;
 #endif
+
+    DenoiserMode denoiserMode = DenoiserMode::DLSS_RR;
 
     float resolutionScale = 1.f;
 
@@ -284,6 +303,7 @@ struct UIData
         rtxdi::ReSTIRPT_ResamplingMode resamplingMode;
         LocalLightSamplingUIData neeLocalLightSampling;
         RTXDI_PTInitialSamplingParameters initialSampling;
+        RTXDI_PTDecorrelationParameters decorrelation;
         RTXDI_PTReconnectionParameters reconnection;
         RTXDI_PTTemporalResamplingParameters temporalResampling;
         RTXDI_PTHybridShiftPerFrameParameters hybridShift;
@@ -302,6 +322,12 @@ struct UIData
 
     void ApplyPreset();
     void ApplyReSTIRPTPreset();
+
+    // Applies a quality-preset-independent DLSS-RR mode with robust input-noise
+    // settings, without changing the selected ReSTIR PT quality preset.
+    void ApplyDLSSRRPreset();
+    void ApplyNonDLSSRRPreset();
+    void ApplyDenoiserCompatDefaults(bool dlssRR);
 };
 
 

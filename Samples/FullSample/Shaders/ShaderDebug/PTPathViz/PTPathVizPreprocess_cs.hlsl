@@ -47,13 +47,13 @@ void NullifyOutput(uint oIdx1, uint oIdx2)
 }
 
 [numthreads(CS_THREADGROUP_WIDTH, CS_THREADGROUP_HEIGHT, 1)]
-void main(uint3 globalIdx : SV_DispatchThreadID)
+void main(uint3 globalIndex : SV_DispatchThreadID)
 {
     uint totalVertexCount = g_pathSetRecord[0].vertexBeginIndex;
     uint totalPathCount = g_pathSetRecord[0].vertexEndIndex;
 
-    uint localVertexIndex = globalIdx.x;
-    uint currentPathIndex = globalIdx.y;
+    uint localVertexIndex = globalIndex.x;
+    uint currentPathIndex = globalIndex.y;
 
     // Skip special first entry when addressing into output buffers
     uint oIdx1 = 2 * (g_preprocessCB.maxVerticesPerPath * (currentPathIndex-1) + localVertexIndex);

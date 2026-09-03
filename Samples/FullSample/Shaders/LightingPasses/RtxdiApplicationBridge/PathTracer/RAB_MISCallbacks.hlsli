@@ -64,7 +64,7 @@ float GetMISWeightForNEELight(
 }
 
 // Shared MIS weight computation for PT_INITIAL_SAMPLING_LIGHT_SAMPLING_MODE_MIS.
-// Requires g_Const, RAB_*, getLightIndex, RTXDI_InvalidLightIndex,
+// Requires g_Const, RAB_*, GetLightIndex, RTXDI_InvalidLightIndex,
 // ReSTIRDI_LocalLightSamplingMode_*, and PolymorphicLightType to be in scope (from includer).
 
 // Returns MIS weight for radiance from an emissive surface hit (local/area light).
@@ -79,7 +79,7 @@ float GetMISWeightForEmissiveSurface(
     if (brs.properties.IsDelta())
         return 1.0;
     
-    uint lightIndex = getLightIndex(rayPayload.instanceID, rayPayload.geometryIndex, rayPayload.primitiveIndex);
+    uint lightIndex = GetLightIndex(rayPayload.instanceID, rayPayload.geometryIndex, rayPayload.primitiveIndex);
     if (lightIndex == RTXDI_InvalidLightIndex)
         return 1.0;
 
@@ -95,8 +95,8 @@ float GetMISWeightForEmissiveSurface(
     float lightSolidAnglePdf = RAB_LightSampleSolidAnglePdf(lightSample);
     lightSourcePdf *= lightSolidAnglePdf;
 
-    float pdfSum = sampleParams.numLocalLightSamples * lightSourcePdf + brs.OutPdf;
-    return brs.OutPdf / pdfSum;
+    float pdfSum = sampleParams.numLocalLightSamples * lightSourcePdf + brs.outPdf;
+    return brs.outPdf / pdfSum;
 }
 
 // Returns MIS weight for radiance from environment map (miss / distant light).
@@ -116,8 +116,8 @@ float GetMISWeightForEnvironmentMap(float3 direction, RAB_Surface prevSurface, R
     float lightSolidAnglePdf = RAB_LightSampleSolidAnglePdf(lightSample);
     lightSourcePdf *= lightSolidAnglePdf;
 
-    float pdfSum = sampleParams.numEnvironmentSamples * lightSourcePdf + brs.OutPdf;
-    return brs.OutPdf / pdfSum;
+    float pdfSum = sampleParams.numEnvironmentSamples * lightSourcePdf + brs.outPdf;
+    return brs.outPdf / pdfSum;
 }
 
 #endif // RAB_PATH_TRACER_MIS_CALLBACKS

@@ -35,7 +35,7 @@ Texture2D<uint> t_GBufferSpecularRough : register(t6);
 SamplerState s_MaterialSampler : register(s0);
 SamplerState s_EnvironmentSampler : register(s1);
 
-RayDesc setupPrimaryRay(uint2 pixelPosition, PlanarViewConstants view, float TMax)
+RayDesc SetupPrimaryRay(uint2 pixelPosition, PlanarViewConstants view, float tMax)
 {
     float2 uv = (float2(pixelPosition) + 0.5) * view.viewportSizeInv;
     float4 clipPos = float4(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0, 0.5, 1);
@@ -46,7 +46,7 @@ RayDesc setupPrimaryRay(uint2 pixelPosition, PlanarViewConstants view, float TMa
     ray.Origin = view.cameraDirectionOrPosition.xyz;
     ray.Direction = normalize(worldPos.xyz - ray.Origin);
     ray.TMin = 0;
-    ray.TMax = TMax;
+    ray.TMax = tMax;
     return ray;
 }
 
@@ -85,12 +85,12 @@ void AnyHit(inout RayPayload payload : SV_RayPayload, in RayAttributes attrib : 
 }
 #endif
 
-void tracePrimaryRay(inout RayPayload payload, RayDesc ray, bool firstRay)
+void TracePrimaryRay(inout RayPayload payload, RayDesc ray, bool firstRay)
 {
     uint InstanceInclusionMask = INSTANCE_MASK_TRANSPARENT;
 
     if (firstRay)
-        InstanceInclusionMask |= INSTANCE_MASK_OPAQUE;
+        InstanceInclusionMask |= INSTANCE_MASK_OPAQUE | INSTANCE_MASK_ALPHA_TESTED;
 
 #if USE_RAY_QUERY
     RayQuery<RAY_FLAG_SKIP_PROCEDURAL_PRIMITIVES | RAY_FLAG_FORCE_OPAQUE | RAY_FLAG_CULL_BACK_FACING_TRIANGLES > rayQuery;
@@ -113,7 +113,7 @@ void tracePrimaryRay(inout RayPayload payload, RayDesc ray, bool firstRay)
     REPORT_RAY(payload.instanceID != ~0u);
 }
 
-float3 getSecondaryRadiance(float3 surfacePosition, float3 reflectedDirection)
+float3 GetSecondaryRadiance(float3 surfacePosition, float3 reflectedDirection)
 {
     RayDesc ray;
     ray.Origin = surfacePosition;
@@ -149,7 +149,7 @@ float3 getSecondaryRadiance(float3 surfacePosition, float3 reflectedDirection)
         if (g_Const.enableEnvironmentMap)
         {
             Texture2D environmentLatLongMap = t_BindlessTextures[g_Const.environmentMapTextureIndex];
-            float2 uv = directionToEquirectUV(reflectedDirection);
+            float2 uv = DirectionToEquirectUV(reflectedDirection);
             uv.x -= g_Const.environmentRotation;
             float3 environmentColor = environmentLatLongMap.SampleLevel(s_EnvironmentSampler, uv, 0).rgb;
             environmentColor *= g_Const.environmentScale;
@@ -193,7 +193,7 @@ void RayGen()
     float3 overlay = 0.0;
     bool includeOpaqueGeo = true;
 
-    RayDesc ray = setupPrimaryRay(pixelPosition, g_Const.view, maxGlassHitT + 0.01);
+    RayDesc ray = SetupPrimaryRay(pixelPosition, g_Const.view, maxGlassHitT + 0.01);
 
     bool firstBounceGlass = false;
 
@@ -202,7 +202,7 @@ void RayGen()
         RayPayload payload = (RayPayload)0;
         payload.instanceID = ~0u;
 
-        tracePrimaryRay(payload, ray, includeOpaqueGeo);
+        TracePrimaryRay(payload, ray, includeOpaqueGeo);
 
         if (payload.instanceID == ~0u)
             break;
@@ -234,6 +234,7 @@ void RayGen()
         {
             if (g_Const.indirectLightingMode != INDIRECT_LIGHTING_MODE_RESTIRPT)
                 break;
+
             float kMinRoughness = 0.01;
             if (ms.roughness <= kMinRoughness)
             {
@@ -252,6 +253,7 @@ void RayGen()
         }
         else if (gs.material.domain == MaterialDomain_Transmissive ||
             (gs.material.domain == MaterialDomain_TransmissiveAlphaTested && alphaMask) ||
+            (gs.material.domain == MaterialDomain_AlphaTested && alphaMask) ||
             gs.material.domain == MaterialDomain_TransmissiveAlphaBlended)
         {
             if (surfaceIndex == 0) firstBounceGlass = true;
@@ -267,7 +269,7 @@ void RayGen()
 
             float3 reflectedDirection = reflect(ray.Direction, surfaceNormal);
 
-            float3 secondaryRadiance = getSecondaryRadiance(surfacePosition, reflectedDirection);
+            float3 secondaryRadiance = GetSecondaryRadiance(surfacePosition, reflectedDirection);
 
             float3 contribution = secondaryRadiance * fresnel + ms.emissiveColor;
 
@@ -290,22 +292,22 @@ void RayGen()
             overlay += contribution * throughput;
             throughput *= thisSurfaceThroughput;
 
-            if (calcLuminance(throughput) < 0.01)
+            if (CalcLuminance(throughput) < 0.01)
                 break;
         }
     }
 
     if (any(throughput < 1.0) || any(overlay > 0.0))
     {
-        float4 previousColor = u_CompositedColor[pixelPosition];
+        float4 prevColor = u_CompositedColor[pixelPosition];
 
         // Attenuate glass reflection by underlying surface metalness (full on metal, none on dielectric)
         float3 diffuseAlbedo = Unpack_R11G11B10_UFLOAT(t_GBufferDiffuseAlbedo[pixelPosition]);
         float3 specularF0 = Unpack_R8G8B8A8_Gamma_UFLOAT(t_GBufferSpecularRough[pixelPosition]).rgb;
-        float metalness = getMetalness(diffuseAlbedo, specularF0);
+        float metalness = GetMetalness(diffuseAlbedo, specularF0);
 
-        float3 newColor = previousColor.rgb * (lerp(1.f, throughput, (firstBounceGlass ? 1.f : metalness))) + overlay;
+        float3 newColor = prevColor.rgb * (lerp(1.f, throughput, (firstBounceGlass ? 1.f : metalness))) + overlay;
 
-        u_CompositedColor[pixelPosition] = float4(newColor.rgb, previousColor.a);
+        u_CompositedColor[pixelPosition] = float4(newColor.rgb, prevColor.a);
     }
 }

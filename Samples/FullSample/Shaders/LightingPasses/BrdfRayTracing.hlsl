@@ -30,16 +30,16 @@ static const float c_MaxIndirectRadiance = 10;
 
 #if USE_RAY_QUERY
 [numthreads(RTXDI_SCREEN_SPACE_GROUP_SIZE, RTXDI_SCREEN_SPACE_GROUP_SIZE, 1)]
-void main(uint2 GlobalIndex : SV_DispatchThreadID)
+void main(uint2 globalIndex : SV_DispatchThreadID)
 #else
 [shader("raygeneration")]
 void RayGen()
 #endif
 {
 #if !USE_RAY_QUERY
-    uint2 GlobalIndex = DispatchRaysIndex().xy;
+    uint2 globalIndex = DispatchRaysIndex().xy;
 #endif
-    uint2 pixelPosition = RTXDI_ReservoirPosToPixelPos(GlobalIndex, g_Const.runtimeParams.activeCheckerboardField);
+    uint2 pixelPosition = RTXDI_ReservoirPosToPixelPos(globalIndex, g_Const.runtimeParams.activeCheckerboardField);
 
     RAB_Surface surface = RAB_GetGBufferSurface(pixelPosition, false);
 
@@ -58,10 +58,10 @@ void RayGen()
     Debug_RecordPTIntersectionNormal(RAB_GetSurfaceNormal(surface));
     Debug_RecordPTNEELightPosition(RAB_GetSurfaceWorldPos(surface));
 
-    RTXDI_RandomSamplerState rng = RTXDI_InitRandomSampler(GlobalIndex, g_Const.runtimeParams.frameIndex, RTXDI_GI_GENERATE_INITIAL_SAMPLES_RANDOM_SEED);
+    RTXDI_RandomSamplerState rng = RTXDI_InitRandomSampler(globalIndex, g_Const.runtimeParams.frameIndex, RTXDI_GI_GENERATE_INITIAL_SAMPLES_RANDOM_SEED);
 
     float3 tangent, bitangent;
-    branchlessONB(surface.normal, tangent, bitangent);
+    BranchlessONB(surface.normal, tangent, bitangent);
 
     float distance = max(1, 0.1 * length(surface.worldPos - g_Const.view.cameraDirectionOrPosition.xyz));
 
@@ -86,7 +86,7 @@ void RayGen()
         float3 specular_BRDF_over_PDF;
         {
             float3 Ve = float3(dot(V, tangent), dot(V, bitangent), dot(V, surface.normal));
-            float3 He = sampleGGX_VNDF(Ve, surface.material.roughness, Rand);
+            float3 He = SampleGGX_VNDF(Ve, surface.material.roughness, Rand);
             float3 H = isDeltaSurface ? surface.normal : normalize(He.x * tangent + He.y * bitangent + He.z * surface.normal);
             specularDirection = reflect(-V, H);
 
@@ -101,15 +101,15 @@ void RayGen()
         float diffuse_BRDF_over_PDF;
         {
             float solidAnglePdf;
-            float3 localDirection = sampleCosHemisphere(Rand, solidAnglePdf);
+            float3 localDirection = SampleCosHemisphere(Rand, solidAnglePdf);
             diffuseDirection = tangent * localDirection.x + bitangent * localDirection.y + surface.normal * localDirection.z;
             diffuse_BRDF_over_PDF = 1.0;
         }
 
 		// Ignores PDF of specular or diffuse
 		// Chooses PDF based on relative luminance
-        specular_PDF = saturate(calcLuminance(specular_BRDF_over_PDF) /
-            calcLuminance(specular_BRDF_over_PDF + diffuse_BRDF_over_PDF * surface.material.diffuseAlbedo));
+        specular_PDF = saturate(CalcLuminance(specular_BRDF_over_PDF) /
+            CalcLuminance(specular_BRDF_over_PDF + diffuse_BRDF_over_PDF * surface.material.diffuseAlbedo));
         isSpecularRay = RTXDI_GetNextRandom(rng) < specular_PDF;
 
         if (isSpecularRay)
@@ -162,7 +162,7 @@ void RayGen()
     {
         if (rayQuery.CandidateType() == CANDIDATE_NON_OPAQUE_TRIANGLE)
         {
-            if (considerTransparentMaterial(
+            if (ConsiderTransparentMaterial(
                 rayQuery.CandidateInstanceID(),
                 rayQuery.CandidateGeometryIndex(),
                 rayQuery.CandidatePrimitiveIndex(),
@@ -191,7 +191,7 @@ void RayGen()
         InterlockedAdd(u_RayCountBuffer[RAY_COUNT_TRACED(g_PerPassConstants.rayCountBufferIndex)], 1);
     }
 
-    uint gbufferIndex = RTXDI_ReservoirPositionToPointer(g_Const.restirGI.reservoirBufferParams, GlobalIndex, 0);
+    uint gbufferIndex = RTXDI_ReservoirPositionToPointer(g_Const.restirGI.reservoirBufferParams, globalIndex, 0);
 
     struct
     {
@@ -234,7 +234,7 @@ void RayGen()
         if (g_Const.brdfPT.materialOverrideParams.metalnessOverride >= 0)
         {
             ms.metalness = g_Const.brdfPT.materialOverrideParams.metalnessOverride;
-            getReflectivity(ms.metalness, ms.baseColor, ms.diffuseAlbedo, ms.specularF0);
+            GetReflectivity(ms.metalness, ms.baseColor, ms.diffuseAlbedo, ms.specularF0);
         }
 
         ms.roughness = max(ms.roughness, g_Const.brdfPT.materialOverrideParams.minSecondaryRoughness);
@@ -320,11 +320,11 @@ void RayGen()
         specular = DemodulateSpecular(surface.material.specularF0, specular);
 
         if(!isDeltaSurface)
-            StoreShadingOutput(GlobalIndex, pixelPosition,
+            StoreShadingOutput(globalIndex, pixelPosition,
                 surface.viewDepth, surface.material.roughness, diffuse, specular, payload.committedRayT, !g_Const.enableBrdfAdditiveBlend, !g_Const.enableBrdfIndirect);
         else
         {
-            StoreShadingOutput(GlobalIndex, pixelPosition,
+            StoreShadingOutput(globalIndex, pixelPosition,
                 surface.viewDepth, surface.material.roughness, 0, 0, 0, !g_Const.enableBrdfAdditiveBlend, !g_Const.enableBrdfIndirect);
         }
     }

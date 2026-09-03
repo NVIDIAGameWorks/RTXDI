@@ -89,7 +89,7 @@ void UnpackPathTypeAndLineType(in const uint packedData,
     lineType = (DEBUG_PATH_VIZ_LINE_TYPE)(packedData & 3);
 }
 
-bool isOnCameraToPrimaryPath(uint vId)
+bool IsOnCameraToPrimaryPath(uint vId)
 {
     uint localVid = vId % g_Const.maxVerticesPerPath;
     return localVid == 0 || localVid == 1;
@@ -109,7 +109,7 @@ void vs_main(
     o_color = TypeToColor(pathType, lineType);
 
     bool enabled = TypeIsEnabled(pathType, lineType);
-    if (!g_Const.enableCameraVertex && isOnCameraToPrimaryPath(vId))
+    if (!g_Const.enableCameraVertex && IsOnCameraToPrimaryPath(vId))
     {
         enabled = false;
     }

@@ -17,7 +17,7 @@ RAB_LightInfo RAB_EmptyLightInfo()
     return lightInfo;
 }
 
-RAB_LightInfo RAB_LoadLightInfo(uint index, bool previousFrame)
+RAB_LightInfo RAB_LoadLightInfo(uint index, bool prevFrame)
 {
     return RAB_EmptyLightInfo();
 }

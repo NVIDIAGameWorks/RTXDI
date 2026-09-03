@@ -13,6 +13,7 @@
 #ifndef POLYMORPHIC_LIGHT_HLSLI
 #define POLYMORPHIC_LIGHT_HLSLI
 
+#include <donut/shaders/brdf.hlsli>
 #include "HelperFunctions.hlsli"
 #include "LightShaping.hlsli"
 
@@ -31,7 +32,7 @@ struct PolymorphicLightSample
     float solidAnglePdf;
 };
 
-PolymorphicLightType getLightType(PolymorphicLightInfo lightInfo)
+PolymorphicLightType GetLightType(PolymorphicLightInfo lightInfo)
 {
     uint typeCode = (lightInfo.colorTypeAndFlags >> kPolymorphicLightTypeShift) 
         & kPolymorphicLightTypeMask;
@@ -39,19 +40,19 @@ PolymorphicLightType getLightType(PolymorphicLightInfo lightInfo)
     return (PolymorphicLightType)typeCode;
 }
 
-float unpackLightRadiance(uint logRadiance)
+float UnpackLightRadiance(uint logRadiance)
 {
     return (logRadiance == 0) ? 0 : exp2((float(logRadiance - 1) / 65534.0) * (kPolymorphicLightMaxLog2Radiance - kPolymorphicLightMinLog2Radiance) + kPolymorphicLightMinLog2Radiance);
 }
 
-float3 unpackLightColor(PolymorphicLightInfo lightInfo)
+float3 UnpackLightColor(PolymorphicLightInfo lightInfo)
 {
     float3 color = Unpack_R8G8B8_UFLOAT(lightInfo.colorTypeAndFlags);
-    float radiance = unpackLightRadiance(lightInfo.logRadiance & 0xffff);
+    float radiance = UnpackLightRadiance(lightInfo.logRadiance & 0xffff);
     return color * radiance.xxx;
 }
 
-void packLightColor(float3 radiance, inout PolymorphicLightInfo lightInfo)
+void PackLightColor(float3 radiance, inout PolymorphicLightInfo lightInfo)
 {   
     float intensity = max(radiance.r, max(radiance.g, radiance.b));
 
@@ -60,7 +61,7 @@ void packLightColor(float3 radiance, inout PolymorphicLightInfo lightInfo)
         float logRadiance = saturate((log2(intensity) - kPolymorphicLightMinLog2Radiance) 
             / (kPolymorphicLightMaxLog2Radiance - kPolymorphicLightMinLog2Radiance));
         uint packedRadiance = min(uint32_t(ceil(logRadiance * 65534.0)) + 1, 0xffffu);
-        float unpackedRadiance = unpackLightRadiance(packedRadiance);
+        float unpackedRadiance = UnpackLightRadiance(packedRadiance);
 
         float3 normalizedRadiance = saturate(radiance.rgb / unpackedRadiance.xxx);
 
@@ -69,9 +70,9 @@ void packLightColor(float3 radiance, inout PolymorphicLightInfo lightInfo)
     }
 }
 
-bool packCompactLightInfo(PolymorphicLightInfo lightInfo, out uint4 res1, out uint4 res2)
+bool PackCompactLightInfo(PolymorphicLightInfo lightInfo, out uint4 res1, out uint4 res2)
 {
-    if (unpackLightShaping(lightInfo).isSpot)
+    if (UnpackLightShaping(lightInfo).isSpot)
     {
         res1 = 0;
         res2 = 0;
@@ -88,7 +89,7 @@ bool packCompactLightInfo(PolymorphicLightInfo lightInfo, out uint4 res1, out ui
     return true;
 }
 
-PolymorphicLightInfo unpackCompactLightInfo(const uint4 data1, const uint4 data2)
+PolymorphicLightInfo UnpackCompactLightInfo(const uint4 data1, const uint4 data2)
 {
     PolymorphicLightInfo lightInfo = (PolymorphicLightInfo)0;
     lightInfo.center.xyz = asfloat(data1.xyz);
@@ -103,7 +104,7 @@ PolymorphicLightInfo unpackCompactLightInfo(const uint4 data1, const uint4 data2
 // Computes estimated distance between a given point in space and a random point inside
 // a spherical volume. Since the geometry of this solution is spherically symmetric,
 // only the distance from the volume center to the point and the volume radius matter here.
-float getAverageDistanceToVolume(float distanceToCenter, float volumeRadius)
+float GetAverageDistanceToVolume(float distanceToCenter, float volumeRadius)
 {
     // The expression and factor are fitted to a Monte Carlo estimated curve.
     // At distanceToCenter == 0, this function returns (0.75 * volumeRadius) which is analytically accurate.
@@ -127,7 +128,7 @@ struct SphereLight
 
     // Interface methods
 
-    PolymorphicLightSample calcSample(in const float2 random, in const float3 viewerPosition)
+    PolymorphicLightSample CalcSample(in const float2 random, in const float3 viewerPosition)
     {
         const float3 lightVector = position - viewerPosition;
         const float lightDistance2 = dot(lightVector, lightVector);
@@ -161,7 +162,7 @@ struct SphereLight
         const float3 sampleSpaceNormal = normalize(lightVector);
         float3 sampleSpaceTangent;
         float3 sampleSpaceBitangent;
-        branchlessONB(sampleSpaceNormal, sampleSpaceTangent, sampleSpaceBitangent);
+        BranchlessONB(sampleSpaceNormal, sampleSpaceTangent, sampleSpaceBitangent);
 
         // Calculate sample position and normal on the sphere
 
@@ -169,7 +170,7 @@ struct SphereLight
         float cosPhi;
         sincos(phi, sinPhi, cosPhi);
 
-        const float3 radiusVector = sphericalDirection(
+        const float3 radiusVector = SphericalDirection(
             sinAlpha, cosAlpha, sinPhi, cosPhi, -sampleSpaceTangent, -sampleSpaceBitangent, -sampleSpaceNormal);
         const float3 spherePositionSample = position + radius * radiusVector;
         const float3 sphereNormalSample = normalize(radiusVector);
@@ -192,28 +193,28 @@ struct SphereLight
         return lightSample;
     }
 
-    float getSurfaceArea()
+    float GetSurfaceArea()
     {
         return 4 * c_pi * square(radius);
     }
 
-    float getPower()
+    float GetPower()
     {
-        return getSurfaceArea() * c_pi * calcLuminance(radiance) * getShapingFluxFactor(shaping);
+        return GetSurfaceArea() * c_pi * CalcLuminance(radiance) * GetShapingFluxFactor(shaping);
     }
 
-    float getWeightForVolume(in const float3 volumeCenter, in const float volumeRadius)
+    float GetWeightForVolume(in const float3 volumeCenter, in const float volumeRadius)
     {
-        if (!testSphereIntersectionForShapedLight(position, radius, shaping, volumeCenter, volumeRadius))
+        if (!TestSphereIntersectionForShapedLight(position, radius, shaping, volumeCenter, volumeRadius))
             return 0.0;
 
         float distance = length(volumeCenter - position);
-        distance = getAverageDistanceToVolume(distance, volumeRadius);
+        distance = GetAverageDistanceToVolume(distance, volumeRadius);
 
         float sinHalfAngle = radius / distance;
         float solidAngle = 2 * c_pi * (1.0 - sqrt(1.0 - square(sinHalfAngle)));
 
-        return solidAngle * calcLuminance(radiance);
+        return solidAngle * CalcLuminance(radiance);
     }
 
     static SphereLight Create(in const PolymorphicLightInfo lightInfo)
@@ -222,8 +223,8 @@ struct SphereLight
 
         sphereLight.position = lightInfo.center;
         sphereLight.radius = f16tof32(lightInfo.scalars);
-        sphereLight.radiance = unpackLightColor(lightInfo);
-        sphereLight.shaping = unpackLightShaping(lightInfo);
+        sphereLight.radiance = UnpackLightColor(lightInfo);
+        sphereLight.shaping = UnpackLightShaping(lightInfo);
 
         return sphereLight;
     }
@@ -232,7 +233,7 @@ struct SphereLight
 // Point light is a sphere light with zero radius.
 // On the host side, they are both created from LightType_Point, depending on the radius.
 // The values returned from all interface methods of PointLight are the same as SphereLight
-// would produce in the limit when radius approaches zero, with some exceptions in calcSample.
+// would produce in the limit when radius approaches zero, with some exceptions in CalcSample.
 struct PointLight
 {
     float3 position;
@@ -241,7 +242,7 @@ struct PointLight
 
     // Interface methods
 
-    PolymorphicLightSample calcSample(in const float3 viewerPosition)
+    PolymorphicLightSample CalcSample(in const float3 viewerPosition)
     {
         const float3 lightVector = position - viewerPosition;
         
@@ -257,20 +258,20 @@ struct PointLight
         return lightSample;
     }
 
-    float getPower()
+    float GetPower()
     {
-        return 4.0 * c_pi * calcLuminance(flux) * getShapingFluxFactor(shaping);
+        return 4.0 * c_pi * CalcLuminance(flux) * GetShapingFluxFactor(shaping);
     }
 
-    float getWeightForVolume(in const float3 volumeCenter, in const float volumeRadius)
+    float GetWeightForVolume(in const float3 volumeCenter, in const float volumeRadius)
     {
-        if (!testSphereIntersectionForShapedLight(position, 0, shaping, volumeCenter, volumeRadius))
+        if (!TestSphereIntersectionForShapedLight(position, 0, shaping, volumeCenter, volumeRadius))
             return 0.0;
 
         float distance = length(volumeCenter - position);
-        distance = getAverageDistanceToVolume(distance, volumeRadius);
+        distance = GetAverageDistanceToVolume(distance, volumeRadius);
 
-        return calcLuminance(flux) / square(distance);
+        return CalcLuminance(flux) / square(distance);
     }
 
     static PointLight Create(in const PolymorphicLightInfo lightInfo)
@@ -278,8 +279,8 @@ struct PointLight
         PointLight pointLight;
 
         pointLight.position = lightInfo.center;
-        pointLight.flux = unpackLightColor(lightInfo);
-        pointLight.shaping = unpackLightShaping(lightInfo);
+        pointLight.flux = UnpackLightColor(lightInfo);
+        pointLight.shaping = UnpackLightShaping(lightInfo);
 
         return pointLight;
     }
@@ -295,13 +296,13 @@ struct CylinderLight
 
     // Interface methods
 
-    PolymorphicLightSample calcSample(in const float2 random, in const float3 viewerPosition)
+    PolymorphicLightSample CalcSample(in const float2 random, in const float3 viewerPosition)
     {
         // Construct a coordinate frame around the tangent vector
 
         float3 normal;
         float3 bitangent;
-        branchlessONB(tangent, normal, bitangent);
+        BranchlessONB(tangent, normal, bitangent);
 
         // Compute phi and z
 
@@ -323,11 +324,11 @@ struct CylinderLight
 
         // Calculate pdf
 
-        const float areaPdf = 1.0f / getSurfaceArea();
+        const float areaPdf = 1.0f / GetSurfaceArea();
         const float3 sampleVector = cylinderPositionSample - viewerPosition;
         const float sampleDistance = length(sampleVector);
         const float sampleCosTheta = dot(normalize(sampleVector), -cylinderNormalSample);
-        const float solidAnglePdf = pdfAtoW(areaPdf, sampleDistance, abs(sampleCosTheta));
+        const float solidAnglePdf = PdfAtoW(areaPdf, sampleDistance, abs(sampleCosTheta));
 
         // Create the light sample
 
@@ -350,27 +351,27 @@ struct CylinderLight
         return lightSample;
     }
 
-    float getSurfaceArea()
+    float GetSurfaceArea()
     {
         return 2.0f * c_pi * radius * axisLength;
     }
 
-    float getPower()
+    float GetPower()
     {
-        return getSurfaceArea() * c_pi * calcLuminance(radiance);
+        return GetSurfaceArea() * c_pi * CalcLuminance(radiance);
     }
 
-    float getWeightForVolume(in const float3 volumeCenter, in const float volumeRadius)
+    float GetWeightForVolume(in const float3 volumeCenter, in const float volumeRadius)
     {
         float distance = length(volumeCenter - position);
-        distance = getAverageDistanceToVolume(distance, volumeRadius);
+        distance = GetAverageDistanceToVolume(distance, volumeRadius);
 
         // Assume illumination by a quad that represents the cylinder when viewed from afar.
         float quadArea = 2.0 * radius * axisLength;
         float approximateSolidAngle = quadArea / square(distance);
         approximateSolidAngle = min(approximateSolidAngle, 2 * c_pi);
 
-        return approximateSolidAngle * calcLuminance(radiance);
+        return approximateSolidAngle * CalcLuminance(radiance);
     }
 
     static CylinderLight Create(in const PolymorphicLightInfo lightInfo)
@@ -379,7 +380,7 @@ struct CylinderLight
 
         cylinderLight.position = lightInfo.center;
         cylinderLight.radius = f16tof32(lightInfo.scalars);
-        cylinderLight.radiance = unpackLightColor(lightInfo);
+        cylinderLight.radiance = UnpackLightColor(lightInfo);
         cylinderLight.axisLength = f16tof32(lightInfo.scalars >> 16);
         cylinderLight.tangent = octToNdirUnorm32(lightInfo.direction1);
 
@@ -396,15 +397,15 @@ struct DiskLight
 
     // Interface methods
 
-    PolymorphicLightSample calcSample(in const float2 random, in const float3 viewerPosition)
+    PolymorphicLightSample CalcSample(in const float2 random, in const float3 viewerPosition)
     {
         float3 tangent;
         float3 bitangent;
-        branchlessONB(normal, tangent, bitangent);
+        BranchlessONB(normal, tangent, bitangent);
 
         // Compute a raw disk sample
 
-        const float2 rawDiskSample = sampleDisk(random) * radius;
+        const float2 rawDiskSample = SampleDisk(random) * radius;
 
         // Calculate sample position and normal on the disk
 
@@ -413,11 +414,11 @@ struct DiskLight
 
         // Calculate pdf
 
-        const float areaPdf = 1.0f / getSurfaceArea();
+        const float areaPdf = 1.0f / GetSurfaceArea();
         const float3 sampleVector = diskPositionSample - viewerPosition;
         const float sampleDistance = length(sampleVector);
         const float sampleCosTheta = dot(normalize(sampleVector), -diskNormalSample);
-        const float solidAnglePdf = pdfAtoW(areaPdf, sampleDistance, abs(sampleCosTheta));
+        const float solidAnglePdf = PdfAtoW(areaPdf, sampleDistance, abs(sampleCosTheta));
 
         // Create the light sample
 
@@ -440,29 +441,29 @@ struct DiskLight
         return lightSample;
     }
 
-    float getSurfaceArea()
+    float GetSurfaceArea()
     {
         return c_pi * square(radius);
     }
 
-    float getPower()
+    float GetPower()
     {
-        return getSurfaceArea() * c_pi * calcLuminance(radiance);// * getShapingFluxFactor(shaping);
+        return GetSurfaceArea() * c_pi * CalcLuminance(radiance);// * GetShapingFluxFactor(shaping);
     }
 
-    float getWeightForVolume(in const float3 volumeCenter, in const float volumeRadius)
+    float GetWeightForVolume(in const float3 volumeCenter, in const float volumeRadius)
     {
         float distanceToPlane = dot(volumeCenter - position, normal);
         if (distanceToPlane < -volumeRadius)
             return 0; // Cull - the entire volume is below the light's horizon
 
         float distance = length(volumeCenter - position);
-        distance = getAverageDistanceToVolume(distance, volumeRadius);
+        distance = GetAverageDistanceToVolume(distance, volumeRadius);
 
-        float approximateSolidAngle = getSurfaceArea() / square(distance);
+        float approximateSolidAngle = GetSurfaceArea() / square(distance);
         approximateSolidAngle = min(approximateSolidAngle, 2 * c_pi);
 
-        return approximateSolidAngle * calcLuminance(radiance);
+        return approximateSolidAngle * CalcLuminance(radiance);
     }
 
     static DiskLight Create(in const PolymorphicLightInfo lightInfo)
@@ -472,7 +473,7 @@ struct DiskLight
         diskLight.position = lightInfo.center;
         diskLight.radius = f16tof32(lightInfo.scalars);
         diskLight.normal = octToNdirUnorm32(lightInfo.direction1);
-        diskLight.radiance = unpackLightColor(lightInfo);
+        diskLight.radiance = UnpackLightColor(lightInfo);
 
         return diskLight;
     }
@@ -490,7 +491,7 @@ struct RectLight
 
     // Interface methods
 
-    PolymorphicLightSample calcSample(in const float2 random, in const float3 viewerPosition)
+    PolymorphicLightSample CalcSample(in const float2 random, in const float3 viewerPosition)
     {
         // Compute x and y
 
@@ -504,11 +505,11 @@ struct RectLight
 
         // Calculate pdf
 
-        const float areaPdf = 1.0f / getSurfaceArea();
+        const float areaPdf = 1.0f / GetSurfaceArea();
         const float3 sampleVector = rectanglePositionSample - viewerPosition;
         const float sampleDistance = length(sampleVector);
         const float sampleCosTheta = dot(normalize(sampleVector), -rectangleNormalSample);
-        const float solidAnglePdf = pdfAtoW(areaPdf, sampleDistance, abs(sampleCosTheta));
+        const float solidAnglePdf = PdfAtoW(areaPdf, sampleDistance, abs(sampleCosTheta));
 
         // Create the light sample
 
@@ -531,29 +532,29 @@ struct RectLight
         return lightSample;
     }
 
-    float getSurfaceArea()
+    float GetSurfaceArea()
     {
         return dimensions.x * dimensions.y;
     }
 
-    float getPower()
+    float GetPower()
     {
-        return getSurfaceArea() * c_pi * calcLuminance(radiance);
+        return GetSurfaceArea() * c_pi * CalcLuminance(radiance);
     }
 
-    float getWeightForVolume(in const float3 volumeCenter, in const float volumeRadius)
+    float GetWeightForVolume(in const float3 volumeCenter, in const float volumeRadius)
     {
         float distanceToPlane = dot(volumeCenter - position, normal);
         if (distanceToPlane < -volumeRadius)
             return 0; // Cull - the entire volume is below the light's horizon
 
         float distance = length(volumeCenter - position);
-        distance = getAverageDistanceToVolume(distance, volumeRadius);
+        distance = GetAverageDistanceToVolume(distance, volumeRadius);
 
-        float approximateSolidAngle = getSurfaceArea() / square(distance);
+        float approximateSolidAngle = GetSurfaceArea() / square(distance);
         approximateSolidAngle = min(approximateSolidAngle, 2 * c_pi);
 
-        return approximateSolidAngle * calcLuminance(radiance);
+        return approximateSolidAngle * CalcLuminance(radiance);
     }
 
     static RectLight Create(in const PolymorphicLightInfo lightInfo)
@@ -565,7 +566,7 @@ struct RectLight
         rectLight.dimensions.y = f16tof32(lightInfo.scalars >> 16);
         rectLight.dirx = octToNdirUnorm32(lightInfo.direction1);
         rectLight.diry = octToNdirUnorm32(lightInfo.direction2);
-        rectLight.radiance = unpackLightColor(lightInfo);
+        rectLight.radiance = UnpackLightColor(lightInfo);
 
         // Note: Precomputed to avoid recomputation when evaluating multiple quantities on the same light
         rectLight.normal = cross(rectLight.dirx, rectLight.diry);
@@ -585,12 +586,12 @@ struct DirectionalLight
 
     // Interface methods
 
-    PolymorphicLightSample calcSample(in const float2 random, in const float3 viewerPosition)
+    PolymorphicLightSample CalcSample(in const float2 random, in const float3 viewerPosition)
     {
-        const float2 diskSample = sampleDisk(random);
+        const float2 diskSample = SampleDisk(random);
 
         float3 tangent, bitangent;
-        branchlessONB(direction, tangent, bitangent);
+        BranchlessONB(direction, tangent, bitangent);
 
         const float3 distantDirectionSample = direction 
             + tangent * diskSample.x * sinHalfAngle
@@ -626,7 +627,7 @@ struct DirectionalLight
         float halfAngle = f16tof32(lightInfo.scalars);
         sincos(halfAngle, directionalLight.sinHalfAngle, directionalLight.cosHalfAngle);
         directionalLight.solidAngle = f16tof32(lightInfo.scalars >> 16);
-        directionalLight.radiance = unpackLightColor(lightInfo);
+        directionalLight.radiance = UnpackLightColor(lightInfo);
 
         return directionalLight;
     }
@@ -643,22 +644,22 @@ struct TriangleLight
 
     // Interface methods
 
-    PolymorphicLightSample calcSample(in const float2 random, in const float3 viewerPosition)
+    PolymorphicLightSample CalcSample(in const float2 random, in const float3 viewerPosition)
     {
         PolymorphicLightSample result;
 
-        float3 bary = sampleTriangle(random);
+        float3 bary = SampleTriangle(random);
         result.position = base + edge1 * bary.y + edge2 * bary.z;
         result.normal = normal;
 
-        result.solidAnglePdf = calcSolidAnglePdf(viewerPosition, result.position, result.normal);
+        result.solidAnglePdf = CalcSolidAnglePdf(viewerPosition, result.position, result.normal);
 
         result.radiance = radiance;
 
         return result;   
     }
 
-    float calcSolidAnglePdf(in const float3 viewerPosition,
+    float CalcSolidAnglePdf(in const float3 viewerPosition,
                             in const float3 lightSamplePosition,
                             in const float3 lightSampleNormal)
     {
@@ -669,15 +670,15 @@ struct TriangleLight
         const float areaPdf = 1.0 / surfaceArea;
         const float sampleCosTheta = saturate(dot(L, -lightSampleNormal));
 
-        return pdfAtoW(areaPdf, Ldist, sampleCosTheta);
+        return PdfAtoW(areaPdf, Ldist, sampleCosTheta);
     }
 
-    float getPower()
+    float GetPower()
     {
-        return surfaceArea * c_pi * calcLuminance(radiance);
+        return surfaceArea * c_pi * CalcLuminance(radiance);
     }
 
-    float getWeightForVolume(in const float3 volumeCenter, in const float volumeRadius)
+    float GetWeightForVolume(in const float3 volumeCenter, in const float volumeRadius)
     {
         float distanceToPlane = dot(volumeCenter - base, normal);
         if (distanceToPlane < -volumeRadius)
@@ -685,12 +686,12 @@ struct TriangleLight
 
         float3 barycenter = base + (edge1 + edge2) / 3.0;
         float distance = length(barycenter - volumeCenter);
-        distance = getAverageDistanceToVolume(distance, volumeRadius);
+        distance = GetAverageDistanceToVolume(distance, volumeRadius);
 
         float approximateSolidAngle = surfaceArea / square(distance);
         approximateSolidAngle = min(approximateSolidAngle, 2 * c_pi);
 
-        return approximateSolidAngle * calcLuminance(radiance);
+        return approximateSolidAngle * CalcLuminance(radiance);
     }
 
     // Helper methods
@@ -702,7 +703,7 @@ struct TriangleLight
         triLight.edge1 = octToNdirUnorm32(lightInfo.direction1) * f16tof32(lightInfo.scalars);
         triLight.edge2 = octToNdirUnorm32(lightInfo.direction2) * f16tof32(lightInfo.scalars >> 16);
         triLight.base = lightInfo.center - (triLight.edge1 + triLight.edge2) / 3.0;
-        triLight.radiance = unpackLightColor(lightInfo);
+        triLight.radiance = UnpackLightColor(lightInfo);
 
         float3 lightNormal = cross(triLight.edge1, triLight.edge2);
         float lightNormalLength = length(lightNormal);
@@ -725,7 +726,7 @@ struct TriangleLight
     {
         PolymorphicLightInfo lightInfo = (PolymorphicLightInfo)0;
 
-        packLightColor(radiance, lightInfo);
+        PackLightColor(radiance, lightInfo);
         lightInfo.center = base + (edge1 + edge2) / 3.0;
         lightInfo.direction1 = ndirToOctUnorm32(normalize(edge1));
         lightInfo.direction2 = ndirToOctUnorm32(normalize(edge2));
@@ -746,7 +747,7 @@ struct EnvironmentLight
 
     // Interface methods
 
-    PolymorphicLightSample calcSample(in const float2 random, in const float3 viewerPosition)
+    PolymorphicLightSample CalcSample(in const float2 random, in const float3 viewerPosition)
     {
         PolymorphicLightSample lightSample;
 
@@ -758,7 +759,7 @@ struct EnvironmentLight
             directionUV.x += rotation;
 
             float cosElevation;
-            sampleDirection = equirectUVToDirection(directionUV, cosElevation);
+            sampleDirection = EquirectUVToDirection(directionUV, cosElevation);
 
             // Inverse of the solid angle of one texel of the environment map using the equirectangular projection.
             lightSample.solidAnglePdf = (textureSize.x * textureSize.y) / (2 * c_pi * c_pi * cosElevation);
@@ -766,8 +767,8 @@ struct EnvironmentLight
         }
         else
         {
-            sampleDirection = sampleSphere(random, lightSample.solidAnglePdf);
-            textureUV = directionToEquirectUV(sampleDirection);
+            sampleDirection = SampleSphere(random, lightSample.solidAnglePdf);
+            textureUV = DirectionToEquirectUV(sampleDirection);
             textureUV.x -= rotation;
         }
 
@@ -800,7 +801,7 @@ struct EnvironmentLight
         envLight.textureIndex = int(lightInfo.direction1);
         envLight.rotation = f16tof32(lightInfo.scalars);
         envLight.importanceSampled = ((lightInfo.scalars >> 16) != 0);
-        envLight.radianceScale = unpackLightColor(lightInfo);
+        envLight.radianceScale = UnpackLightColor(lightInfo);
         envLight.textureSize.x = lightInfo.direction2 & 0xffff;
         envLight.textureSize.y = lightInfo.direction2 >> 16;
 
@@ -810,64 +811,64 @@ struct EnvironmentLight
 
 struct PolymorphicLight
 {
-    static PolymorphicLightSample calcSample(
+    static PolymorphicLightSample CalcSample(
         in const PolymorphicLightInfo lightInfo, 
         in const float2 random, 
         in const float3 viewerPosition)
     {
         PolymorphicLightSample lightSample = (PolymorphicLightSample)0;
 
-        switch (getLightType(lightInfo))
+        switch (GetLightType(lightInfo))
         {
-        case PolymorphicLightType::kSphere:      lightSample = SphereLight::Create(lightInfo).calcSample(random, viewerPosition); break;
-        case PolymorphicLightType::kPoint:       lightSample = PointLight::Create(lightInfo).calcSample(viewerPosition); break;
-        case PolymorphicLightType::kCylinder:    lightSample = CylinderLight::Create(lightInfo).calcSample(random, viewerPosition); break;
-        case PolymorphicLightType::kDisk:        lightSample = DiskLight::Create(lightInfo).calcSample(random, viewerPosition); break;
-        case PolymorphicLightType::kRect:        lightSample = RectLight::Create(lightInfo).calcSample(random, viewerPosition); break;
-        case PolymorphicLightType::kTriangle:    lightSample = TriangleLight::Create(lightInfo).calcSample(random, viewerPosition); break;
-        case PolymorphicLightType::kDirectional: lightSample = DirectionalLight::Create(lightInfo).calcSample(random, viewerPosition); break;
-        case PolymorphicLightType::kEnvironment: lightSample = EnvironmentLight::Create(lightInfo).calcSample(random, viewerPosition); break;
+        case PolymorphicLightType::kSphere:      lightSample = SphereLight::Create(lightInfo).CalcSample(random, viewerPosition); break;
+        case PolymorphicLightType::kPoint:       lightSample = PointLight::Create(lightInfo).CalcSample(viewerPosition); break;
+        case PolymorphicLightType::kCylinder:    lightSample = CylinderLight::Create(lightInfo).CalcSample(random, viewerPosition); break;
+        case PolymorphicLightType::kDisk:        lightSample = DiskLight::Create(lightInfo).CalcSample(random, viewerPosition); break;
+        case PolymorphicLightType::kRect:        lightSample = RectLight::Create(lightInfo).CalcSample(random, viewerPosition); break;
+        case PolymorphicLightType::kTriangle:    lightSample = TriangleLight::Create(lightInfo).CalcSample(random, viewerPosition); break;
+        case PolymorphicLightType::kDirectional: lightSample = DirectionalLight::Create(lightInfo).CalcSample(random, viewerPosition); break;
+        case PolymorphicLightType::kEnvironment: lightSample = EnvironmentLight::Create(lightInfo).CalcSample(random, viewerPosition); break;
         }
 
         if (lightSample.solidAnglePdf > 0)
         {
-            lightSample.radiance *= evaluateLightShaping(unpackLightShaping(lightInfo),
+            lightSample.radiance *= EvaluateLightShaping(UnpackLightShaping(lightInfo),
                 viewerPosition, lightSample.position);
         }
 
         return lightSample;
     }
 
-    static float getPower(
+    static float GetPower(
         in const PolymorphicLightInfo lightInfo)
     {
-        switch (getLightType(lightInfo))
+        switch (GetLightType(lightInfo))
         {
-        case PolymorphicLightType::kSphere:      return SphereLight::Create(lightInfo).getPower();
-        case PolymorphicLightType::kPoint:       return PointLight::Create(lightInfo).getPower();
-        case PolymorphicLightType::kCylinder:    return CylinderLight::Create(lightInfo).getPower();
-        case PolymorphicLightType::kDisk:        return DiskLight::Create(lightInfo).getPower();
-        case PolymorphicLightType::kRect:        return RectLight::Create(lightInfo).getPower();
-        case PolymorphicLightType::kTriangle:    return TriangleLight::Create(lightInfo).getPower();
+        case PolymorphicLightType::kSphere:      return SphereLight::Create(lightInfo).GetPower();
+        case PolymorphicLightType::kPoint:       return PointLight::Create(lightInfo).GetPower();
+        case PolymorphicLightType::kCylinder:    return CylinderLight::Create(lightInfo).GetPower();
+        case PolymorphicLightType::kDisk:        return DiskLight::Create(lightInfo).GetPower();
+        case PolymorphicLightType::kRect:        return RectLight::Create(lightInfo).GetPower();
+        case PolymorphicLightType::kTriangle:    return TriangleLight::Create(lightInfo).GetPower();
         case PolymorphicLightType::kDirectional: return 0; // infinite lights don't go into the local light PDF map
         case PolymorphicLightType::kEnvironment: return 0;
         default: return 0;
         }
     }
 
-    static float getWeightForVolume(
+    static float GetWeightForVolume(
         in const PolymorphicLightInfo lightInfo, 
         in const float3 volumeCenter,
         in const float volumeRadius)
     {
-        switch (getLightType(lightInfo))
+        switch (GetLightType(lightInfo))
         {
-        case PolymorphicLightType::kSphere:      return SphereLight::Create(lightInfo).getWeightForVolume(volumeCenter, volumeRadius);
-        case PolymorphicLightType::kPoint:       return PointLight::Create(lightInfo).getWeightForVolume(volumeCenter, volumeRadius);
-        case PolymorphicLightType::kCylinder:    return CylinderLight::Create(lightInfo).getWeightForVolume(volumeCenter, volumeRadius);
-        case PolymorphicLightType::kDisk:        return DiskLight::Create(lightInfo).getWeightForVolume(volumeCenter, volumeRadius);
-        case PolymorphicLightType::kRect:        return RectLight::Create(lightInfo).getWeightForVolume(volumeCenter, volumeRadius);
-        case PolymorphicLightType::kTriangle:    return TriangleLight::Create(lightInfo).getWeightForVolume(volumeCenter, volumeRadius);
+        case PolymorphicLightType::kSphere:      return SphereLight::Create(lightInfo).GetWeightForVolume(volumeCenter, volumeRadius);
+        case PolymorphicLightType::kPoint:       return PointLight::Create(lightInfo).GetWeightForVolume(volumeCenter, volumeRadius);
+        case PolymorphicLightType::kCylinder:    return CylinderLight::Create(lightInfo).GetWeightForVolume(volumeCenter, volumeRadius);
+        case PolymorphicLightType::kDisk:        return DiskLight::Create(lightInfo).GetWeightForVolume(volumeCenter, volumeRadius);
+        case PolymorphicLightType::kRect:        return RectLight::Create(lightInfo).GetWeightForVolume(volumeCenter, volumeRadius);
+        case PolymorphicLightType::kTriangle:    return TriangleLight::Create(lightInfo).GetWeightForVolume(volumeCenter, volumeRadius);
         case PolymorphicLightType::kDirectional: return 0; // infinite lights do not affect volume sampling
         case PolymorphicLightType::kEnvironment: return 0;
         default: return 0;

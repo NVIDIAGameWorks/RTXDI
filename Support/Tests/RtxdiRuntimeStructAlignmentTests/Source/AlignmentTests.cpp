@@ -28,6 +28,7 @@ static_assert(sizeof(RTXDI_RISBufferSegmentParameters) % 16 == 0);
 
 static_assert(sizeof(RTXDI_PTBufferIndices) % 16 == 0);
 static_assert(sizeof(RTXDI_PTInitialSamplingParameters) % 16 == 0);
+static_assert(sizeof(RTXDI_PTDecorrelationParameters) % 16 == 0);
 static_assert(sizeof(RTXDI_PTHybridShiftPerFrameParameters) % 16 == 0);
 static_assert(sizeof(RTXDI_PTReconnectionParameters) % 16 == 0);
 static_assert(sizeof(RTXDI_PTTemporalResamplingParameters) % 16 == 0);

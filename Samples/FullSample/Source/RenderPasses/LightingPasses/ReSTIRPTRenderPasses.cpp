@@ -41,10 +41,11 @@ void ReSTIRPTRenderPasses::LoadShaders(nvrhi::DeviceHandle device, donut::engine
 {
     m_PTGenerateInitialSamplesPass.Init(device,shaderFactory, "app/LightingPasses/PT/GenerateInitialSamples.hlsl", {}, useRayQuery, RTXDI_SCREEN_SPACE_GROUP_SIZE, bindingLayout, nullptr, bindlessLayout, RTXDI_NVAPI_SHADER_EXT_SLOT);
     m_PTTemporalResamplingPass.Init(device, shaderFactory, "app/LightingPasses/PT/TemporalResampling.hlsl", {}, useRayQuery, RTXDI_SCREEN_SPACE_GROUP_SIZE, bindingLayout, nullptr, bindlessLayout, RTXDI_NVAPI_SHADER_EXT_SLOT);
-    m_PTFillSampleIDPass.Init(device, shaderFactory, "app/LightingPasses/PT/FillSampleID.hlsl", {}, useRayQuery, RTXDI_SCREEN_SPACE_GROUP_SIZE, bindingLayout, nullptr, bindlessLayout, RTXDI_NVAPI_SHADER_EXT_SLOT);
     m_PTComputeDuplicationMapPass.Init(device, shaderFactory, "app/LightingPasses/PT/ComputeDuplicationMap.hlsl", {}, true, 16, bindingLayout, nullptr, bindlessLayout, RTXDI_NVAPI_SHADER_EXT_SLOT); // "useRayQuery == true" makes sure that this shader is compiled as a compute shader, as a raygen shader version is unsupported for this shader
+    m_PTComputeSmoothedDuplicationMapPass.Init(device, shaderFactory, "app/LightingPasses/PT/ComputeSmoothedDuplicationMap.hlsl", {}, useRayQuery, 16, bindingLayout, nullptr, bindlessLayout, RTXDI_NVAPI_SHADER_EXT_SLOT);
+    m_PTSpatialNeighborSelectionPass.Init(device, shaderFactory, "app/LightingPasses/PT/SpatialNeighborSelection.hlsl", {}, true, RTXDI_SCREEN_SPACE_GROUP_SIZE, bindingLayout, nullptr, bindlessLayout, RTXDI_NVAPI_SHADER_EXT_SLOT);
     m_PTSpatialResamplingPass.Init(device, shaderFactory, "app/LightingPasses/PT/SpatialResampling.hlsl", {}, useRayQuery, RTXDI_SCREEN_SPACE_GROUP_SIZE, bindingLayout, nullptr, bindlessLayout, RTXDI_NVAPI_SHADER_EXT_SLOT);
-    m_PTFinalShadingPass.Init(device, shaderFactory, "app/LightingPasses/PT/FinalShading.hlsl", {}, false, RTXDI_SCREEN_SPACE_GROUP_SIZE, bindingLayout, nullptr, bindlessLayout, RTXDI_NVAPI_SHADER_EXT_SLOT);
+    m_PTFinalShadingPass.Init(device, shaderFactory, "app/LightingPasses/PT/FinalShading.hlsl", {}, false /*raygen*/, RTXDI_SCREEN_SPACE_GROUP_SIZE, bindingLayout, nullptr, bindlessLayout, RTXDI_NVAPI_SHADER_EXT_SLOT);
 }
 
 void ReSTIRPTRenderPasses::SetBindingSet(nvrhi::IBindingSet* bindingSet)
@@ -83,12 +84,26 @@ static void ExecuteRayTracingPass(nvrhi::ICommandList* commandList,
 void ReSTIRPTRenderPasses::Render(nvrhi::ICommandList* commandList,
     const donut::engine::IView& view,
     rtxdi::ReSTIRPTContext& context,
-    nvrhi::BufferHandle ptReservoirBuffer)
+    nvrhi::BufferHandle ptReservoirBuffer,
+    nvrhi::BufferHandle spatialNeighborSelectionBuffer)
 {
     dm::int2 dispatchSize = { view.GetViewExtent().width(), view.GetViewExtent().height() };
 
+    bool spatialHeuristicMode = context.GetSpatialResamplingParameters().enableSpatialHeuristicMode != 0;
+    bool hasSpatial = (context.GetResamplingMode() == rtxdi::ReSTIRPT_ResamplingMode::Spatial ||
+                       context.GetResamplingMode() == rtxdi::ReSTIRPT_ResamplingMode::TemporalAndSpatial);
+
+    bool hasTemporal = (context.GetResamplingMode() == rtxdi::ReSTIRPT_ResamplingMode::Temporal ||
+                       context.GetResamplingMode() == rtxdi::ReSTIRPT_ResamplingMode::TemporalAndSpatial);
+
     nvrhi::utils::BufferUavBarrier(commandList, ptReservoirBuffer);
     ExecuteRayTracingPass(commandList, m_PTGenerateInitialSamplesPass, m_enableRayCounts, "PTGenerateInitialSamples", dispatchSize, *m_profiler, ProfilerSection::PTGenerateInitialSamples, m_descriptorTable, m_bindingSet, nullptr);
+
+    if (spatialHeuristicMode && hasSpatial)
+    {
+        ExecuteRayTracingPass(commandList, m_PTSpatialNeighborSelectionPass, false, "PTSpatialNeighborSelection", dispatchSize, *m_profiler, ProfilerSection::PTSpatialNeighborSelection, m_descriptorTable, m_bindingSet, nullptr);
+        nvrhi::utils::BufferUavBarrier(commandList, spatialNeighborSelectionBuffer);
+    }
 
     switch (context.GetResamplingMode())
     {
@@ -107,10 +122,22 @@ void ReSTIRPTRenderPasses::Render(nvrhi::ICommandList* commandList,
         break;
     }
 
-    if (context.GetTemporalResamplingParameters().duplicationBasedHistoryReduction)
+    // Temporally-smoothed duplication map feeds the FinalShading decorrelation factor,
+    // but only the Stagnancy-based mode actually consumes it. Skip the pass otherwise.
+    const auto decorrelationParams = context.GetDecorrelationParameters();
+    const bool needsSmoothedDupmap =
+        decorrelationParams.decorrelationMode == RTXDI_PTDecorrelationMode::Stagnancy &&
+        decorrelationParams.decorrelationFactor > 0.0f && hasTemporal;
+
+    if (rtxdi::NeedsDuplicationMap(context.GetTemporalResamplingParameters(), decorrelationParams) && hasTemporal)
     {
-        ExecuteRayTracingPass(commandList, m_PTFillSampleIDPass, m_enableRayCounts, "PTFillSampleID", dispatchSize, *m_profiler, ProfilerSection::PTFinalShading, m_descriptorTable, m_bindingSet, nullptr);
-        ExecuteRayTracingPass(commandList, m_PTComputeDuplicationMapPass, m_enableRayCounts, "PTComputeDuplicationMap", dispatchSize, *m_profiler, ProfilerSection::PTFinalShading, m_descriptorTable, m_bindingSet, nullptr);
+        ExecuteRayTracingPass(commandList, m_PTComputeDuplicationMapPass, m_enableRayCounts, "PTComputeDuplicationMap", dispatchSize, *m_profiler, ProfilerSection::PTComputeDuplicationMap, m_descriptorTable, m_bindingSet, nullptr);
+    }
+
+    if (needsSmoothedDupmap)
+    {
+        nvrhi::utils::BufferUavBarrier(commandList, ptReservoirBuffer);
+        ExecuteRayTracingPass(commandList, m_PTComputeSmoothedDuplicationMapPass, m_enableRayCounts, "PTComputeSmoothedDuplicationMap", dispatchSize, *m_profiler, ProfilerSection::PTComputeSmoothedDuplicationMap, m_descriptorTable, m_bindingSet, nullptr);
     }
 
     nvrhi::utils::BufferUavBarrier(commandList, ptReservoirBuffer);

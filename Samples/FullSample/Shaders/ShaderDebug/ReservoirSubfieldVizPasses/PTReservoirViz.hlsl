@@ -30,9 +30,9 @@ RWTexture2D<float4> t_Output : register(u1);
 #include "Rtxdi/PT/Reservoir.hlsli"
 
 [numthreads(16, 16, 1)]
-void main(uint2 GlobalIndex : SV_DispatchThreadID)
+void main(uint2 globalIndex : SV_DispatchThreadID)
 {
-    uint2 pixelPosition = RTXDI_ReservoirPosToPixelPos(GlobalIndex, g_Const.runtimeParams.activeCheckerboardField);
+    uint2 pixelPosition = RTXDI_ReservoirPosToPixelPos(globalIndex, g_Const.runtimeParams.activeCheckerboardField);
 
     if (any(pixelPosition > int2(g_Const.view.viewportSize)))
         return;
@@ -43,43 +43,43 @@ void main(uint2 GlobalIndex : SV_DispatchThreadID)
     switch(g_Const.ptReservoirField)
     {
     case PT_RESERVOIR_FIELD_TRANSLATED_WORLD_POSITION:
-        t_Output[pixelPosition] = float4(reservoir.TranslatedWorldPosition, 1.0);
+        t_Output[pixelPosition] = float4(reservoir.translatedWorldPosition, 1.0);
     break;
     case PT_RESERVOIR_FIELD_WEIGHT_SUM:
-        t_Output[pixelPosition] = reservoir.WeightSum;
+        t_Output[pixelPosition] = reservoir.weightSum;
     break;
     case PT_RESERVOIR_FIELD_WORLD_NORMAL:
-        t_Output[pixelPosition] = float4(reservoir.WorldNormal, 1);
+        t_Output[pixelPosition] = float4(reservoir.worldNormal, 1);
     break;
     case PT_RESERVOIR_FIELD_M:
-        t_Output[pixelPosition] = rgLerp(reservoir.M / g_ConstRendering.restirPT.temporalResampling.maxHistoryLength);
+        t_Output[pixelPosition] = RgLerp(reservoir.M / g_ConstRendering.restirPT.temporalResampling.maxHistoryLength);
     break;
 	case PT_RESERVOIR_FIELD_RADIANCE:
-		t_Output[pixelPosition] = float4(reservoir.Radiance, 1);
+		t_Output[pixelPosition] = float4(reservoir.radiance, 1);
 	break;
     case PT_RESERVOIR_FIELD_AGE:
-        t_Output[pixelPosition] = rgLerp(reservoir.Age / (float)RTXDI_PTRESERVOIR_AGE_MAX);
+        t_Output[pixelPosition] = RgLerp(reservoir.age / (float)RTXDI_PTRESERVOIR_AGE_MAX);
     break;
     case PT_RESERVOIR_FIELD_RC_WI_PDF:
-        t_Output[pixelPosition] = reservoir.RcWiPdf;
+        t_Output[pixelPosition] = reservoir.rcWiPdf;
     break;
     case PT_RESERVOIR_FIELD_PARTIAL_JACOBIAN:
-        t_Output[pixelPosition] = reservoir.PartialJacobian;
+        t_Output[pixelPosition] = reservoir.partialJacobian;
     break;
     case PT_RESERVOIR_FIELD_RC_VERTEX_LENGTH:
-        t_Output[pixelPosition] = reservoir.RcVertexLength;
+        t_Output[pixelPosition] = reservoir.rcVertexLength;
     break;
     case PT_RESERVOIR_FIELD_PATH_LENGTH:
-        t_Output[pixelPosition] = reservoir.PathLength;
+        t_Output[pixelPosition] = reservoir.pathLength;
     break;
     case PT_RESERVOIR_FIELD_RANDOM_SEED:
-        t_Output[pixelPosition] = reservoir.RandomSeed;
+        t_Output[pixelPosition] = reservoir.randomSeed;
     break;
     case PT_RESERVOIR_FIELD_RANDOM_INDEX:
-        t_Output[pixelPosition] = reservoir.RandomIndex;
+        t_Output[pixelPosition] = reservoir.randomIndex;
     break;
     case PT_RESERVOIR_FIELD_TARGET_FUNCTION:
-        t_Output[pixelPosition] = float4(reservoir.TargetFunction, 1.0);
+        t_Output[pixelPosition] = float4(reservoir.targetFunction, 1.0);
     break;
     }
 }

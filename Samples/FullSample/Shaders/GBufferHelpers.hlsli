@@ -13,7 +13,7 @@
  #ifndef GBUFFER_HELPERS_HLSLI
  #define GBUFFER_HELPERS_HLSLI
 
-RayDesc setupPrimaryRay(uint2 pixelPosition, PlanarViewConstants view)
+RayDesc SetupPrimaryRay(uint2 pixelPosition, PlanarViewConstants view)
 {
     float2 uv = (float2(pixelPosition) + 0.5) * view.viewportSizeInv;
     float4 clipPos = float4(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0, (1.0 / 256.0), 1);
@@ -28,7 +28,7 @@ RayDesc setupPrimaryRay(uint2 pixelPosition, PlanarViewConstants view)
     return ray;
 }
 
-float3 getMotionVector(
+float3 GetMotionVector(
     PlanarViewConstants view,
     PlanarViewConstants viewPrev,
     InstanceData instance,
@@ -58,7 +58,7 @@ float3 getMotionVector(
     return motion;
 }
 
-float2 getEnvironmentMotionVector(
+float2 GetEnvironmentMotionVector(
     PlanarViewConstants view,
     PlanarViewConstants viewPrev,
     float2 windowPos)
@@ -79,7 +79,7 @@ float2 getEnvironmentMotionVector(
     return motion;
 }
 
-float3 getPreviousWorldPos(
+float3 GetPreviousWorldPos(
     PlanarViewConstants viewPrev,
     int2 windowPos,
     float viewDepth,
@@ -98,7 +98,7 @@ float3 getPreviousWorldPos(
     return mul(viewPos, viewPrev.matViewToWorld).xyz;
 }
 
-float3 viewDepthToWorldPos(
+float3 ViewDepthToWorldPos(
     PlanarViewConstants view,
     int2 pixelPosition,
     float viewDepth)
@@ -116,21 +116,21 @@ float3 viewDepthToWorldPos(
 // In case of dynamic resolution, there is a difference that needs to be corrected...
 //
 // The rendered motion vectors are computed as:
-//     (previousUV - currentUV) * currentViewportSize
+//     (prevUV - currentUV) * currentViewportSize
 //
 // The motion vectors necessary for pixel reprojection are:
-//     (previousUV * previousViewportSize - currentUV * currentViewportSize)
+//     (prevUV * prevViewportSize - currentUV * currentViewportSize)
 //
-float3 convertMotionVectorToPixelSpace(
+float3 ConvertMotionVectorToPixelSpace(
     PlanarViewConstants view,
     PlanarViewConstants viewPrev,
     int2 pixelPosition,
     float3 motionVector)
 {
-    float2 curerntPixelCenter = float2(pixelPosition.xy) + 0.5;
-    float2 previousPosition = curerntPixelCenter + motionVector.xy;
-    previousPosition *= viewPrev.viewportSize * view.viewportSizeInv;
-    motionVector.xy = previousPosition - curerntPixelCenter;
+    float2 currentPixelCenter = float2(pixelPosition.xy) + 0.5;
+    float2 prevPosition = currentPixelCenter + motionVector.xy;
+    prevPosition *= viewPrev.viewportSize * view.viewportSizeInv;
+    motionVector.xy = prevPosition - currentPixelCenter;
     return motionVector;
 }
 

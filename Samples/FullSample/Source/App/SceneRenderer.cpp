@@ -46,6 +46,7 @@
 using namespace donut::math;
 #include "ShaderDebug/DebugVizPasses.h"
 #include "RenderPasses/DenoisingPasses/ConfidencePass.h"
+#include "RenderPasses/DenoisingPasses/DLSSRRInputFormattingPass.h"
 #include "RenderPasses/DenoisingPasses/FilterGradientsPass.h"
 #include "RenderPasses/AccumulationPass.h"
 #include "RenderPasses/CompositingPass.h"
@@ -205,6 +206,7 @@ bool SceneRenderer::Init()
     m_ui.resources->profiler = m_profiler;
 
     m_filterGradientsPass = std::make_unique<FilterGradientsPass>(GetDevice(), m_shaderFactory);
+    m_DLSSRRInputFormattingPass = std::make_unique<DLSSRRInputFormattingPass>(GetDevice(), m_shaderFactory);
     m_confidencePass = std::make_unique<ConfidencePass>(GetDevice(), m_shaderFactory);
     m_compositingPass = std::make_unique<CompositingPass>(GetDevice(), m_shaderFactory, m_CommonPasses, m_scene, m_bindlessLayout);
     m_accumulationPass = std::make_unique<AccumulationPass>(GetDevice(), m_shaderFactory);
@@ -222,7 +224,8 @@ bool SceneRenderer::Init()
         GetDevice(), m_shaderFactory, shaderDebugPrintBuffersizeInBytes, numFramesInFlight);
 
 #if DONUT_WITH_DLSS
-    m_dlss = donut::render::DLSS::Create(GetDevice(), *m_shaderFactory, app::GetDirectoryWithExecutable().generic_string());
+    m_dlssSR = donut::render::DLSS::Create(GetDevice(), *m_shaderFactory, app::GetDirectoryWithExecutable().generic_string());
+    m_dlssRR = donut::render::DLSS::Create(GetDevice(), *m_shaderFactory, app::GetDirectoryWithExecutable().generic_string());
 #endif
 
     LoadShaders();
@@ -335,6 +338,7 @@ void SceneRenderer::SceneLoaded()
 void SceneRenderer::LoadShaders()
 {
     m_filterGradientsPass->CreatePipeline();
+    m_DLSSRRInputFormattingPass->CreatePipeline();
     m_confidencePass->CreatePipeline();
     m_compositingPass->CreatePipeline();
     m_accumulationPass->CreatePipeline();
@@ -716,6 +720,7 @@ void SceneRenderer::SetupRenderPasses(uint32_t renderWidth, uint32_t renderHeigh
     {
         rtxdi::ImportanceSamplingContext_StaticParameters isStaticParams;
         isStaticParams.CheckerboardSamplingMode = m_ui.restirDIStaticParams.CheckerboardSamplingMode;
+        isStaticParams.NeighborOffsetCount = m_ui.restirDIStaticParams.NeighborOffsetCount;
         isStaticParams.renderHeight = renderHeight;
         isStaticParams.renderWidth = renderWidth;
         isStaticParams.regirStaticParams = m_ui.regirStaticParams;
@@ -738,6 +743,8 @@ void SceneRenderer::SetupRenderPasses(uint32_t renderWidth, uint32_t renderHeigh
         m_glassPass->CreateBindingSet(m_scene->GetTopLevelAS(), m_scene->GetPrevTopLevelAS(), *m_renderTargets);
 
         m_filterGradientsPass->CreateBindingSet(*m_renderTargets);
+
+        m_DLSSRRInputFormattingPass->CreateBindingSet(*m_renderTargets);
 
         m_confidencePass->CreateBindingSet(*m_renderTargets);
 
@@ -864,7 +871,7 @@ void SceneRenderer::SetupRenderPasses(uint32_t renderWidth, uint32_t renderHeigh
 #if WITH_NRD
     if (!m_nrd)
     {
-        m_nrd = std::make_unique<NrdIntegration>(GetDevice(), m_ui.denoisingMethod);
+        m_nrd = std::make_unique<NrdIntegration>(GetDevice(), m_ui.nrdDenoisingMethod);
         m_nrd->Initialize(m_renderTargets->Size.x, m_renderTargets->Size.y);
     }
 #endif
@@ -872,6 +879,16 @@ void SceneRenderer::SetupRenderPasses(uint32_t renderWidth, uint32_t renderHeigh
     if(!m_dlssInitAttempted)
     {
         InitDLSS();
+    }
+#else
+    // DLSS (and therefore DLSS-RR) isn't compiled in, so the default DLSS-RR denoiser can't be used:
+    // fall back to NRD and switch the PT defaults to the NRD profile (once - the condition is false
+    // afterwards since the UI can't reselect DLSS-RR without support).
+    if (m_ui.denoiserMode == DenoiserMode::DLSS_RR)
+    {
+        m_ui.denoiserMode = DenoiserMode::NRD_REBLUR;
+        if (m_ui.autoApplyDLSSRRPreset)
+            m_ui.ApplyNonDLSSRRPreset();
     }
 #endif
 }
@@ -972,7 +989,15 @@ void SceneRenderer::UpdateReSTIRPTContextFromUI()
     auto& restirPTContext = m_isContext->GetReSTIRPTContext();
     restirPTContext.SetResamplingMode(m_ui.restirPT.resamplingMode);
     restirPTContext.SetInitialSamplingParameters(m_ui.restirPT.initialSampling);
-    restirPTContext.SetTemporalResamplingParameters(m_ui.restirPT.temporalResampling);
+    restirPTContext.SetDecorrelationParameters(m_ui.restirPT.decorrelation);
+
+    // The reservoir shares a single "age" field for both age-based rejection and the duplication
+    // map's temporal (stagnancy) channel. Whenever the duplication map is generated, age is
+    // repurposed as stagnancy, so age-based rejection must be disabled to keep the two consistent.
+    RTXDI_PTTemporalResamplingParameters temporalParams = m_ui.restirPT.temporalResampling;
+    if (rtxdi::NeedsDuplicationMap(temporalParams, m_ui.restirPT.decorrelation))
+        temporalParams.enableAgeBasedRejection = false;
+    restirPTContext.SetTemporalResamplingParameters(temporalParams);
     restirPTContext.SetHybridShiftParameters(m_ui.restirPT.hybridShift);
     restirPTContext.SetReconnectionParameters(m_ui.restirPT.reconnection);
     restirPTContext.SetBoilingFilterParameters(m_ui.restirPT.boilingFilter);
@@ -985,7 +1010,7 @@ bool SceneRenderer::IsLocalLightPowerRISEnabled()
     {
         RTXDI_DIInitialSamplingParameters indirectReSTIRDISamplingParams = m_ui.lightingSettings.brdfptParams.secondarySurfaceReSTIRDIParams.initialSamplingParams;
         bool enabled = (indirectReSTIRDISamplingParams.localLightSamplingMode == ReSTIRDI_LocalLightSamplingMode::Power_RIS) ||
-            (indirectReSTIRDISamplingParams.localLightSamplingMode == ReSTIRDI_LocalLightSamplingMode::ReGIR_RIS && m_isContext->GetReGIRContext().IsLocalLightPowerRISEnable());
+            (indirectReSTIRDISamplingParams.localLightSamplingMode == ReSTIRDI_LocalLightSamplingMode::ReGIR_RIS && m_isContext->GetReGIRContext().IsLocalLightPowerRISEnabled());
         if (enabled)
             return true;
     }
@@ -993,7 +1018,7 @@ bool SceneRenderer::IsLocalLightPowerRISEnabled()
     {
         RTXDI_DIInitialSamplingParameters ptNeeISParams = m_ui.lightingSettings.ptParameters.nee.initialSamplingParams;
         bool enabled = (ptNeeISParams.localLightSamplingMode == ReSTIRDI_LocalLightSamplingMode::Power_RIS) ||
-            (ptNeeISParams.localLightSamplingMode == ReSTIRDI_LocalLightSamplingMode::ReGIR_RIS && m_isContext->GetReGIRContext().IsLocalLightPowerRISEnable());
+            (ptNeeISParams.localLightSamplingMode == ReSTIRDI_LocalLightSamplingMode::ReGIR_RIS && m_isContext->GetReGIRContext().IsLocalLightPowerRISEnabled());
         if (enabled)
             return true;
     }
@@ -1012,7 +1037,7 @@ void SceneRenderer::RenderScene(nvrhi::IFramebuffer* framebuffer)
     EnforceFpsLimit();
 
 #if WITH_NRD
-    if (m_nrd && m_nrd->GetDenoiser() != m_ui.denoisingMethod)
+    if (m_nrd && m_nrd->GetDenoiser() != m_ui.nrdDenoisingMethod)
         m_nrd = nullptr; // need to create a new one
 #endif
 
@@ -1048,13 +1073,16 @@ void SceneRenderer::RenderScene(nvrhi::IFramebuffer* framebuffer)
     m_shaderDebugPrintPass->Enable(m_ui.debugOutputSettings.enableShaderDebugPrint && m_shouldRunShaderDebugPrint);
     m_shouldRunShaderDebugPrint = m_ui.debugOutputSettings.shaderDebugPrintOnClickOrAlways ? false : true;
 #if DONUT_WITH_DLSS
-    if (!m_ui.dlssAvailable && m_ui.aaMode == AntiAliasingMode::DLSS)
+    if (!m_ui.dlssAvailable && m_ui.aaMode == AntiAliasingMode::DLSS_SR)
         m_ui.aaMode = AntiAliasingMode::TAA;
+    // fall back to NRD if DLSS-RR isn't supported.
+    if (!m_ui.dlssRRSupported && m_ui.denoiserMode == DenoiserMode::DLSS_RR)
+        m_ui.denoiserMode = DenoiserMode::NRD_REBLUR;
 #endif
 
     AdvanceFrameForRenderPasses();
 
-    bool cameraIsStatic = m_previousViewValid && m_view.GetViewMatrix() == m_viewPrevious.GetViewMatrix();
+    bool cameraIsStatic = m_prevViewValid && m_view.GetViewMatrix() == m_viewPrevious.GetViewMatrix();
     ProcessAccumulationModeLogic(cameraIsStatic);
 
     float accumulationWeight = 1.f / (float)m_ui.numAccumulatedFrames;
@@ -1065,12 +1093,13 @@ void SceneRenderer::RenderScene(nvrhi::IFramebuffer* framebuffer)
     UpdateEnvironmentLightAndSunLight();
 
 #if WITH_NRD
-    if (!(m_nrd && m_nrd->IsAvailable()))
-        m_ui.enableDenoiser = false;
+    bool nrdAvailable = m_nrd && m_nrd->IsAvailable();
 
-    uint32_t denoiserMode = (m_ui.enableDenoiser)
-        ? (m_ui.denoisingMethod == nrd::Denoiser::RELAX_DIFFUSE_SPECULAR) ? DENOISER_MODE_RELAX : DENOISER_MODE_REBLUR
-        : DENOISER_MODE_OFF;
+    // DLSS-RR is a denoiser mode but it denoises during the post-processing resolve, so
+    // the NRD/lighting path treats it as "off". Other modes map directly to the DENOISER_MODE_* values.
+    uint32_t denoiserMode = (m_ui.denoiserMode == DenoiserMode::DLSS_RR)
+        ? (uint32_t)DENOISER_MODE_OFF
+        : (uint32_t)m_ui.denoiserMode;
 #else
     m_ui.enableDenoiser = false;
     uint32_t denoiserMode = DENOISER_MODE_OFF;
@@ -1114,6 +1143,7 @@ void SceneRenderer::RenderScene(nvrhi::IFramebuffer* framebuffer)
     RenderDirectLighting(enableDirectReStirPass, checkerboard, lightingSettings);
     RenderIndirectLighting(enableBrdfAndIndirectPass, enableDirectReStirPass, lightingSettings);
     HandleNoLightingCase(enableDirectReStirPass, enableBrdfAndIndirectPass);
+    m_DLSSRRInputFormattingPass->Render(m_commandList, m_view);
     Denoiser(lightingSettings);
     m_compositingPass->Render(m_commandList, m_view, m_viewPrevious, denoiserMode, checkerboard, m_ui, *m_environmentLight);
     TransparentGeometry();
@@ -1143,7 +1173,7 @@ void SceneRenderer::RenderScene(nvrhi::IFramebuffer* framebuffer)
 
     m_viewPreviousPrevious = m_viewPrevious;
     m_viewPrevious = m_view;
-    m_previousViewValid = true;
+    m_prevViewValid = true;
     m_ui.resetAccumulation = false;
     ++m_renderFrameIndex;
 }
@@ -1206,10 +1236,24 @@ void SceneRenderer::InitDLSS()
     dlssParams.inputHeight = m_renderTargets->Size.y;
     dlssParams.outputWidth = m_renderTargets->Size.x;
     dlssParams.outputHeight = m_renderTargets->Size.y;
-    m_dlss->Init(dlssParams);
+    m_dlssSR->Init(dlssParams);
 
-    m_ui.dlssAvailable = m_dlss->IsDlssInitialized();
+    m_ui.dlssAvailable = m_dlssSR->IsDlssInitialized();
+    m_ui.dlssSRSupported = m_dlssSR->IsDlssSupported();
+
+    dlssParams.useRayReconstruction = true;
+    m_dlssRR->Init(dlssParams);
+    m_ui.dlssRRSupported = m_dlssRR->IsRayReconstructionSupported();
     m_dlssInitAttempted = true;
+
+    // DLSS-RR is the default denoiser; if Ray Reconstruction isn't supported on this device, fall
+    // back to NRD and switch the PT defaults (applied for DLSS-RR at construction) to the NRD profile.
+    if (!m_ui.dlssRRSupported && m_ui.denoiserMode == DenoiserMode::DLSS_RR)
+    {
+        m_ui.denoiserMode = DenoiserMode::NRD_REBLUR;
+        if (m_ui.autoApplyDLSSRRPreset)
+            m_ui.ApplyNonDLSSRRPreset();
+    }
 }
 #endif
 
@@ -1346,7 +1390,7 @@ void SceneRenderer::EnforceFpsLimit()
 
         while (true)
         {
-            uint64_t currentFrametime = duration_cast<microseconds>(steady_clock::now() - m_previousFrameTimeStamp).count();
+            uint64_t currentFrametime = duration_cast<microseconds>(steady_clock::now() - m_prevFrameTimeStamp).count();
 
             if (currentFrametime >= expectedFrametime)
                 break;
@@ -1357,7 +1401,7 @@ void SceneRenderer::EnforceFpsLimit()
 #endif
         }
     }
-    m_previousFrameTimeStamp = steady_clock::now();
+    m_prevFrameTimeStamp = steady_clock::now();
 }
 
 void SceneRenderer::UpdateAccelerationStructure()
@@ -1408,6 +1452,7 @@ void SceneRenderer::GBuffer()
 
 void SceneRenderer::CopyPSRBuffers()
 {
+    m_commandList->beginMarker("Copy PSR Buffers");
     // PSRMotionVectors will be used for temporal resampling, so non-PSR pixels need to have opaque motion vectors populated
     m_commandList->copyTexture(m_renderTargets->PSRMotionVectors, nvrhi::TextureSlice(), m_renderTargets->MotionVectors, nvrhi::TextureSlice());
     // Initialize all PSR buffers to 0; FinalShading reads from them only when PSRDiffuseAlbedo or PSRSpecularF0 > 0, else uses default G-buffer
@@ -1417,6 +1462,7 @@ void SceneRenderer::CopyPSRBuffers()
     m_commandList->clearTextureUInt(m_renderTargets->PSRDiffuseAlbedo, nvrhi::AllSubresources, 0u);
     m_commandList->clearTextureUInt(m_renderTargets->PSRSpecularF0, nvrhi::AllSubresources, 0u);
     m_commandList->clearTextureUInt(m_renderTargets->PSRLightDir, nvrhi::AllSubresources, 0u);
+    m_commandList->endMarker();
 }
 
 void SceneRenderer::UpdateRtxdiFrameIndex(uint effectiveFrameIndex)
@@ -1473,7 +1519,7 @@ void SceneRenderer::ApplyNrdCheckerboardSettings()
 LightingPasses::RenderSettings SceneRenderer::GetFullyProcessedLightingSettings(uint32_t denoiserMode, bool enableDirectReStirPass)
 {
     LightingPasses::RenderSettings lightingSettings = m_ui.lightingSettings;
-    lightingSettings.enablePreviousTLAS &= m_ui.enableAnimations;
+    lightingSettings.enablePrevTLAS &= m_ui.enableAnimations;
 #if WITH_NRD
     lightingSettings.reblurHitDistanceParams = &m_ui.reblurSettings.hitDistanceParameters;
     lightingSettings.denoiserMode = denoiserMode;
@@ -1564,20 +1610,20 @@ void SceneRenderer::HandleNoLightingCase(bool enableDirectReStirPass, bool enabl
 void SceneRenderer::Denoiser(const LightingPasses::RenderSettings& lightingSettings)
 {
 #if WITH_NRD
-    if (m_ui.enableDenoiser)
-    {
-        ProfilerScope scope(*m_profiler, m_commandList, ProfilerSection::Denoising);
-        m_commandList->beginMarker("Denoising");
+        if (m_ui.denoiserMode == DenoiserMode::NRD_RELAX || m_ui.denoiserMode == DenoiserMode::NRD_REBLUR)
+        {
+            ProfilerScope scope(*m_profiler, m_commandList, ProfilerSection::Denoising);
+            m_commandList->beginMarker("Denoising - NRD");
 
-        const void* methodSettings = (m_ui.denoisingMethod == nrd::Denoiser::RELAX_DIFFUSE_SPECULAR)
-            ? (void*)&m_ui.relaxSettings
-            : (void*)&m_ui.reblurSettings;
+            const void* methodSettings = (m_ui.nrdDenoisingMethod == nrd::Denoiser::RELAX_DIFFUSE_SPECULAR)
+                ? (void*)&m_ui.relaxSettings
+                : (void*)&m_ui.reblurSettings;
 
-        bool psrEnabled = m_ui.lightingSettings.enableDenoiserPSR && m_ui.indirectLightingMode == IndirectLightingMode::ReStirPT;
-        m_nrd->RunDenoiserPasses(m_commandList, *m_renderTargets, m_view, m_viewPrevious, GetFrameIndex(), lightingSettings.enableGradients, methodSettings, m_ui.nrdDebugSettings, psrEnabled, m_ui.debug);
+            bool psrEnabled = m_ui.lightingSettings.enableDenoiserPSR && m_ui.indirectLightingMode == IndirectLightingMode::ReStirPT;
+            m_nrd->RunDenoiserPasses(m_commandList, *m_renderTargets, m_view, m_viewPrevious, GetFrameIndex(), lightingSettings.enableGradients, methodSettings, m_ui.nrdDebugSettings, psrEnabled, m_ui.debug);
 
-        m_commandList->endMarker();
-    }
+            m_commandList->endMarker();
+        }
 #endif
 }
 
@@ -1596,11 +1642,47 @@ void SceneRenderer::TransparentGeometry()
     }
 }
 
+donut::render::DLSS::EvaluateParameters SceneRenderer::GetDLSSSRParams() const
+{
+    donut::render::DLSS::EvaluateParameters params;
+    params.depthTexture = m_ui.rasterizeGBuffer ? m_renderTargets->DeviceDepth : m_renderTargets->DeviceDepthUAV;
+    params.motionVectorsTexture = m_renderTargets->PSRMotionVectors;
+    params.inputColorTexture = m_renderTargets->HdrColor;
+    params.outputColorTexture = m_renderTargets->ResolvedColor;
+    params.exposureBuffer = m_toneMappingPass->GetExposureBuffer();
+    params.exposureScale = m_ui.dlssExposureScale;
+    params.sharpness = m_ui.dlssSharpness;
+    params.resetHistory = m_ui.resetAccumulation;
+    return params;
+}
+
+donut::render::DLSS::EvaluateParameters SceneRenderer::GetDLSSRRParams() const
+{
+    donut::render::DLSS::EvaluateParameters params = GetDLSSSRParams();
+    params.diffuseAlbedo = m_renderTargets->PSRDiffuseAlbedo_RR;
+    params.normalRoughness = m_renderTargets->PSRNormalRoughness;
+    params.specularAlbedo = m_renderTargets->PSRSpecularF0_RR;
+    return params;
+}
+
 void SceneRenderer::ResolveAA(nvrhi::ICommandList* commandList, float accumulationWeight) const
 {
     ProfilerScope scope(*m_profiler, commandList, ProfilerSection::Resolve);
 
-    switch (m_ui.aaMode)
+#if DONUT_WITH_DLSS
+    // DLSS-RR is a denoiser mode that also performs the post-processing resolve (denoise + upscale),
+    // so when it's selected it takes over here regardless of the AA mode.
+    if (m_ui.denoiserMode == DenoiserMode::DLSS_RR)
+    {
+        donut::render::DLSS::EvaluateParameters params = GetDLSSRRParams();
+        m_dlssRR->Evaluate(commandList, params, m_view);
+        return;
+    }
+#endif
+
+    auto aaMode = m_ui.aaMode;
+
+    switch (aaMode)
     {
     case AntiAliasingMode::None: {
         engine::BlitParameters blitParams;
@@ -1623,23 +1705,14 @@ void SceneRenderer::ResolveAA(nvrhi::ICommandList* commandList, float accumulati
         if (m_ui.resetAccumulation)
             taaParams.newFrameWeight = 1.f;
 
-        m_temporalAntiAliasingPass->TemporalResolve(commandList, taaParams, m_previousViewValid, m_view, m_upscaledView);
+        m_temporalAntiAliasingPass->TemporalResolve(commandList, taaParams, m_prevViewValid, m_view, m_upscaledView);
         break;
     }
 
 #if DONUT_WITH_DLSS
-    case AntiAliasingMode::DLSS: {
-        donut::render::DLSS::EvaluateParameters params;
-        params.depthTexture = m_ui.rasterizeGBuffer ? m_renderTargets->DeviceDepth : m_renderTargets->DeviceDepthUAV;
-        params.motionVectorsTexture = m_renderTargets->PSRMotionVectors;
-        params.inputColorTexture = m_renderTargets->HdrColor;
-        params.outputColorTexture = m_renderTargets->ResolvedColor;
-        params.exposureBuffer = m_toneMappingPass->GetExposureBuffer();
-        params.exposureScale = m_ui.dlssExposureScale;
-        params.sharpness = m_ui.dlssSharpness;
-        params.resetHistory = m_ui.resetAccumulation;
-
-        m_dlss->Evaluate(commandList, params, m_view);
+    case AntiAliasingMode::DLSS_SR: {
+        donut::render::DLSS::EvaluateParameters params = GetDLSSSRParams();
+        m_dlssSR->Evaluate(commandList, params, m_view);
         break;
     }
 #endif
@@ -1652,7 +1725,10 @@ void SceneRenderer::Bloom()
     {
 #if DONUT_WITH_DLSS
         // Use the unresolved image for bloom when DLSS is active because DLSS can modify HDR values significantly and add bloom flicker.
-        nvrhi::ITexture* bloomSource = (m_ui.aaMode == AntiAliasingMode::DLSS && m_ui.resolutionScale == 1.f)
+        const bool useUnresolvedForBloom = (m_ui.aaMode == AntiAliasingMode::DLSS_SR)
+            && (m_ui.resolutionScale == 1.f)
+            && (m_ui.denoiserMode != DenoiserMode::DLSS_RR);
+        nvrhi::ITexture* bloomSource = useUnresolvedForBloom
             ? m_renderTargets->HdrColor
             : m_renderTargets->ResolvedColor;
 #else
@@ -1749,12 +1825,13 @@ void SceneRenderer::DebugVisualizationOverlayPass(nvrhi::IFramebuffer* framebuff
         {
         case VisualizationOverlayMode::VISUALIZATION_OVERLAY_MODE_DENOISED_DIFFUSE:
         case VisualizationOverlayMode::VISUALIZATION_OVERLAY_MODE_DENOISED_SPECULAR:
-            haveSignal = m_ui.enableDenoiser;
+            // These come from NRD; DLSS-RR does not produce them.
+            haveSignal = (m_ui.denoiserMode == DenoiserMode::NRD_RELAX || m_ui.denoiserMode == DenoiserMode::NRD_REBLUR);
             break;
 
         case VisualizationOverlayMode::VISUALIZATION_OVERLAY_MODE_DIFFUSE_CONFIDENCE:
         case VisualizationOverlayMode::VISUALIZATION_OVERLAY_MODE_SPECULAR_CONFIDENCE:
-            haveSignal = m_ui.lightingSettings.enableGradients && m_ui.enableDenoiser;
+            haveSignal = m_ui.lightingSettings.enableGradients && (m_ui.denoiserMode == DenoiserMode::NRD_RELAX || m_ui.denoiserMode == DenoiserMode::NRD_REBLUR);
             break;
 
         case VisualizationOverlayMode::VISUALIZATION_OVERLAY_MODE_RESERVOIR_WEIGHT:
@@ -1899,10 +1976,23 @@ void SceneRenderer::DebugTextureBlit(nvrhi::IFramebuffer* framebuffer)
         m_debugVizPasses->RenderPTDuplicationMap(m_commandList, m_view);
         m_CommonPasses->BlitTexture(m_commandList, framebuffer, m_renderTargets->DebugColor, &m_bindingCache);
         break;
+    case DebugTextureBlitMode::SmoothedPTDuplicationMap:
+        m_commandList->setTextureState(m_renderTargets->SmoothedPTDuplicationMap, nvrhi::AllSubresources, nvrhi::ResourceStates::ShaderResource);
+        m_debugVizPasses->RenderSmoothedPTDuplicationMap(m_commandList, m_view);
+        m_CommonPasses->BlitTexture(m_commandList, framebuffer, m_renderTargets->DebugColor, &m_bindingCache);
+        break;
+    case DebugTextureBlitMode::PTDecorrelationFactor:
+        m_commandList->setTextureState(m_renderTargets->PTDecorrelationFactor, nvrhi::AllSubresources, nvrhi::ResourceStates::ShaderResource);
+        m_debugVizPasses->RenderPTDecorrelationFactor(m_commandList, m_view);
+        m_CommonPasses->BlitTexture(m_commandList, framebuffer, m_renderTargets->DebugColor, &m_bindingCache);
+        break;
     case DebugTextureBlitMode::PTSampleID:
         m_commandList->setTextureState(m_renderTargets->PTSampleIDTexture, nvrhi::AllSubresources, nvrhi::ResourceStates::ShaderResource);
         m_debugVizPasses->RenderPTSampleID(m_commandList, m_view);
         m_CommonPasses->BlitTexture(m_commandList, framebuffer, m_renderTargets->DebugColor, &m_bindingCache);
+        break;
+    case DebugTextureBlitMode::NeighborSelectionGBuffer:
+        m_CommonPasses->BlitTexture(m_commandList, framebuffer, m_renderTargets->NeighborSelectionGBuffer, &m_bindingCache);
         break;
     }
 }

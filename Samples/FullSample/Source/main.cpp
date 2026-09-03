@@ -17,7 +17,9 @@
 #include "App/CommandLineArgs.h"
 #include "App/LoggingCallback.h"
 #include "App/SceneRenderer.h"
+#if DONUT_WITH_DX12
 #include "nvapi.h"
+#endif
 #include "SharedShaderInclude/NvapiIntegration.h"
 
 #include <donut/render/DLSS.h>

@@ -21,7 +21,6 @@ The application needs to implement the various bridge functions necessary for Re
 	RAB_GetSurfaceNormal(...)
 	RAB_GetSurfaceWorldPos(...)
 	RAB_IsSurfaceValid(...)
-	RAB_RandomSamplerState { ... }
 	RAB_Surface { ... }
 
 The following bridge functions are ReSTIR GI specific:
@@ -29,7 +28,7 @@ The following bridge functions are ReSTIR GI specific:
 	RAB_GetGISampleTargetPdfForSurface(...)
 	RAB_ValidateGISampleWithJacobian(...)
 	RAB_GetConservativeVisibility(surface, samplePosition)
-	RAB_GetTemporalConservativeVisibility(currentSurface, previousSurface, samplePosition)
+	RAB_GetTemporalConservativeVisibility(currentSurface, prevSurface, samplePosition)
 
 ReSTIR GI only needs two GPU resources to operate:
 

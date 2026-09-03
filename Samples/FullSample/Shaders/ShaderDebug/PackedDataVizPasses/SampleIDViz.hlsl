@@ -18,18 +18,18 @@
 Texture2D<uint> t_SampleID : register(t0);
 RWTexture2D<float4> t_Output : register(u0);
 
-uint hashUint(uint x)
+uint HashUint(uint x)
 {
     x = (x ^ (x >> 16u)) * 0x85ebca6bu;
     x = (x ^ (x >> 13u)) * 0xc2b2ae35u;
     return x ^ (x >> 16u);
 }
 
-float3 idToFalseColor(uint id)
+float3 IdToFalseColor(uint id)
 {
     if (id == 0u)
         return float3(0.0, 0.0, 0.0);
-    uint h = hashUint(id);
+    uint h = HashUint(id);
     return float3(
         float(h & 0xFFu) / 255.0,
         float((h >> 8u) & 0xFFu) / 255.0,
@@ -41,6 +41,6 @@ float3 idToFalseColor(uint id)
 void main(uint2 pixelPosition : SV_DispatchThreadID)
 {
     uint sampleID = t_SampleID[pixelPosition];
-    float3 color = idToFalseColor(sampleID);
+    float3 color = IdToFalseColor(sampleID);
     t_Output[pixelPosition] = float4(color, 1.0);
 }

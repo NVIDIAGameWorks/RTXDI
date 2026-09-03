@@ -22,10 +22,10 @@ VK_PUSH_CONSTANT ConstantBuffer<PreprocessEnvironmentMapConstants> g_Const : reg
 #if INPUT_ENVIRONMENT_MAP
 Texture2D<float4> t_EnvironmentMap : register(t0);
 
-float getPixelWeight(uint2 position)
+float GetPixelWeight(uint2 position)
 {
     float3 color = t_EnvironmentMap[position].rgb;
-    float luma = max(calcLuminance(color), 0);
+    float luma = max(CalcLuminance(color), 0);
 
     // Do not sample invalid colors.
     if (isinf(luma) || isnan(luma))
@@ -46,22 +46,22 @@ groupshared float s_weights[16];
 
 // Warning: do not change the group size. The algorithm is hardcoded to process 16x16 tiles.
 [numthreads(256, 1, 1)]
-void main(uint2 GroupIndex : SV_GroupID, uint ThreadIndex : SV_GroupThreadID)
+void main(uint2 groupIndex : SV_GroupID, uint threadIndex : SV_GroupThreadID)
 {
-    uint2 LocalIndex = RTXDI_LinearIndexToZCurve(ThreadIndex);
-    uint2 GlobalIndex = (GroupIndex * 16) + LocalIndex;
+    uint2 localIndex = RTXDI_LinearIndexToZCurve(threadIndex);
+    uint2 globalIndex = (groupIndex * 16) + localIndex;
 
     // Step 0: Load a 2x2 quad of pixels from the source texture or the source mip level.
     float4 sourceWeights;
 #if INPUT_ENVIRONMENT_MAP
     if (g_Const.sourceMipLevel == 0)
     {
-        uint2 sourcePos = GlobalIndex.xy * 2;
+        uint2 sourcePos = globalIndex.xy * 2;
 
-        sourceWeights.x = getPixelWeight(sourcePos + int2(0, 0));
-        sourceWeights.y = getPixelWeight(sourcePos + int2(0, 1));
-        sourceWeights.z = getPixelWeight(sourcePos + int2(1, 0));
-        sourceWeights.w = getPixelWeight(sourcePos + int2(1, 1));
+        sourceWeights.x = GetPixelWeight(sourcePos + int2(0, 0));
+        sourceWeights.y = GetPixelWeight(sourcePos + int2(0, 1));
+        sourceWeights.z = GetPixelWeight(sourcePos + int2(1, 0));
+        sourceWeights.w = GetPixelWeight(sourcePos + int2(1, 1));
 
         RWTexture2D<float> dest = u_IntegratedMips[0];
         dest[sourcePos + int2(0, 0)] = sourceWeights.x;
@@ -72,7 +72,7 @@ void main(uint2 GroupIndex : SV_GroupID, uint ThreadIndex : SV_GroupThreadID)
     else
 #endif
     {
-        uint2 sourcePos = GlobalIndex.xy * 2;
+        uint2 sourcePos = globalIndex.xy * 2;
 
         RWTexture2D<float> src = u_IntegratedMips[g_Const.sourceMipLevel];
         sourceWeights.x = src[sourcePos + int2(0, 0)];
@@ -87,7 +87,7 @@ void main(uint2 GroupIndex : SV_GroupID, uint ThreadIndex : SV_GroupThreadID)
     // Average those weights and write out the first mip.
     float weight = (sourceWeights.x + sourceWeights.y + sourceWeights.z + sourceWeights.w) * 0.25;
 
-    u_IntegratedMips[g_Const.sourceMipLevel + 1][GlobalIndex.xy] = weight;
+    u_IntegratedMips[g_Const.sourceMipLevel + 1][globalIndex.xy] = weight;
 
     if (mipLevelsToWrite < 2) return;
 
@@ -104,7 +104,7 @@ void main(uint2 GroupIndex : SV_GroupID, uint ThreadIndex : SV_GroupThreadID)
 
     if ((lane & 3) == 0)
     {
-        u_IntegratedMips[g_Const.sourceMipLevel + 2][GlobalIndex.xy >> 1] = weight;
+        u_IntegratedMips[g_Const.sourceMipLevel + 2][globalIndex.xy >> 1] = weight;
     }
 
     if (mipLevelsToWrite < 3) return;
@@ -117,10 +117,10 @@ void main(uint2 GroupIndex : SV_GroupID, uint ThreadIndex : SV_GroupThreadID)
 
     if ((lane & 15) == 0)
     {
-        u_IntegratedMips[g_Const.sourceMipLevel + 3][GlobalIndex.xy >> 2] = weight;
+        u_IntegratedMips[g_Const.sourceMipLevel + 3][globalIndex.xy >> 2] = weight;
 
         // Store the intermediate result into shared memory.
-        s_weights[ThreadIndex >> 4] = weight;
+        s_weights[threadIndex >> 4] = weight;
     }
 
     if (mipLevelsToWrite < 4) return;
@@ -128,14 +128,14 @@ void main(uint2 GroupIndex : SV_GroupID, uint ThreadIndex : SV_GroupThreadID)
     GroupMemoryBarrierWithGroupSync();
 
     // The rest operates on a 4x4 group of values for the entire thread group
-    if (ThreadIndex >= 16)
+    if (threadIndex >= 16)
         return;
 
     // Load the intermediate results
-    weight = s_weights[ThreadIndex];
+    weight = s_weights[threadIndex];
 
     // Change the output texture addressing because we'll be only writing a 2x2 block of pixels
-    GlobalIndex = (GroupIndex * 2) + (LocalIndex >> 1);
+    globalIndex = (groupIndex * 2) + (localIndex >> 1);
 
     // Step 3: Average the previous results from adjacent threads, meaning from 4 pixels away.
     weight = (weight 
@@ -145,7 +145,7 @@ void main(uint2 GroupIndex : SV_GroupID, uint ThreadIndex : SV_GroupThreadID)
 
     if ((lane & 3) == 0)
     {
-        u_IntegratedMips[g_Const.sourceMipLevel + 4][GlobalIndex.xy] = weight;
+        u_IntegratedMips[g_Const.sourceMipLevel + 4][globalIndex.xy] = weight;
     }
 
     if (mipLevelsToWrite < 5) return;
@@ -158,6 +158,6 @@ void main(uint2 GroupIndex : SV_GroupID, uint ThreadIndex : SV_GroupThreadID)
 
     if (lane == 0)
     {
-        u_IntegratedMips[g_Const.sourceMipLevel + 5][GlobalIndex.xy >> 1] = weight;
+        u_IntegratedMips[g_Const.sourceMipLevel + 5][globalIndex.xy >> 1] = weight;
     }
 }

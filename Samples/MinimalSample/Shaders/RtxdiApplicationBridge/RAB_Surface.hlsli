@@ -3,7 +3,7 @@
 
 #include "../GBufferHelpers.hlsli"
 
-#include "Rtxdi/Utils/RandomSamplerstate.hlsli"
+#include "Rtxdi/Utils/RandomSamplerState.hlsli"
 #include "RAB_Material.hlsli"
 
 // A surface with enough information to evaluate BRDFs
@@ -50,24 +50,24 @@ float RAB_GetSurfaceLinearDepth(RAB_Surface surface)
     return surface.viewDepth;
 }
 
-float getSurfaceDiffuseProbability(RAB_Surface surface)
+float GetSurfaceDiffuseProbability(RAB_Surface surface)
 {
     RAB_Material material = RAB_GetMaterial(surface);
-    float diffuseWeight = calcLuminance(material.diffuseAlbedo);
-    float specularWeight = calcLuminance(Schlick_Fresnel(material.specularF0, dot(surface.viewDir, surface.normal)));
+    float diffuseWeight = CalcLuminance(material.diffuseAlbedo);
+    float specularWeight = CalcLuminance(Schlick_Fresnel(material.specularF0, dot(surface.viewDir, surface.normal)));
     float sumWeights = diffuseWeight + specularWeight;
     return sumWeights < 1e-7f ? 1.f : (diffuseWeight / sumWeights);
 }
 
 // Load a sample from the previous G-buffer.
-RAB_Surface RAB_GetGBufferSurface(int2 pixelPosition, bool previousFrame)
+RAB_Surface RAB_GetGBufferSurface(int2 pixelPosition, bool prevFrame)
 {
     RAB_Surface surface = RAB_EmptySurface();
 
     // We do not have access to the current G-buffer in this sample because it's using
     // a single render pass with a fused resampling kernel, so just return an invalid surface.
     // This should never happen though, as the fused kernel doesn't call RAB_GetGBufferSurface(..., false)
-    if (!previousFrame)
+    if (!prevFrame)
         return surface;
 
     const PlanarViewConstants view = g_Const.prevView;
@@ -84,14 +84,14 @@ RAB_Surface RAB_GetGBufferSurface(int2 pixelPosition, bool previousFrame)
     surface.geoNormal = octToNdirUnorm32(t_PrevGBufferGeoNormals[pixelPosition]);
     float4 specularRough = Unpack_R8G8B8A8_Gamma_UFLOAT(t_PrevGBufferSpecularRough[pixelPosition]);
     surface.material = RAB_GetGBufferMaterial(pixelPosition, view, u_GBufferDiffuseAlbedo, u_GBufferSpecularRough);
-    surface.worldPos = viewDepthToWorldPos(view, pixelPosition, surface.viewDepth);
+    surface.worldPos = ViewDepthToWorldPos(view, pixelPosition, surface.viewDepth);
     surface.viewDir = normalize(g_Const.view.cameraDirectionOrPosition.xyz - surface.worldPos);
-    surface.diffuseProbability = getSurfaceDiffuseProbability(surface);
+    surface.diffuseProbability = GetSurfaceDiffuseProbability(surface);
 
     return surface;
 }
 
-float3 worldToTangent(RAB_Surface surface, float3 w)
+float3 WorldToTangent(RAB_Surface surface, float3 w)
 {
     // reconstruct tangent frame based off worldspace normal
     // this is ok for isotropic BRDFs
@@ -103,7 +103,7 @@ float3 worldToTangent(RAB_Surface surface, float3 w)
     return float3(dot(bitangent, w), dot(tangent, w), dot(surface.normal, w));
 }
 
-float3 tangentToWorld(RAB_Surface surface, float3 h)
+float3 TangentToWorld(RAB_Surface surface, float3 h)
 {
     // reconstruct tangent frame based off worldspace normal
     // this is ok for isotropic BRDFs
@@ -127,12 +127,12 @@ bool RAB_SurfaceImportanceSampleBrdf(RAB_Surface surface, inout RTXDI_RandomSamp
     {
         float pdf;
         float3 h = SampleCosHemisphere(rand.yz, pdf);
-        dir = tangentToWorld(surface, h);
+        dir = TangentToWorld(surface, h);
     }
     else
     {
         float3 h = ImportanceSampleGGX(rand.yz, max(surface.material.roughness, kMinRoughness));
-        dir = reflect(-surface.viewDir, tangentToWorld(surface, h));
+        dir = reflect(-surface.viewDir, TangentToWorld(surface, h));
     }
 
     return dot(surface.normal, dir) > 0.f;

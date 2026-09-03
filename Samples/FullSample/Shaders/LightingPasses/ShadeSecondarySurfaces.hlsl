@@ -35,16 +35,16 @@ static const float c_MaxIndirectRadiance = 10;
 
 #if USE_RAY_QUERY
 [numthreads(RTXDI_SCREEN_SPACE_GROUP_SIZE, RTXDI_SCREEN_SPACE_GROUP_SIZE, 1)]
-void main(uint2 GlobalIndex : SV_DispatchThreadID)
+void main(uint2 globalIndex : SV_DispatchThreadID)
 #else
 [shader("raygeneration")]
 void RayGen()
 #endif
 {
 #if !USE_RAY_QUERY
-    uint2 GlobalIndex = DispatchRaysIndex().xy;
+    uint2 globalIndex = DispatchRaysIndex().xy;
 #endif
-    uint2 pixelPosition = RTXDI_ReservoirPosToPixelPos(GlobalIndex, g_Const.runtimeParams.activeCheckerboardField);
+    uint2 pixelPosition = RTXDI_ReservoirPosToPixelPos(globalIndex, g_Const.runtimeParams.activeCheckerboardField);
 
     if (any(pixelPosition > int2(g_Const.view.viewportSize)))
         return;
@@ -57,11 +57,10 @@ void RayGen()
 
     ShaderDebug::SetDebugShaderPrintCurrentThreadCursorXY(pixelPosition);
 
-    RTXDI_RandomSamplerState rng = RTXDI_InitRandomSampler(GlobalIndex, g_Const.runtimeParams.frameIndex, RTXDI_SECONDARY_DI_GENERATE_INITIAL_SAMPLES_RANDOM_SEED);
-    RTXDI_RandomSamplerState tileRng = RTXDI_InitRandomSampler(GlobalIndex / RTXDI_TILE_SIZE_IN_PIXELS, g_Const.runtimeParams.frameIndex, RTXDI_SECONDARY_DI_GENERATE_INITIAL_SAMPLES_RANDOM_SEED);
+    RTXDI_RandomSamplerState rng = RTXDI_InitRandomSampler(globalIndex, g_Const.runtimeParams.frameIndex, RTXDI_SECONDARY_DI_GENERATE_INITIAL_SAMPLES_RANDOM_SEED);
+    RTXDI_RandomSamplerState tileRng = RTXDI_InitRandomSampler(globalIndex / RTXDI_TILE_SIZE_IN_PIXELS, g_Const.runtimeParams.frameIndex, RTXDI_SECONDARY_DI_GENERATE_INITIAL_SAMPLES_RANDOM_SEED);
 
-    const RTXDI_RuntimeParameters params = g_Const.runtimeParams;
-    const uint gbufferIndex = RTXDI_ReservoirPositionToPointer(g_Const.restirDI.reservoirBufferParams, GlobalIndex, 0);
+    const uint gbufferIndex = RTXDI_ReservoirPositionToPointer(g_Const.restirDI.reservoirBufferParams, globalIndex, 0);
 
     RAB_Surface primarySurface = RAB_GetGBufferSurface(pixelPosition, false);
 
@@ -86,7 +85,7 @@ void RayGen()
     float4 specularRough = Unpack_R8G8B8A8_Gamma_UFLOAT(secondaryGBufferData.specularAndRoughness);
     secondarySurface.material.specularF0 = specularRough.rgb;
     secondarySurface.material.roughness = specularRough.a;
-    secondarySurface.diffuseProbability = getSurfaceDiffuseProbability(secondarySurface);
+    secondarySurface.diffuseProbability = GetSurfaceDiffuseProbability(secondarySurface);
     secondarySurface.viewDir = normalize(primarySurface.worldPos - secondarySurface.worldPos);
 
     // Shade the secondary surface.
@@ -117,7 +116,7 @@ void RayGen()
                 secondarySurface.viewDepth = secondaryClipPos.w;
                 uint sourceBufferIndex = g_Const.restirDI.bufferIndices.shadingInputBufferIndex;
                 reservoir = RTXDI_DISpatialResampling(secondaryPixelPos, secondarySurface, reservoir,
-                    rng, params, g_Const.restirDI.reservoirBufferParams, sourceBufferIndex, g_Const.brdfPT.secondarySurfaceReSTIRDIParams.spatialResamplingParams, lightSample);
+                    rng, g_Const.runtimeParams, g_Const.restirDI.reservoirBufferParams, sourceBufferIndex, g_Const.brdfPT.secondarySurfaceReSTIRDIParams.spatialResamplingParams, lightSample);
             }
         }
         bool valid = reservoir.weightSum > 0;
@@ -127,11 +126,11 @@ void RayGen()
         float3 indirectDiffuse = 0;
         float3 indirectSpecular = 0;
         float lightDistance = 0;
-        ShadeSurfaceWithLightSample(reservoir, secondarySurface, g_Const.restirDI.shadingParams, lightSample, /* previousFrameTLAS = */ false,
+        ShadeSurfaceWithLightSample(reservoir, secondarySurface, g_Const.restirDI.shadingParams, lightSample, /* prevFrameTLAS = */ false,
             /* enableVisibilityReuse = */ false, /* enableVisibilityShortcut */ false, indirectDiffuse, indirectSpecular, lightDistance);
         radiance += indirectDiffuse * secondarySurface.material.diffuseAlbedo + indirectSpecular;
         // Firefly suppression
-        float indirectLuminance = calcLuminance(radiance);
+        float indirectLuminance = CalcLuminance(radiance);
         if (indirectLuminance > c_MaxIndirectRadiance)
             radiance *= c_MaxIndirectRadiance / indirectLuminance;
     }
@@ -170,7 +169,6 @@ void RayGen()
             specular = DemodulateSpecular(primarySurface.material.specularF0, specular);
         }
 
-        StoreShadingOutput(GlobalIndex, pixelPosition, 
-            primarySurface.viewDepth, primarySurface.material.roughness, diffuse, specular, 0, false, true);
+        StoreShadingOutput(globalIndex, pixelPosition, primarySurface.viewDepth, primarySurface.material.roughness, diffuse, specular, 0, false, true);
     }
 }

@@ -15,6 +15,7 @@
 #include "../RtxdiApplicationBridge/RtxdiApplicationBridge.hlsli"
 #include "../../ShaderDebug/ShaderDebugPrint/ShaderDebugPrint.hlsli"
 #include <Rtxdi/PT/Reservoir.hlsli>
+#include <Rtxdi/PT/Decorrelation.hlsli>
 #include <Rtxdi/Utils/RandomSamplerPerPassSeeds.hlsli>
 #include <Rtxdi/Utils/ReservoirAddressing.hlsli>
 
@@ -36,13 +37,13 @@ void InvalidateReservoirBuffer(RTXDI_ReservoirBufferParameters bufferParams, uin
 	RTXDI_StorePTReservoir(emptyReservoir, bufferParams, reservoirPosition, reservoirArrayIndex);
 }
 
-float3 InvalidPixelGuard(float3 Value)
+float3 InvalidPixelGuard(float3 value)
 {
-	Value = select(isnan(Value), float3(0.f, 0.f, 0.f), Value);
-	Value = select(Value < 0.f, float3(0.f, 0.f, 0.f), Value);
-	Value = select(isinf(Value), float3(0.f, 0.f, 0.f), Value);
+	value = select(isnan(value), float3(0.f, 0.f, 0.f), value);
+	value = select(value < 0.f, float3(0.f, 0.f, 0.f), value);
+	value = select(isinf(value), float3(0.f, 0.f, 0.f), value);
 
-	return Value;
+	return value;
 }
 
 SplitBrdf CalculateDirectLighting(RAB_Surface primarySurface, RTXDI_PTReservoir ptReservoir)
@@ -50,9 +51,9 @@ SplitBrdf CalculateDirectLighting(RAB_Surface primarySurface, RTXDI_PTReservoir 
 	const float3 N = RAB_GetSurfaceNormal(primarySurface);
 	const float3 V = RAB_GetSurfaceViewDir(primarySurface);
 
-	float3 L = normalize(ptReservoir.TranslatedWorldPosition - RAB_GetSurfaceWorldPos(primarySurface));
+	float3 L = normalize(ptReservoir.translatedWorldPosition - RAB_GetSurfaceWorldPos(primarySurface));
 
-	if (ptReservoir.RcVertexLength > 2)
+	if (ptReservoir.rcVertexLength > 2)
 	{
         RTXDI_RandomSamplerState randomReplayRng = RTXDI_GetRngForShading(ptReservoir);
         RTXDI_BrdfRaySampleProperties bsrp = RTXDI_DefaultBrdfRaySampleProperties();
@@ -62,19 +63,19 @@ SplitBrdf CalculateDirectLighting(RAB_Surface primarySurface, RTXDI_PTReservoir 
 	return EvaluateBrdfPT(primarySurface, N, V, L);
 }
 
-void CalculateDiffuseAndSpecular(SplitBrdf LightingSample, RAB_Surface primarySurface, RTXDI_PTReservoir ptReservoir, inout float3 diffuse, inout float3 specular)
+void CalculateDiffuseAndSpecular(SplitBrdf lightingSample, RAB_Surface primarySurface, RTXDI_PTReservoir ptReservoir, inout float3 diffuse, inout float3 specular)
 {
-    float3 pHatUCW = ptReservoir.WeightSum * ptReservoir.TargetFunction;
-    float3 totalBrdf = LightingSample.demodulatedDiffuse * primarySurface.material.diffuseAlbedo + LightingSample.specular;
-    diffuse = LightingSample.demodulatedDiffuse * pHatUCW / totalBrdf; // demodulated
-    specular = LightingSample.specular * pHatUCW / totalBrdf;
+    float3 pHatUCW = ptReservoir.weightSum * ptReservoir.targetFunction;
+    float3 totalBrdf = lightingSample.demodulatedDiffuse * primarySurface.material.diffuseAlbedo + lightingSample.specular;
+    diffuse = lightingSample.demodulatedDiffuse * pHatUCW / totalBrdf; // demodulated
+    specular = lightingSample.specular * pHatUCW / totalBrdf;
     diffuse = InvalidPixelGuard(diffuse);
     specular = InvalidPixelGuard(specular);
 }
 
 #if USE_RAY_QUERY
 [numthreads(RTXDI_SCREEN_SPACE_GROUP_SIZE, RTXDI_SCREEN_SPACE_GROUP_SIZE, 1)]
-void main(uint2 globalIndex : SV_DispatchThreadID)
+void main(uint2 globalIndex: SV_DispatchThreadID)
 #else
 [shader("raygeneration")]
 void RayGen()
@@ -101,12 +102,26 @@ void RayGen()
         {
             u_IndirectLightingRaw[pixelPosition] = float4(0.0, 0.0, 0.0, 1.0);
         }
+		// Keep the debug decorrelation-factor viz clean for invalid pixels.
+		if (g_Const.debug.visualizePTDecorrelationFactor)
+			u_PTDecorrelationFactor[pixelPosition] = 0.0f;
 		return;
 	}
 
 	ShaderDebug::SetDebugShaderPrintCurrentThreadCursorXY(pixelPosition);
 
 	RTXDI_PTReservoir ptReservoir = RTXDI_LoadPTReservoir(g_Const.restirPT.reservoirBuffer, reservoirPosition, g_Const.restirPT.bufferIndices.finalShadingInputBufferIndex);
+
+	const float scaledDecorrelationFactor = RTXDI_PTApplyDecorrelation(
+		pixelPosition,
+		reservoirPosition,
+		ptReservoir,
+		g_Const.restirPT.decorrelation,
+		g_Const.restirPT.bufferIndices,
+		g_Const.restirPT.reservoirBuffer,
+		g_Const.runtimeParams.frameIndex);
+	if (g_Const.debug.visualizePTDecorrelationFactor)
+		u_PTDecorrelationFactor[pixelPosition] = scaledDecorrelationFactor;
 
 
 	float3 diffuse = float3(0.0, 0.0, 0.0);
@@ -127,7 +142,7 @@ void RayGen()
 
         if (u_PSRLightDir[pixelPosition] != 0)
         {
-            float metalness = getMetalness(primarySurface.material.diffuseAlbedo, primarySurface.material.specularF0);
+            float metalness = GetMetalness(primarySurface.material.diffuseAlbedo, primarySurface.material.specularF0);
             PSRDiffuseAlbedo = lerp(primarySurface.material.diffuseAlbedo, PSRDiffuseAlbedo, metalness);
             PSRSpecularF0 = lerp(primarySurface.material.specularF0, PSRSpecularF0, metalness);
 
@@ -152,7 +167,7 @@ void RayGen()
         }
 
         float3 diffuseUsed = (all(PSRDiffuseAlbedo == 0) ? primarySurface.material.diffuseAlbedo : PSRDiffuseAlbedo);
-        float3 pHatUCW = ptReservoir.WeightSum * ptReservoir.TargetFunction;
+        float3 pHatUCW = ptReservoir.weightSum * ptReservoir.targetFunction;
         float3 totalBrdf = split.demodulatedDiffuse * diffuseUsed + split.specular;
         diffuse = (all(PSRDiffuseAlbedo == 0) ? 0.f : split.demodulatedDiffuse) * pHatUCW / totalBrdf; // demodulated
         specular = split.specular * pHatUCW / totalBrdf;
@@ -162,8 +177,8 @@ void RayGen()
     }
     else
     {
-        SplitBrdf LightingSample = CalculateDirectLighting(primarySurface, ptReservoir);
-        CalculateDiffuseAndSpecular(LightingSample, primarySurface, ptReservoir, diffuse, specular);
+        SplitBrdf lightingSample = CalculateDirectLighting(primarySurface, ptReservoir);
+        CalculateDiffuseAndSpecular(lightingSample, primarySurface, ptReservoir, diffuse, specular);
         specular = DemodulateSpecular(primarySurface.material.specularF0, specular);
     }
 

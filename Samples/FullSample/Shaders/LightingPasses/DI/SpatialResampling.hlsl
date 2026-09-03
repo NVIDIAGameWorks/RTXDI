@@ -19,19 +19,19 @@
 
 #if USE_RAY_QUERY
 [numthreads(RTXDI_SCREEN_SPACE_GROUP_SIZE, RTXDI_SCREEN_SPACE_GROUP_SIZE, 1)]
-void main(uint2 GlobalIndex : SV_DispatchThreadID)
+void main(uint2 globalIndex : SV_DispatchThreadID)
 #else
 [shader("raygeneration")]
 void RayGen()
 #endif
 {
 #if !USE_RAY_QUERY
-    uint2 GlobalIndex = DispatchRaysIndex().xy;
+    uint2 globalIndex = DispatchRaysIndex().xy;
 #endif
 
     const RTXDI_RuntimeParameters params = g_Const.runtimeParams;
 
-    uint2 pixelPosition = RTXDI_ReservoirPosToPixelPos(GlobalIndex, params.activeCheckerboardField);
+    uint2 pixelPosition = RTXDI_ReservoirPosToPixelPos(globalIndex, params.activeCheckerboardField);
 
     RTXDI_RandomSamplerState rng = RTXDI_InitRandomSampler(pixelPosition, g_Const.runtimeParams.frameIndex, RTXDI_DI_SPATIAL_RESAMPLING_RANDOM_SEED);
 
@@ -42,7 +42,7 @@ void RayGen()
     if (RAB_IsSurfaceValid(surface))
     {
         RTXDI_DIReservoir centerSample = RTXDI_LoadDIReservoir(g_Const.restirDI.reservoirBufferParams,
-            GlobalIndex, g_Const.restirDI.bufferIndices.spatialResamplingInputBufferIndex);
+            globalIndex, g_Const.restirDI.bufferIndices.spatialResamplingInputBufferIndex);
 
 		uint sourceBufferIndex = g_Const.restirDI.bufferIndices.spatialResamplingInputBufferIndex;
         RAB_LightSample lightSample = (RAB_LightSample)0;
@@ -50,5 +50,5 @@ void RayGen()
              rng, params, g_Const.restirDI.reservoirBufferParams, sourceBufferIndex, g_Const.restirDI.spatialResamplingParams, lightSample);
     }
 
-    RTXDI_StoreDIReservoir(spatialResult, g_Const.restirDI.reservoirBufferParams, GlobalIndex, g_Const.restirDI.bufferIndices.spatialResamplingOutputBufferIndex);
+    RTXDI_StoreDIReservoir(spatialResult, g_Const.restirDI.reservoirBufferParams, globalIndex, g_Const.restirDI.bufferIndices.spatialResamplingOutputBufferIndex);
 }

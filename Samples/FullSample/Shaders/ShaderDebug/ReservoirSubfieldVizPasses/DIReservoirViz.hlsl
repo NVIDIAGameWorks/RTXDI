@@ -32,10 +32,10 @@ RWTexture2D<float4> t_Output : register(u1);
 #include "Rtxdi/DI/Reservoir.hlsli"
 
 [numthreads(16, 16, 1)]
-void main(uint2 GlobalIndex : SV_DispatchThreadID)
+void main(uint2 globalIndex : SV_DispatchThreadID)
 {
 #if 1
-    uint2 pixelPosition = RTXDI_ReservoirPosToPixelPos(GlobalIndex, g_Const.runtimeParams.activeCheckerboardField);
+    uint2 pixelPosition = RTXDI_ReservoirPosToPixelPos(globalIndex, g_Const.runtimeParams.activeCheckerboardField);
 
     if (any(pixelPosition > int2(g_Const.view.viewportSize)))
         return;
@@ -44,7 +44,7 @@ void main(uint2 GlobalIndex : SV_DispatchThreadID)
 
     RTXDI_DIReservoir reservoir = RTXDI_LoadDIReservoir(g_Const.reservoirBufferParams, reservoirPosition, g_Const.bufferIndices.spatialResamplingInputBufferIndex);
 #else
-    RTXDI_DIReservoir reservoir = u_DIReservoirs[GlobalIndex];
+    RTXDI_DIReservoir reservoir = u_DIReservoirs[globalIndex];
 #endif
 
     switch(g_Const.diReservoirField)
@@ -72,7 +72,7 @@ void main(uint2 GlobalIndex : SV_DispatchThreadID)
         t_Output[pixelPosition] = reservoir.targetPdf;
     break;
     case DI_RESERVOIR_FIELD_M:
-        t_Output[pixelPosition] = rgLerp(reservoir.M / (float)g_ConstRendering.restirDI.temporalResamplingParams.maxHistoryLength);
+        t_Output[pixelPosition] = RgLerp(reservoir.M / (float)g_ConstRendering.restirDI.temporalResamplingParams.maxHistoryLength);
     break;
 	case DI_RESERVOIR_FIELD_PACKED_VISIBILITY:
 		t_Output[pixelPosition] = reservoir.packedVisibility;

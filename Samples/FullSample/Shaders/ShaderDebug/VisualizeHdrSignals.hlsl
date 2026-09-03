@@ -37,7 +37,7 @@ StructuredBuffer<RTXDI_PackedGIReservoir> t_GIReservoirs : register(t9);
 #include <Rtxdi/DI/ReservoirStorage.hlsli>
 #include <Rtxdi/GI/Reservoir.hlsli>
 
-float4 blend(float4 top, float4 bottom)
+float4 Blend(float4 top, float4 bottom)
 {
     return float4(top.rgb * top.a + bottom.rgb * (1.0 - top.a), 1.0 - (1.0 - top.a) * (1.0 - bottom.a));
 }
@@ -60,30 +60,30 @@ float4 main(float4 i_position : SV_Position) : SV_Target
     switch(g_Const.visualizationMode)
     {
     case VISUALIZATION_OVERLAY_MODE_COMPOSITED_COLOR:
-        input = calcLuminance(t_CompositedColor[inputPos].rgb);
+        input = CalcLuminance(t_CompositedColor[inputPos].rgb);
         break;
 
     case VISUALIZATION_OVERLAY_MODE_RESOLVED_COLOR:
         if (g_Const.enableAccumulation)
-            input = calcLuminance(t_AccumulatedColor[inputPos].rgb);
+            input = CalcLuminance(t_AccumulatedColor[inputPos].rgb);
         else
-            input = calcLuminance(t_ResolvedColor[inputPos].rgb);
+            input = CalcLuminance(t_ResolvedColor[inputPos].rgb);
         break;
 
     case VISUALIZATION_OVERLAY_MODE_DIFFUSE:
-        input = calcLuminance(t_Diffuse[inputPos].rgb);
+        input = CalcLuminance(t_Diffuse[inputPos].rgb);
         break;
 
     case VISUALIZATION_OVERLAY_MODE_SPECULAR:
-        input = calcLuminance(t_Specular[inputPos].rgb);
+        input = CalcLuminance(t_Specular[inputPos].rgb);
         break;
         
     case VISUALIZATION_OVERLAY_MODE_DENOISED_DIFFUSE:
-        input = calcLuminance(t_DenoisedDiffuse[inputPos].rgb);
+        input = CalcLuminance(t_DenoisedDiffuse[inputPos].rgb);
         break;
         
     case VISUALIZATION_OVERLAY_MODE_DENOISED_SPECULAR:
-        input = calcLuminance(t_DenoisedSpecular[inputPos].rgb);
+        input = CalcLuminance(t_DenoisedSpecular[inputPos].rgb);
         break;
         
     case VISUALIZATION_OVERLAY_MODE_RESERVOIR_WEIGHT: {
@@ -130,23 +130,23 @@ float4 main(float4 i_position : SV_Position) : SV_Target
 
     int linePos = (middle - pixelPos.y + 1000) % 100;
     if (middle == pixelPos.y)
-        result = blend(float4(1, 1, 0, 0.5), result);
+        result = Blend(float4(1, 1, 0, 0.5), result);
     else if (linePos == 0)
-        result = blend(float4(1, 1, 0, 0.2), result);
+        result = Blend(float4(1, 1, 0, 0.2), result);
     else if (linePos == 30 || linePos == 48 || linePos == 60 || linePos == 69 || linePos == 78 || linePos == 84 || linePos == 90 || linePos == 95)
-        result = blend(float4(1, 0, 0, 0.1), result);
+        result = Blend(float4(1, 0, 0, 0.1), result);
 
     float height = 30;
 
     if (isinf(logLum))
     {
         float alpha = square(max(float(pixelPos.y - viewportSize.y) + height, 0) / height);
-        result = blend(float4(1, 1, 0, alpha), result);
+        result = Blend(float4(1, 1, 0, alpha), result);
     }
     else if (i_position.y >= pos)
     {
         float alpha = square(max(float(pos - pixelPos.y) + height, 0) / height);
-        result = blend(float4(0, 1, 1, alpha), result);
+        result = Blend(float4(0, 1, 1, alpha), result);
     }
 
     return result;

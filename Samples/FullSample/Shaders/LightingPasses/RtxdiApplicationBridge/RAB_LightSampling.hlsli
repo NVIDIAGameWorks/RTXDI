@@ -17,7 +17,7 @@
 
 float2 RAB_GetEnvironmentMapRandXYFromDir(float3 worldDir)
 {
-    float2 uv = directionToEquirectUV(worldDir); 
+    float2 uv = DirectionToEquirectUV(worldDir);
     uv.x -= g_Const.sceneConstants.environmentRotation;
     uv = frac(uv);
     return uv;
@@ -127,7 +127,7 @@ float3 GetEnvironmentRadiance(float3 direction)
 
     Texture2D environmentLatLongMap = t_BindlessTextures[g_Const.sceneConstants.environmentMapTextureIndex];
 
-    float2 uv = directionToEquirectUV(direction);
+    float2 uv = DirectionToEquirectUV(direction);
     uv.x -= g_Const.sceneConstants.environmentRotation;
 
     float3 environmentRadiance = environmentLatLongMap.SampleLevel(s_EnvironmentSampler, uv, 0).rgb;
@@ -153,7 +153,7 @@ bool IsComplexSurface(int2 pixelPosition, RAB_Surface surface)
     return originalRoughness < (surface.material.roughness * g_Const.restirDI.temporalResamplingParams.permutationSamplingThreshold);
 }
 
-uint getLightIndex(uint instanceID, uint geometryIndex, uint primitiveIndex)
+uint GetLightIndex(uint instanceID, uint geometryIndex, uint primitiveIndex)
 {
     uint lightIndex = RTXDI_InvalidLightIndex;
     InstanceData hitInstance = t_InstanceData[instanceID];
@@ -189,7 +189,7 @@ bool RAB_TraceRayForLocalLight(float3 origin, float3 direction, float tMin, floa
     hitAnything = rayQuery.CommittedStatus() == COMMITTED_TRIANGLE_HIT;
     if (hitAnything)
     {
-        o_lightIndex = getLightIndex(rayQuery.CommittedInstanceID(), rayQuery.CommittedGeometryIndex(), rayQuery.CommittedPrimitiveIndex());
+        o_lightIndex = GetLightIndex(rayQuery.CommittedInstanceID(), rayQuery.CommittedGeometryIndex(), rayQuery.CommittedPrimitiveIndex());
         hitUV = rayQuery.CommittedTriangleBarycentrics();
     }
 #else
@@ -201,14 +201,14 @@ bool RAB_TraceRayForLocalLight(float3 origin, float3 direction, float tMin, floa
     hitAnything = payload.instanceID != ~0u;
     if (hitAnything)
     {
-        o_lightIndex = getLightIndex(payload.instanceID, payload.geometryIndex, payload.primitiveIndex);
+        o_lightIndex = GetLightIndex(payload.instanceID, payload.geometryIndex, payload.primitiveIndex);
         hitUV = payload.barycentrics;
     }
 #endif
 
     if (o_lightIndex != RTXDI_InvalidLightIndex)
     {
-        o_randXY = randomFromBarycentric(hitUVToBarycentric(hitUV));
+        o_randXY = RandomFromBarycentric(HitUVToBarycentric(hitUV));
     }
 
     return hitAnything;

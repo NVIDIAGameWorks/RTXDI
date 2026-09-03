@@ -30,23 +30,23 @@
 
 #if USE_RAY_QUERY
 [numthreads(RTXDI_SCREEN_SPACE_GROUP_SIZE, RTXDI_SCREEN_SPACE_GROUP_SIZE, 1)]
-void main(uint2 GlobalIndex : SV_DispatchThreadID, uint2 LocalIndex : SV_GroupThreadID, uint2 GroupIdx : SV_GroupID)
+void main(uint2 globalIndex : SV_DispatchThreadID, uint2 localIndex : SV_GroupThreadID, uint2 groupIdx : SV_GroupID)
 #else
 [shader("raygeneration")]
 void RayGen()
 #endif
 {
 #if !USE_RAY_QUERY
-    uint2 GlobalIndex = DispatchRaysIndex().xy;
+    uint2 globalIndex = DispatchRaysIndex().xy;
 #endif
 
     const RTXDI_RuntimeParameters params = g_Const.runtimeParams;
 
-    uint2 pixelPosition = RTXDI_ReservoirPosToPixelPos(GlobalIndex, params.activeCheckerboardField);
+    uint2 pixelPosition = RTXDI_ReservoirPosToPixelPos(globalIndex, params.activeCheckerboardField);
 
     RAB_Surface surface = RAB_GetGBufferSurface(pixelPosition, false);
 
-    RTXDI_DIReservoir reservoir = RTXDI_LoadDIReservoir(g_Const.restirDI.reservoirBufferParams, GlobalIndex, g_Const.restirDI.bufferIndices.shadingInputBufferIndex);
+    RTXDI_DIReservoir reservoir = RTXDI_LoadDIReservoir(g_Const.restirDI.reservoirBufferParams, globalIndex, g_Const.restirDI.bufferIndices.shadingInputBufferIndex);
 
     float3 diffuse = 0;
     float3 specular = 0;
@@ -61,21 +61,21 @@ void RayGen()
             surface, RTXDI_GetDIReservoirSampleUV(reservoir));
 
         bool needToStore = ShadeSurfaceWithLightSample(reservoir, surface, g_Const.restirDI.shadingParams, lightSample,
-            /* previousFrameTLAS = */ false, /* enableVisibilityReuse = */ true, g_Const.restirDI.temporalResamplingParams.enableVisibilityShortcut, diffuse, specular, lightDistance);
+            /* prevFrameTLAS = */ false, /* enableVisibilityReuse = */ true, g_Const.restirDI.temporalResamplingParams.enableVisibilityShortcut, diffuse, specular, lightDistance);
 
-        currLuminance = float2(calcLuminance(diffuse * surface.material.diffuseAlbedo), calcLuminance(specular));
+        currLuminance = float2(CalcLuminance(diffuse * surface.material.diffuseAlbedo), CalcLuminance(specular));
 
         specular = DemodulateSpecular(surface.material.specularF0, specular);
 
         if (needToStore)
         {
-            RTXDI_StoreDIReservoir(reservoir, g_Const.restirDI.reservoirBufferParams, GlobalIndex, g_Const.restirDI.bufferIndices.shadingInputBufferIndex);
+            RTXDI_StoreDIReservoir(reservoir, g_Const.restirDI.reservoirBufferParams, globalIndex, g_Const.restirDI.bufferIndices.shadingInputBufferIndex);
         }
     }
 
     // Store the sampled lighting luminance for the gradient pass.
     // Discard the pixels where the visibility was reused, as gradients need actual visibility.
-    u_RestirLuminance[GlobalIndex] = currLuminance * (reservoir.age > 0 ? 0 : 1);
+    u_RestirLuminance[globalIndex] = currLuminance * (reservoir.age > 0 ? 0 : 1);
 
 #if RTXDI_REGIR_MODE != RTXDI_REGIR_DISABLED
     if (g_Const.visualizeRegirCells)
@@ -84,7 +84,7 @@ void RayGen()
     }
 #endif
 
-    StoreShadingOutput(GlobalIndex, pixelPosition,
+    StoreShadingOutput(globalIndex, pixelPosition,
         surface.viewDepth, surface.material.roughness, diffuse, specular, lightDistance, true, g_Const.restirDI.shadingParams.enableDenoiserInputPacking);
 
     if (g_Const.debug.outputDebugDirectLighting)

@@ -22,7 +22,8 @@
 
 #include "../../../GBufferHelpers.hlsli"
 
-void InitializeDebugPathViz(const RTXDI_PathTracerContext ctx, const RAB_PathTracerUserData ptud)
+template<typename PTContextType>
+void InitializeDebugPathViz(const RTXDI_PathTracerContext<PTContextType> ctx, const RAB_PathTracerUserData ptud)
 {
     Debug_BeginPath(ptud.pathType);
 
@@ -54,7 +55,8 @@ bool IsNeeOnlySamplingEnabled()
     return g_Const.pt.lightSamplingMode == PT_INITIAL_SAMPLING_LIGHT_SAMPLING_MODE_NEE_ONLY;
 }
 
-bool ShouldRunPrimaryBrdfSampling(const RTXDI_PathTracerContext ctx)
+template<typename PTContextType>
+bool ShouldRunPrimaryBrdfSampling(const RTXDI_PathTracerContext<PTContextType> ctx)
 {
     return ctx.GetBounceDepth() != 1;
 }
@@ -73,15 +75,16 @@ RTXDI_BrdfRaySample ImportanceSampleBrdf(RAB_Surface surface, inout RTXDI_Random
 
     if(validOutDir)
     {
-        brs.OutDirection = outDir;
+        brs.outDirection = outDir;
         brs.properties = brsp;
-        brs.OutPdf = RAB_SurfaceEvaluateBsdfPdf(surface, outDir, brsp);
-        brs.BrdfTimesNoL = RAB_SurfaceEvaluateBsdfTimesNoL(surface, outDir, brsp.IsDelta());
+        brs.outPdf = RAB_SurfaceEvaluateBsdfPdf(surface, outDir, brsp);
+        brs.brdfTimesNoL = RAB_SurfaceEvaluateBsdfTimesNoL(surface, outDir, brsp.IsDelta());
     }
     return brs;
 }
 
-void UpdateBounceDepthFromRaySample(inout RTXDI_PathTracerContext ctx,
+template<typename PTContextType>
+void UpdateBounceDepthFromRaySample(inout RTXDI_PathTracerContext<PTContextType> ctx,
                                     inout uint extraMirrorBounceBudget,
                                     const RAB_PathTracerUserData ptud)
 {
@@ -94,7 +97,8 @@ void UpdateBounceDepthFromRaySample(inout RTXDI_PathTracerContext ctx,
     }
 }
 
-bool ThroughputIsBelowMinimumThreshold(const RTXDI_PathTracerContext ctx, const RAB_PathTracerUserData ptud)
+template<typename PTContextType>
+bool ThroughputIsBelowMinimumThreshold(const RTXDI_PathTracerContext<PTContextType> ctx, const RAB_PathTracerUserData ptud)
 {
     // Only apply to initial sampling pass.
     if(ptud.pathType != RTXDI_PTPathTraceInvocationType_Initial)
@@ -104,7 +108,8 @@ bool ThroughputIsBelowMinimumThreshold(const RTXDI_PathTracerContext ctx, const 
     return dot(ctx.GetPathThroughput(), ctx.GetPathThroughput()) < g_Const.pt.minimumPathThroughput*g_Const.pt.minimumPathThroughput;
 }
 
-float calculateRussianRouletteContinuationProbability(const RTXDI_PathTracerContext ctx)
+template<typename PTContextType>
+float CalculateRussianRouletteContinuationProbability(const RTXDI_PathTracerContext<PTContextType> ctx)
 {
 #if 1
     return g_Const.pt.russianRouletteContinueChance;
@@ -136,21 +141,21 @@ float calculateRussianRouletteContinuationProbability(const RTXDI_PathTracerCont
 // Method for Avoiding Self-Intersection" by Carsten W�chter and Nikolaus Binder.
 // https://developer.nvidia.com/ray-tracing-gems-ii
 //
-// Note `RayOrigin` and `GeoNormal` can be in any domain as long as they are in
+// Note `rayOrigin` and `geoNormal` can be in any domain as long as they are in
 // the same domain.
-float3 AdjustRayOrigin(float3 RayOrigin, float3 GeoNormal)
+float3 AdjustRayOrigin(float3 rayOrigin, float3 geoNormal)
 {
-    const float Origin = 1.f / 16.f;
-    const float Scale0 = 3.f / 65536.f;
-    const float Scale1 = 3.f * 256.f;
+    const float origin = 1.f / 16.f;
+    const float scale0 = 3.f / 65536.f;
+    const float scale1 = 3.f * 256.f;
 
     // Per-component integer offset to bit representation of fp32 position.
-    const int3 Offset = int3(GeoNormal * Scale1);
-    const float3 NewRayOrigin = asfloat(asint(RayOrigin) + select(RayOrigin < 0.f, -Offset, Offset));
+    const int3 offset = int3(geoNormal * scale1);
+    const float3 newRayOrigin = asfloat(asint(rayOrigin) + select(rayOrigin < 0.f, -offset, offset));
 
     // Select per-component between small fixed offset or above variable offset depending on distance to origin.
-    const float3 ResolvedOffset = GeoNormal * Scale0;
-    return select(abs(RayOrigin) < Origin, RayOrigin + ResolvedOffset, NewRayOrigin);
+    const float3 resolvedOffset = geoNormal * scale0;
+    return select(abs(rayOrigin) < origin, rayOrigin + resolvedOffset, newRayOrigin);
 }
 
 RayDesc setupContinuationRay(float3 worldNormal, float3 worldPosition, float3 outDirection)
@@ -190,7 +195,7 @@ RAB_RayPayload TraceNextBounce(const RayDesc continuationRay)
     {
         if (rayQuery.CandidateType() == CANDIDATE_NON_OPAQUE_TRIANGLE)
         {
-            if (considerTransparentMaterial(
+            if (ConsiderTransparentMaterial(
                 rayQuery.CandidateInstanceID(),
                 rayQuery.CandidateGeometryIndex(),
                 rayQuery.CandidatePrimitiveIndex(),
@@ -240,7 +245,7 @@ RAB_Surface LoadSurfaceFromRayPayload(RAB_RayPayload rayPayload, RayDesc ray, co
     if (materialOverrideParams.metalnessOverride >= 0)
     {
         ms.metalness = materialOverrideParams.metalnessOverride;
-        getReflectivity(ms.metalness, ms.baseColor, ms.diffuseAlbedo, ms.specularF0);
+        GetReflectivity(ms.metalness, ms.baseColor, ms.diffuseAlbedo, ms.specularF0);
     }
 
     RAB_Surface surface = RAB_EmptySurface();
@@ -252,7 +257,7 @@ RAB_Surface LoadSurfaceFromRayPayload(RAB_RayPayload rayPayload, RayDesc ray, co
     surface.material.specularF0 = ms.specularF0;
     surface.material.roughness = ms.roughness;
     surface.material.emissiveColor = ms.emissiveColor; // originally .radiance += ms.emissiveColor
-    surface.diffuseProbability = getSurfaceDiffuseProbability(surface);
+    surface.diffuseProbability = GetSurfaceDiffuseProbability(surface);
     surface.viewDepth = 1.0; // doesn't matter
 
     UpdatePSRFromHit(psr, rayPayload.committedRayT, gs, ms, surface, prevSurface, g_Const.view.matWorldToView);
@@ -260,7 +265,8 @@ RAB_Surface LoadSurfaceFromRayPayload(RAB_RayPayload rayPayload, RayDesc ray, co
     return surface;
 }
 
-bool ShouldSampleEmissiveSurfaces(const RTXDI_PathTracerContext ctx, RAB_Surface prevSurface)
+template<typename PTContextType>
+bool ShouldSampleEmissiveSurfaces(const RTXDI_PathTracerContext<PTContextType> ctx, RAB_Surface prevSurface)
 {
     if(!ctx.ShouldSampleEmissiveSurfaces())
         return false;
@@ -281,13 +287,15 @@ bool ShouldSampleEmissiveSurfaces(const RTXDI_PathTracerContext ctx, RAB_Surface
     return false;
 }
 
-float3 SampleEmissiveLightFromSurface(const RTXDI_PathTracerContext ctx)
+template<typename PTContextType>
+float3 SampleEmissiveLightFromSurface(const RTXDI_PathTracerContext<PTContextType> ctx)
 {
     const bool FacingNextSurface = RAB_RayPayloadIsFrontFace(ctx.GetTraceResult());
     return (FacingNextSurface ? RAB_GetEmissiveColor(RAB_GetMaterial(ctx.GetIntersectionSurface())) : float3(0.0f, 0.0f, 0.0f));
 }
 
-bool ShouldSampleNeeLights(const RTXDI_PathTracerContext ctx)
+template<typename PTContextType>
+bool ShouldSampleNeeLights(const RTXDI_PathTracerContext<PTContextType> ctx)
 {
     return IsNeeSamplingEnabled()
            && ctx.ShouldSampleNee()
@@ -365,7 +373,8 @@ void CalculateNEE(const RAB_Surface intersectionSurface,
 
 }
 
-void handleHit(inout RTXDI_PathTracerContext ctx,
+template<typename PTContextType>
+void HandleHit(inout RTXDI_PathTracerContext<PTContextType> ctx,
                inout RTXDI_PathTracerRandomContext ptRandContext,
                const RAB_Surface prevSurface,
                inout PSRData psr)
@@ -412,7 +421,8 @@ void handleHit(inout RTXDI_PathTracerContext ctx,
     }
 }
 
-bool ShouldRecordEnvironmentMapLightSample(const RTXDI_PathTracerContext ctx)
+template<typename PTContextType>
+bool ShouldRecordEnvironmentMapLightSample(const RTXDI_PathTracerContext<PTContextType> ctx)
 {
     if(!g_Const.sceneConstants.enableEnvironmentMap)
         return false;
@@ -441,7 +451,8 @@ bool ShouldRecordEnvironmentMapLightSample(const RTXDI_PathTracerContext ctx)
         return false;
 }
 
-bool DetermineOutgoingRayAndThroughput(inout RTXDI_PathTracerContext ctx, inout RTXDI_PathTracerRandomContext ptRandContext, inout RAB_PathTracerUserData ptud, inout uint extraMirrorBounceBudget)
+template<typename PTContextType>
+bool DetermineOutgoingRayAndThroughput(inout RTXDI_PathTracerContext<PTContextType> ctx, inout RTXDI_PathTracerRandomContext ptRandContext, inout RAB_PathTracerUserData ptud, inout uint extraMirrorBounceBudget)
 {
     Debug_SetPTVertexIndex(ctx.GetBounceDepth());
     if (ShouldRunPrimaryBrdfSampling(ctx))
@@ -462,7 +473,7 @@ bool DetermineOutgoingRayAndThroughput(inout RTXDI_PathTracerContext ctx, inout 
 
         if(ShouldRunRussianRoulette(ptud.psr) && ctx.ShouldRunRussianRoulette())
         {
-            float continuationProbability = calculateRussianRouletteContinuationProbability(ctx);
+            float continuationProbability = CalculateRussianRouletteContinuationProbability(ctx);
             if (RTXDI_GetNextRandom(ptRandContext.initialRandomSamplerState) > continuationProbability)
             {
                 return false;
@@ -474,7 +485,7 @@ bool DetermineOutgoingRayAndThroughput(inout RTXDI_PathTracerContext ctx, inout 
             ctx.RecordRussianRouletteProbability(continuationProbability);
         }
 
-        ctx.SetContinuationRay(setupContinuationRay(RAB_GetSurfaceGeoNormal(ctx.GetIntersectionSurface()), RAB_GetSurfaceWorldPos(ctx.GetIntersectionSurface()), ctx.GetBrdfRaySample().OutDirection));
+        ctx.SetContinuationRay(setupContinuationRay(RAB_GetSurfaceGeoNormal(ctx.GetIntersectionSurface()), RAB_GetSurfaceWorldPos(ctx.GetIntersectionSurface()), ctx.GetBrdfRaySample().outDirection));
     }
 
     if (!ctx.AnalyzePathReconnectibilityBeforeTrace())
@@ -487,7 +498,8 @@ bool DetermineOutgoingRayAndThroughput(inout RTXDI_PathTracerContext ctx, inout 
 
 // Starting from a surface, generate an outgoing ray based on the BRDF and calculate the
 //  direct lighting at the hit (which becomes indirect lighting at this surface)
-void RAB_PathTrace(inout RTXDI_PathTracerContext ctx, inout RTXDI_PathTracerRandomContext ptRandContext, inout RAB_PathTracerUserData ptud)
+template<typename PTContextType>
+void RAB_PathTrace(inout RTXDI_PathTracerContext<PTContextType> ctx, inout RTXDI_PathTracerRandomContext ptRandContext, inout RAB_PathTracerUserData ptud)
 {
     InitializeDebugPathViz(ctx, ptud);
 
@@ -515,7 +527,7 @@ void RAB_PathTrace(inout RTXDI_PathTracerContext ctx, inout RTXDI_PathTracerRand
 
         if (RAB_IsValidHit(ctx.GetTraceResult()))
         {
-            handleHit(ctx, ptRandContext, prevSurface, ptud.psr);
+            HandleHit(ctx, ptRandContext, prevSurface, ptud.psr);
             if(ctx.IsPathTerminated())
             {
                 break;

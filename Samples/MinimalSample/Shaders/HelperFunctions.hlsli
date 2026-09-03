@@ -20,7 +20,7 @@ struct RandomSamplerState
     uint index;
 };
 
-RandomSamplerState initRandomSampler(uint2 pixelPos, uint frameIndex)
+RandomSamplerState InitRandomSampler(uint2 pixelPos, uint frameIndex)
 {
     RandomSamplerState state;
 
@@ -32,7 +32,7 @@ RandomSamplerState initRandomSampler(uint2 pixelPos, uint frameIndex)
     return state;
 }
 
-uint murmur3(inout RandomSamplerState r)
+uint Murmur3(inout RandomSamplerState r)
 {
 #define ROT32(x, y) ((x << y) | (x >> (32 - y)))
 
@@ -65,50 +65,34 @@ uint murmur3(inout RandomSamplerState r)
     return hash;
 }
 
-float sampleUniformRng(inout RandomSamplerState r)
+float SampleUniformRng(inout RandomSamplerState r)
 {
-    uint v = murmur3(r);
+    uint v = Murmur3(r);
     const uint one = asuint(1.f);
     const uint mask = (1 << 23) - 1;
     return asfloat((mask & v) | one) - 1.f;
 }
 
-float3 sampleTriangle(float2 rndSample)
-{
-    float sqrtx = sqrt(rndSample.x);
-
-    return float3(
-        1 - sqrtx,
-        sqrtx * (1 - rndSample.y),
-        sqrtx * rndSample.y);
-}
-
-float3 hitUVToBarycentric(float2 hitUV)
+float3 HitUVToBarycentric(float2 hitUV)
 {
     return float3(1 - hitUV.x - hitUV.y, hitUV.x, hitUV.y);
 }
 
-// Inverse of sampleTriangle
-float2 randomFromBarycentric(float3 barycentric)
+// Inverse of SampleTriangle
+float2 RandomFromBarycentric(float3 barycentric)
 {
     float sqrtx = 1 - barycentric.x;
     return float2(sqrtx * sqrtx, barycentric.z / sqrtx);
 }
 
-// For converting an area measure pdf to solid angle measure pdf
-float pdfAtoW(float pdfA, float distance_, float cosTheta)
-{
-    return pdfA * square(distance_) / cosTheta;
-}
-
-float calcLuminance(float3 color)
+float CalcLuminance(float3 color)
 {
     return dot(color.xyz, float3(0.299f, 0.587f, 0.114f));
 }
 
-float3 basicToneMapping(float3 color, float bias)
+float3 BasicToneMapping(float3 color, float bias)
 {
-    float lum = calcLuminance(color);
+    float lum = CalcLuminance(color);
 
     if (lum > 0)
     {

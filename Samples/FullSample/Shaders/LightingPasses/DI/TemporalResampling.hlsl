@@ -25,19 +25,19 @@
 
 #if USE_RAY_QUERY
 [numthreads(RTXDI_SCREEN_SPACE_GROUP_SIZE, RTXDI_SCREEN_SPACE_GROUP_SIZE, 1)] 
-void main(uint2 GlobalIndex : SV_DispatchThreadID, uint2 LocalIndex : SV_GroupThreadID, uint2 GroupIdx : SV_GroupID)
+void main(uint2 globalIndex : SV_DispatchThreadID, uint2 localIndex : SV_GroupThreadID, uint2 groupIdx : SV_GroupID)
 #else
 [shader("raygeneration")]
 void RayGen()
 #endif
 {
 #if !USE_RAY_QUERY
-    uint2 GlobalIndex = DispatchRaysIndex().xy;
+    uint2 globalIndex = DispatchRaysIndex().xy;
 #endif
 
     const RTXDI_RuntimeParameters params = g_Const.runtimeParams;
 
-    uint2 pixelPosition = RTXDI_ReservoirPosToPixelPos(GlobalIndex, params.activeCheckerboardField);
+    uint2 pixelPosition = RTXDI_ReservoirPosToPixelPos(globalIndex, params.activeCheckerboardField);
 
     RTXDI_RandomSamplerState rng = RTXDI_InitRandomSampler(pixelPosition, g_Const.runtimeParams.frameIndex, RTXDI_DI_TEMPORAL_RESAMPLING_RANDOM_SEED);
 
@@ -59,10 +59,10 @@ void RayGen()
     if (RAB_IsSurfaceValid(surface))
     {
         RTXDI_DIReservoir curSample = RTXDI_LoadDIReservoir(g_Const.restirDI.reservoirBufferParams,
-            GlobalIndex, g_Const.restirDI.bufferIndices.initialSamplingOutputBufferIndex);
+            globalIndex, g_Const.restirDI.bufferIndices.initialSamplingOutputBufferIndex);
 
         float3 motionVector = t_MotionVectors[pixelPosition].xyz;
-        motionVector = convertMotionVectorToPixelSpace(g_Const.view, g_Const.prevView, pixelPosition, motionVector);
+        motionVector = ConvertMotionVectorToPixelSpace(g_Const.view, g_Const.prevView, pixelPosition, motionVector);
 
 		uint sourceBufferIndex = g_Const.restirDI.bufferIndices.temporalResamplingInputBufferIndex;
 
@@ -75,11 +75,11 @@ void RayGen()
 #ifdef RTXDI_ENABLE_BOILING_FILTER
     if (g_Const.restirDI.boilingFilterParams.enableBoilingFilter)
     {
-        RTXDI_BoilingFilter(LocalIndex, g_Const.restirDI.boilingFilterParams.boilingFilterStrength, temporalResult);
+        RTXDI_BoilingFilter(localIndex, g_Const.restirDI.boilingFilterParams.boilingFilterStrength, temporalResult);
     }
 #endif
 
-    u_TemporalSamplePositions[GlobalIndex] = temporalSamplePixelPos;
+    u_TemporalSamplePositions[globalIndex] = temporalSamplePixelPos;
     
-    RTXDI_StoreDIReservoir(temporalResult, g_Const.restirDI.reservoirBufferParams, GlobalIndex, g_Const.restirDI.bufferIndices.temporalResamplingOutputBufferIndex);
+    RTXDI_StoreDIReservoir(temporalResult, g_Const.restirDI.reservoirBufferParams, globalIndex, g_Const.restirDI.bufferIndices.temporalResamplingOutputBufferIndex);
 }

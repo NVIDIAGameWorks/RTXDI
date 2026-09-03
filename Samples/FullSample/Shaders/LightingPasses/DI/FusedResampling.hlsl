@@ -35,19 +35,19 @@
 
 #if USE_RAY_QUERY
 [numthreads(RTXDI_SCREEN_SPACE_GROUP_SIZE, RTXDI_SCREEN_SPACE_GROUP_SIZE, 1)]
-void main(uint2 GlobalIndex : SV_DispatchThreadID, uint2 LocalIndex : SV_GroupThreadID)
+void main(uint2 globalIndex : SV_DispatchThreadID, uint2 localIndex : SV_GroupThreadID)
 #else
 [shader("raygeneration")]
 void RayGen()
 #endif
 {
 #if !USE_RAY_QUERY
-    uint2 GlobalIndex = DispatchRaysIndex().xy;
+    uint2 globalIndex = DispatchRaysIndex().xy;
 #endif
 
     const RTXDI_RuntimeParameters params = g_Const.runtimeParams;
 
-    uint2 pixelPosition = RTXDI_ReservoirPosToPixelPos(GlobalIndex, params.activeCheckerboardField);
+    uint2 pixelPosition = RTXDI_ReservoirPosToPixelPos(globalIndex, params.activeCheckerboardField);
 
     RTXDI_RandomSamplerState rng = RTXDI_InitRandomSampler(pixelPosition, g_Const.runtimeParams.frameIndex, RTXDI_DI_GENERATE_INITIAL_SAMPLES_RANDOM_SEED);
     RTXDI_RandomSamplerState tileRng = RTXDI_InitRandomSampler(pixelPosition / RTXDI_TILE_SIZE_IN_PIXELS, g_Const.runtimeParams.frameIndex, RTXDI_DI_GENERATE_INITIAL_SAMPLES_RANDOM_SEED);
@@ -76,7 +76,7 @@ void RayGen()
     int2 temporalSamplePixelPos = -1;
 
     float3 motionVector = t_MotionVectors[pixelPosition].xyz;
-    motionVector = convertMotionVectorToPixelSpace(g_Const.view, g_Const.prevView, pixelPosition, motionVector);
+    motionVector = ConvertMotionVectorToPixelSpace(g_Const.view, g_Const.prevView, pixelPosition, motionVector);
 
     bool usePermutationSampling = false;
     if (g_Const.restirDI.temporalResamplingParams.enablePermutationSampling)
@@ -88,12 +88,12 @@ void RayGen()
     reservoir = RTXDI_DISpatioTemporalResampling(pixelPosition, surface, reservoir,
             rng, motionVector, g_Const.restirDI.bufferIndices.temporalResamplingInputBufferIndex, params, g_Const.restirDI.reservoirBufferParams, g_Const.restirDI.spatioTemporalResamplingParams, temporalSamplePixelPos, lightSample);
 
-    u_TemporalSamplePositions[GlobalIndex] = temporalSamplePixelPos;
+    u_TemporalSamplePositions[globalIndex] = temporalSamplePixelPos;
 
 #ifdef RTXDI_ENABLE_BOILING_FILTER
     if (g_Const.restirDI.boilingFilterParams.enableBoilingFilter)
     {
-        RTXDI_BoilingFilter(LocalIndex, g_Const.restirDI.boilingFilterParams.boilingFilterStrength, reservoir);
+        RTXDI_BoilingFilter(localIndex, g_Const.restirDI.boilingFilterParams.boilingFilterStrength, reservoir);
     }
 #endif
 
@@ -106,18 +106,18 @@ void RayGen()
     {
         // lightSample is produced by the RTXDI_SampleLightsForSurface and RTXDI_SpatioTemporalResampling calls above
         ShadeSurfaceWithLightSample(reservoir, surface, g_Const.restirDI.shadingParams, lightSample,
-            /* previousFrameTLAS = */ false, /* enableVisibilityReuse = */ true, g_Const.restirDI.temporalResamplingParams.enableVisibilityShortcut, diffuse, specular, lightDistance);
+            /* prevFrameTLAS = */ false, /* enableVisibilityReuse = */ true, g_Const.restirDI.temporalResamplingParams.enableVisibilityShortcut, diffuse, specular, lightDistance);
 
-        currLuminance = float2(calcLuminance(diffuse * surface.material.diffuseAlbedo), calcLuminance(specular));
+        currLuminance = float2(CalcLuminance(diffuse * surface.material.diffuseAlbedo), CalcLuminance(specular));
 
         specular = DemodulateSpecular(surface.material.specularF0, specular);
     }
 
     // Store the sampled lighting luminance for the gradient pass.
     // Discard the pixels where the visibility was reused, as gradients need actual visibility.
-    u_RestirLuminance[GlobalIndex] = currLuminance * (reservoir.age > 0 ? 0 : 1);
+    u_RestirLuminance[globalIndex] = currLuminance * (reservoir.age > 0 ? 0 : 1);
 
-    RTXDI_StoreDIReservoir(reservoir, g_Const.restirDI.reservoirBufferParams, GlobalIndex, g_Const.restirDI.bufferIndices.shadingInputBufferIndex);
+    RTXDI_StoreDIReservoir(reservoir, g_Const.restirDI.reservoirBufferParams, globalIndex, g_Const.restirDI.bufferIndices.shadingInputBufferIndex);
 
 #if RTXDI_REGIR_MODE != RTXDI_REGIR_DISABLED
     if (g_Const.visualizeRegirCells)
@@ -126,6 +126,6 @@ void RayGen()
     }
 #endif
 
-    StoreShadingOutput(GlobalIndex, pixelPosition,
+    StoreShadingOutput(globalIndex, pixelPosition,
         surface.viewDepth, surface.material.roughness,  diffuse, specular, lightDistance, true, g_Const.restirDI.shadingParams.enableDenoiserInputPacking);
 }

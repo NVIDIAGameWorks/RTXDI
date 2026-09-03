@@ -106,7 +106,7 @@ void main(uint2 pixelPosition : SV_DispatchThreadID)
 
         // Compositing and tone mapping
         shadingOutput += primary.emissiveColor;
-        shadingOutput = basicToneMapping(shadingOutput, 0.005);
+        shadingOutput = BasicToneMapping(shadingOutput, 0.005);
 
         u_ShadingOutput[pixelPosition] = float4(shadingOutput, 0);
     }

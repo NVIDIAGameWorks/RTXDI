@@ -188,23 +188,23 @@ void main(uint dispatchThreadId : SV_DispatchThreadID, uint groupThreadId : SV_G
     // If this light has existed on the previous frame, write the index mapping information
     // so that temporal resampling can be applied to the light correctly when it changes
     // the index inside the light buffer.
-    if (task.previousLightBufferOffset >= 0)
+    if (task.prevLightBufferOffset >= 0)
     {
-        uint prevBufferPtr = task.previousLightBufferOffset + triangleIdx;
+        uint prevBufferPtr = task.prevLightBufferOffset + triangleIdx;
 
         // Mapping buffer for the previous frame points at the current frame.
         // Add one to indicate that this is a valid mapping, zero is invalid.
-        u_LightIndexMappingBuffer[g_Const.previousFrameLightOffset + prevBufferPtr] = 
+        u_LightIndexMappingBuffer[g_Const.prevFrameLightOffset + prevBufferPtr] =
             g_Const.currentFrameLightOffset + lightBufferPtr + 1;
 
         // Mapping buffer for the current frame points at the previous frame.
         // Add one to indicate that this is a valid mapping, zero is invalid.
         u_LightIndexMappingBuffer[g_Const.currentFrameLightOffset + lightBufferPtr] = 
-            g_Const.previousFrameLightOffset + prevBufferPtr + 1;
+            g_Const.prevFrameLightOffset + prevBufferPtr + 1;
     }
 
     // Calculate the total flux
-    float emissiveFlux = PolymorphicLight::getPower(lightInfo);
+    float emissiveFlux = PolymorphicLight::GetPower(lightInfo);
 
     // Write the flux into the PDF texture
     uint2 pdfTexturePosition = RTXDI_LinearIndexToZCurve(lightBufferPtr);

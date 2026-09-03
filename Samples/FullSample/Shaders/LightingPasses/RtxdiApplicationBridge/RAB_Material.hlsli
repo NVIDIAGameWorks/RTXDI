@@ -14,7 +14,7 @@
 #define RAB_MATERIAL_HLSLI
 
 #include "donut/shaders/brdf.hlsli"
-#include "Rtxdi/Utils/RandomSamplerstate.hlsli"
+#include "Rtxdi/Utils/RandomSamplerState.hlsli"
 
 static const float kMinRoughness = 0.03f;
 
@@ -86,9 +86,9 @@ RAB_Material GetGBufferMaterial(
 
 RAB_Material RAB_GetGBufferMaterial(
     int2 pixelPosition,
-    bool previousFrame)
+    bool prevFrame)
 {
-    if(previousFrame)
+    if(prevFrame)
     {
         return GetGBufferMaterial(
             pixelPosition,
@@ -118,10 +118,10 @@ bool RAB_AreMaterialsSimilar(RAB_Material a, RAB_Material b)
     if (!RTXDI_CompareRelativeDifference(a.roughness, b.roughness, roughnessThreshold))
         return false;
 
-    if (abs(calcLuminance(a.specularF0) - calcLuminance(b.specularF0)) > reflectivityThreshold)
+    if (abs(CalcLuminance(a.specularF0) - CalcLuminance(b.specularF0)) > reflectivityThreshold)
         return false;
     
-    if (abs(calcLuminance(a.diffuseAlbedo) - calcLuminance(b.diffuseAlbedo)) > albedoThreshold)
+    if (abs(CalcLuminance(a.diffuseAlbedo) - CalcLuminance(b.diffuseAlbedo)) > albedoThreshold)
         return false;
 
     return true;

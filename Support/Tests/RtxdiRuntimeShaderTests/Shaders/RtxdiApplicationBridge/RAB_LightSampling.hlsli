@@ -63,7 +63,7 @@ bool IsComplexSurface(int2 pixelPosition, RAB_Surface surface)
     return true;
 }
 
-uint getLightIndex(uint instanceID, uint geometryIndex, uint primitiveIndex)
+uint GetLightIndex(uint instanceID, uint geometryIndex, uint primitiveIndex)
 {
     return 0;
 }

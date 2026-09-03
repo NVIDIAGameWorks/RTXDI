@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 3.10)
 
 project(RTXDI)
 
+include(CMakeDependentOption)
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS ON)
@@ -39,10 +41,11 @@ option(DONUT_WITH_LZ4 "" OFF)
 option(DONUT_WITH_MINIZ "" OFF)
 option(DONUT_WITH_DLSS "" ON)
 
-# Setup NVAPI support
-option(NVRHI_WITH_NVAPI "Include NVAPI support (requires NVAPI SDK)" ON)
+cmake_dependent_option(NVRHI_WITH_NVAPI "Include NVAPI support (requires NVAPI SDK)" ON "WIN32" OFF)
 set(NVAPI_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/External/NVAPI/" CACHE STRING "Path to NVAPI include headers/shaders" )
-set(NVAPI_LIBRARY "${CMAKE_CURRENT_SOURCE_DIR}/External/NVAPI/amd64/nvapi64.lib" CACHE STRING "Path to NVAPI .lib file")
+if (WIN32)
+    set(NVAPI_LIBRARY "${CMAKE_CURRENT_SOURCE_DIR}/External/NVAPI/amd64/nvapi64.lib" CACHE STRING "Path to NVAPI .lib file")
+endif()
 
 # Helper to download and unzip a package from a URL
 # Uses a zero-length file to identify the version of the package
@@ -85,8 +88,8 @@ endif()
 # Have ShaderMake use included DXC
 option(SHADERMAKE_FIND_DXC "" OFF)
 option(SHADERMAKE_FIND_DXC_SPIRV "" OFF)
-# But do have ShaderMake find FXC for compiling NRD shaders
-option(SHADERMAKE_FIND_FXC "" ON)
+# FXC is the Windows DXBC compiler used by NRD on Windows only.
+cmake_dependent_option(SHADERMAKE_FIND_FXC "Find FXC in Windows SDK for NRD DXBC shaders" ON "WIN32" OFF)
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")

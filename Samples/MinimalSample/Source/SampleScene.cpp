@@ -20,7 +20,7 @@
 using namespace donut;
 using namespace donut::math;
 
-#include "../shaders/ShaderParameters.h"
+#include "../Shaders/ShaderParameters.h"
 
 inline uint64_t AdvanceHeapPtr(uint64_t& heapPtr, const nvrhi::MemoryRequirements& memReq)
 {

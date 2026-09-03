@@ -193,12 +193,12 @@ void ps_main(
     if (g_Const.metalnessOverride >= 0)
     {
         ms.metalness = g_Const.metalnessOverride;
-        getReflectivity(ms.metalness, ms.baseColor, ms.diffuseAlbedo, ms.specularF0);
+        GetReflectivity(ms.metalness, ms.baseColor, ms.diffuseAlbedo, ms.specularF0);
     }
 
     float clipDepth = 0;
     float viewDepth = 0;
-    float3 motion = getMotionVector(g_Const.view, g_Const.viewPrev, 
+    float3 motion = GetMotionVector(g_Const.view, g_Const.viewPrev,
         gs.instance, gs.objectSpacePosition, gs.prevObjectSpacePosition, clipDepth, viewDepth);
 
     o_viewDepth = viewDepth;

@@ -21,7 +21,7 @@
  * Because RAB_PathTracer is a fully user-defined function,
  * it can keep track of nearly all of the information required
  * for the denoiser.
- * However, there are two cases where the ComputeHybridShift
+ * However, there are two cases where the RTXDI_ComputeHybridShift
  * function contains information about the path that the path
  * tracer does not - after random replay to the vertex before the
  * reconnection vertex, and after random replay to the last vertex
@@ -50,13 +50,13 @@ void RAB_ReconnectionDenoiserCallback(const RTXDI_PTReservoir neighborSample,
                                       const RAB_Surface rcPrevSurface,
                                       inout RAB_PathTracerUserData ptud)
 {
-    float3 L = normalize(neighborSample.TranslatedWorldPosition - rcPrevSurface.worldPos);
+    float3 L = normalize(neighborSample.translatedWorldPosition - rcPrevSurface.worldPos);
     if (ptud.psr.active)
     {
         if (ptud.psr.hasRecorded())
             ptud.psr.packedL = ndirToOctUnorm32(mul(L, ptud.psr.mirrorMatrix));
         if (ptud.psr.hitT == 0.f)
-            ptud.psr.hitT = length(neighborSample.TranslatedWorldPosition - rcPrevSurface.worldPos);
+            ptud.psr.hitT = length(neighborSample.translatedWorldPosition - rcPrevSurface.worldPos);
     }
 }
 

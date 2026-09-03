@@ -29,29 +29,31 @@
 #include "Rtxdi/PT/BoilingFilter.hlsli"
 #include "Rtxdi/PT/Reservoir.hlsli"
 #include "Rtxdi/PT/TemporalResampling.hlsli"
+#include "Rtxdi/PT/DuplicationMap.hlsli"
+#include "Rtxdi/PT/Decorrelation.hlsli"
 
 float3 LoadMotionVector(uint2 pixelPosition)
 {
 	float3 motionVector = g_Const.usePSRMvecForResampling
 		? u_PSRMotionVectors[pixelPosition].xyz
 		: t_MotionVectors[pixelPosition].xyz;
-    motionVector = convertMotionVectorToPixelSpace(g_Const.view, g_Const.prevView, pixelPosition, motionVector);
+    motionVector = ConvertMotionVectorToPixelSpace(g_Const.view, g_Const.prevView, pixelPosition, motionVector);
 	return motionVector;
 }
 
 #if USE_RAY_QUERY
 [numthreads(RTXDI_SCREEN_SPACE_GROUP_SIZE, RTXDI_SCREEN_SPACE_GROUP_SIZE, 1)]
-void main(uint2 GlobalIndex : SV_DispatchThreadID, uint2 LocalIndex : SV_GroupThreadID)
+void main(uint2 globalIndex : SV_DispatchThreadID, uint2 localIndex : SV_GroupThreadID)
 #else
 [shader("raygeneration")]
 void RayGen()
 #endif
 {
 #if !USE_RAY_QUERY
-    const uint2 GlobalIndex = DispatchRaysIndex().xy;
+    const uint2 globalIndex = DispatchRaysIndex().xy;
 #endif
     RTXDI_PTTemporalResamplingRuntimeParameters trrParams = RTXDI_EmptyPTTemporalResamplingRuntimeParameters();
-    trrParams.pixelPosition = RTXDI_ReservoirPosToPixelPos(GlobalIndex, g_Const.runtimeParams.activeCheckerboardField);
+    trrParams.pixelPosition = RTXDI_ReservoirPosToPixelPos(globalIndex, g_Const.runtimeParams.activeCheckerboardField);
     trrParams.reservoirPosition = RTXDI_PixelPosToReservoirPos(trrParams.pixelPosition, g_Const.runtimeParams.activeCheckerboardField);
     trrParams.motionVector = LoadMotionVector(trrParams.pixelPosition);
     trrParams.cameraPos = g_Const.view.cameraDirectionOrPosition.xyz;
@@ -81,9 +83,11 @@ void RayGen()
 #ifdef RTXDI_ENABLE_BOILING_FILTER
     if (g_Const.restirPT.boilingFilter.enableBoilingFilter)
     {
-        RTXDI_PTBoilingFilter(LocalIndex, g_Const.restirPT.boilingFilter.boilingFilterStrength, Reservoir);
+        RTXDI_PTBoilingFilter(localIndex, g_Const.restirPT.boilingFilter.boilingFilterStrength, Reservoir);
     }
 #endif
+    if (RTXDI_PTNeedsDuplicationInputs(g_Const.restirPT.bufferIndices.temporalResamplingOutputBufferIndex, g_Const.restirPT))
+        RTXDI_PTStoreDuplicationInputs(trrParams.pixelPosition, Reservoir);
 
-	RTXDI_StorePTReservoir(Reservoir, g_Const.restirPT.reservoirBuffer, trrParams.reservoirPosition, g_Const.restirPT.bufferIndices.temporalResamplingOutputBufferIndex);
+    RTXDI_StorePTReservoir(Reservoir, g_Const.restirPT.reservoirBuffer, trrParams.reservoirPosition, g_Const.restirPT.bufferIndices.temporalResamplingOutputBufferIndex);
 }

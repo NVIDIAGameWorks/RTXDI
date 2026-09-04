@@ -235,12 +235,12 @@ bool RAB_UseLightIdentityResolution()
     return false;
 }
 
-uint2 RAB_GetLightIdentity(uint currentLightIdx)
+uint RAB_GetLightIdentity(uint currentLightIdx)
 {
-    return uint2(0);
+    return 0;
 }
 
-uint16_t RAB_ResolveLightIndexFromIdentity(uint2 identity)
+uint16_t RAB_ResolveLightIndexFromIdentity(uint identity)
 {
     return RTXDI_INVALID_LIGHT_INDEX;
 }

@@ -57,7 +57,7 @@ bool RTXDI_StreamSample(
     reservoir.portalIdx = uint8_t(portalIndex);
     reservoir.uv = uv;
     reservoir.targetPdf = targetPdf;
-    reservoir.lightIdentity = RAB_UseLightIdentityResolution() ? RAB_GetLightIdentity(uint16_t(lightIndex)) : uint2(0);
+    reservoir.lightIdentity = RAB_UseLightIdentityResolution() ? RAB_GetLightIdentity(uint16_t(lightIndex)) : 0u;
   }
 
   return selectSample;
@@ -332,7 +332,7 @@ RTXDI_Reservoir RTXDI_SampleSingleLight(
   state.uv = lightUV;
   state.targetPdf = targetPdf;
   state.M = 1;
-  state.lightIdentity = (targetPdf > 0 && RAB_UseLightIdentityResolution()) ? RAB_GetLightIdentity(lightIdx) : uint2(0);
+  state.lightIdentity = (targetPdf > 0 && RAB_UseLightIdentityResolution()) ? RAB_GetLightIdentity(lightIdx) : 0u;
   
   if (testVisibility)
   {

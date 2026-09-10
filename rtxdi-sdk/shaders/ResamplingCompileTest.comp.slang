@@ -230,6 +230,26 @@ int RAB_TranslateLightIndex(uint lightIndex, bool currentToPrevious)
     return -1;
 }
 
+bool RAB_UseLightIdentityResolution()
+{
+    return false;
+}
+
+uint RAB_GetLightIdentity(uint currentLightIdx)
+{
+    return 0;
+}
+
+uint16_t RAB_ResolveLightIndexFromIdentity(uint identity)
+{
+    return RTXDI_INVALID_LIGHT_INDEX;
+}
+
+bool RAB_ResolveReservoirLightIndex(inout RTXDI_Reservoir reservoir)
+{
+    return RTXDI_IsValidReservoir(reservoir);
+}
+
 bool RAB_ShouldDiscardEnlargedPixel(inout RAB_RandomSamplerState rng, RAB_Surface surface, float3 virtualMotionVector)
 {
     return false;

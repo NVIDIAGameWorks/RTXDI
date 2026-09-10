@@ -57,6 +57,7 @@ bool RTXDI_StreamSample(
     reservoir.portalIdx = uint8_t(portalIndex);
     reservoir.uv = uv;
     reservoir.targetPdf = targetPdf;
+    reservoir.lightIdentity = RAB_UseLightIdentityResolution() ? RAB_GetLightIdentity(uint16_t(lightIndex)) : 0u;
   }
 
   return selectSample;
@@ -87,6 +88,7 @@ bool RTXDI_CombineReservoirs(
     reservoir.portalIdx = newReservoir.portalIdx;
     reservoir.uv = newReservoir.uv;
     reservoir.targetPdf = targetPdf;
+    reservoir.lightIdentity = newReservoir.lightIdentity;
   }
 
   return selectSample;
@@ -330,6 +332,7 @@ RTXDI_Reservoir RTXDI_SampleSingleLight(
   state.uv = lightUV;
   state.targetPdf = targetPdf;
   state.M = 1;
+  state.lightIdentity = (targetPdf > 0 && RAB_UseLightIdentityResolution()) ? RAB_GetLightIdentity(lightIdx) : 0u;
   
   if (testVisibility)
   {
@@ -485,6 +488,8 @@ void RTXDI_TemporalResampling(
   // calculate targetPdf for the old sample
   bool selectedPreviousSample = false;
   uint previousM = 0;
+  bool useStoredTemporalTargetPdf = false;
+  float storedTemporalTargetPdf = 0.0f;
   if (prevPixelID.x >= 0)
   {
     RTXDI_Reservoir prevReservoir = RAB_LoadReservoir(prevPixelID, tparams.sourceBufferIndex);
@@ -493,17 +498,25 @@ void RTXDI_TemporalResampling(
 
     // Save the light index in the previous frame context
     const uint16_t originalPrevLightIdx = prevReservoir.lightIdx;
-    
-    uint16_t mappedLightID = RAB_TranslateLightIndex(prevReservoir.lightIdx, /* currentToPrevious = */ false);
-    if (mappedLightID == RTXDI_INVALID_LIGHT_INDEX)
+
+    // Map the previous reservoir's stored light index to the current frame. 
+    bool prevReservoirValid;
+    if (RAB_UseLightIdentityResolution())
     {
-      // Kill the reservoir
-      prevReservoir.weightSum = 0;
-      prevReservoir.lightIdx = RTXDI_INVALID_LIGHT_INDEX;
+      prevReservoirValid = RAB_ResolveReservoirLightIndex(prevReservoir);
     }
     else
     {
+      const uint16_t mappedLightID = RAB_TranslateLightIndex(prevReservoir.lightIdx, /* currentToPrevious = */ false);
       prevReservoir.lightIdx = mappedLightID;
+      prevReservoirValid = (mappedLightID != RTXDI_INVALID_LIGHT_INDEX);
+    }
+
+    if (!prevReservoirValid)
+    {
+      // The light this reservoir referenced no longer exists: kill the reservoir.
+      prevReservoir.weightSum = 0;
+      prevReservoir.lightIdx = RTXDI_INVALID_LIGHT_INDEX;
     }
 
     float weightAtCurrent = 0;
@@ -527,7 +540,17 @@ void RTXDI_TemporalResampling(
     selectedPreviousSample = RTXDI_CombineReservoirs(state, prevReservoir, RAB_GetNextRandom(rng), weightAtCurrent);
     if (selectedPreviousSample)
     {
-      selectedLightPrevIdx = originalPrevLightIdx;
+      if (!RAB_UseLightIdentityResolution())
+      {
+        selectedLightPrevIdx = originalPrevLightIdx;
+      }
+      else
+      {
+        // Reuse the reservoir's stored targetPdf as the temporal MIS target
+        // This is more stable when reservoirs are not updated every frame
+        useStoredTemporalTargetPdf = true;
+        storedTemporalTargetPdf = prevReservoir.targetPdf;
+      }
     }
   }
 
@@ -538,44 +561,54 @@ void RTXDI_TemporalResampling(
     float piSum = state.targetPdf * initialM;
 
     if(RTXDI_IsValidReservoir(state) &&
-      selectedLightPrevIdx != RTXDI_INVALID_LIGHT_INDEX &&
+      (selectedLightPrevIdx != RTXDI_INVALID_LIGHT_INDEX || useStoredTemporalTargetPdf) &&
       previousM > 0)
     {
-      float temporalP = 0;
-      RAB_Surface temporalSurface = RAB_GetSurfaceForTemporalBiasCorrection(surface, prevPixelID, prevNormal, tparams.virtualMotionVector);
+      float temporalP;
 
-      RAB_Surface virtualTemporalSurface = temporalSurface;
-#if !RTXDI_NO_PORTALS
-      if (state.portalIdx != RTXDI_INVALID_PORTAL_INDEX)
+      if (useStoredTemporalTargetPdf)
       {
-        RAB_TransformSurface(virtualTemporalSurface, RAB_GetPortalTransform(state.portalIdx));
+        // the previous-frame light buffer can't be indexed with its stored index,
+        // so use the reservoir's stored target as the selected sample's target in the temporal domain.
+        temporalP = storedTemporalTargetPdf;
       }
-#endif
-
-      RAB_LightSample selectedSampleAtTemporalSurface = RAB_GetLightSample(selectedLightPrevIdx,
-        state.uv, virtualTemporalSurface, /* usePreviousLights = */ true);
-
-      temporalP = RAB_GetLightSampleTargetPdfForSurface(selectedSampleAtTemporalSurface, virtualTemporalSurface);
-
-      // If we have selected the temporal sample and discard is enabled, we know that the sample was visible
-      // on the previous frame because otherwise it would've been discarded and we couldn't select it.
-      // In practice, temporal samples are selected way more often than new samples, which means this
-      // condition culls the vast majority of visibility rays here.
-      const bool selectedSampleKnownVisible = selectedPreviousSample && tparams.discardInvisibleSamples;
-
-      if (temporalP > 0 && tparams.biasCorrectionMode >= RTXDI_BIAS_CORRECTION_RAY_TRACED && !selectedSampleKnownVisible)
+      else
       {
-        float3 attenuation;
-#if RTXDI_NO_PORTALS
-        bool sampleVisible = RAB_TraceLightSampleVisibility(temporalSurface, selectedSampleAtTemporalSurface,
-          RTXDI_INVALID_PORTAL_INDEX, false, false, true, attenuation);
-#else
-        bool sampleVisible = RAB_TraceLightSampleVisibility(temporalSurface, selectedSampleAtTemporalSurface,
-          state.portalIdx, false, false, true, attenuation);
+        RAB_Surface temporalSurface = RAB_GetSurfaceForTemporalBiasCorrection(surface, prevPixelID, prevNormal, tparams.virtualMotionVector);
+
+        RAB_Surface virtualTemporalSurface = temporalSurface;
+#if !RTXDI_NO_PORTALS
+        if (state.portalIdx != RTXDI_INVALID_PORTAL_INDEX)
+        {
+          RAB_TransformSurface(virtualTemporalSurface, RAB_GetPortalTransform(state.portalIdx));
+        }
 #endif
 
-        if (!sampleVisible)
-          temporalP = 0;
+        RAB_LightSample selectedSampleAtTemporalSurface = RAB_GetLightSample(selectedLightPrevIdx,
+          state.uv, virtualTemporalSurface, /* usePreviousLights = */ true);
+
+        temporalP = RAB_GetLightSampleTargetPdfForSurface(selectedSampleAtTemporalSurface, virtualTemporalSurface);
+
+        // If we have selected the temporal sample and discard is enabled, we know that the sample was visible
+        // on the previous frame because otherwise it would've been discarded and we couldn't select it.
+        // In practice, temporal samples are selected way more often than new samples, which means this
+        // condition culls the vast majority of visibility rays here.
+        const bool selectedSampleKnownVisible = selectedPreviousSample && tparams.discardInvisibleSamples;
+
+        if (temporalP > 0 && tparams.biasCorrectionMode >= RTXDI_BIAS_CORRECTION_RAY_TRACED && !selectedSampleKnownVisible)
+        {
+          float3 attenuation;
+#if RTXDI_NO_PORTALS
+          bool sampleVisible = RAB_TraceLightSampleVisibility(temporalSurface, selectedSampleAtTemporalSurface,
+            RTXDI_INVALID_PORTAL_INDEX, false, false, true, attenuation);
+#else
+          bool sampleVisible = RAB_TraceLightSampleVisibility(temporalSurface, selectedSampleAtTemporalSurface,
+            state.portalIdx, false, false, true, attenuation);
+#endif
+
+          if (!sampleVisible)
+            temporalP = 0;
+        }
       }
 
       pi = selectedPreviousSample ? temporalP : pi;
@@ -683,6 +716,11 @@ RTXDI_Reservoir RTXDI_SpatialResampling(
       }
 
       RTXDI_Reservoir neighborReservoir = RAB_LoadReservoir(neighborID, sparams.sourceBufferIndex);
+
+      if (RAB_UseLightIdentityResolution())
+      {
+        RAB_ResolveReservoirLightIndex(neighborReservoir);
+      }
 
       float targetPdf = 0;
       if (RTXDI_IsValidReservoir(neighborReservoir))

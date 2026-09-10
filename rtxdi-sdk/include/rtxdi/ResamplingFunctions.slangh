@@ -500,11 +500,10 @@ void RTXDI_TemporalResampling(
     const uint16_t originalPrevLightIdx = prevReservoir.lightIdx;
 
     // Map the previous reservoir's stored light index to the current frame. 
-    bool exactIndexMatch = true;
     bool prevReservoirValid;
     if (RAB_UseLightIdentityResolution())
     {
-      prevReservoirValid = RAB_ResolveReservoirLightIndex(prevReservoir, exactIndexMatch);
+      prevReservoirValid = RAB_ResolveReservoirLightIndex(prevReservoir);
     }
     else
     {
@@ -541,18 +540,14 @@ void RTXDI_TemporalResampling(
     selectedPreviousSample = RTXDI_CombineReservoirs(state, prevReservoir, RAB_GetNextRandom(rng), weightAtCurrent);
     if (selectedPreviousSample)
     {
-      if (exactIndexMatch)
+      if (!RAB_UseLightIdentityResolution())
       {
-        // 1-frame-old reservoir: its stored index is a valid previous-frame index, so the temporal
-        // MIS target is recomputed against the previous light buffer at the temporal surface below.
         selectedLightPrevIdx = originalPrevLightIdx;
       }
       else
       {
-        // Multi-frame-stale reservoir recovered via identity: its stored index can't index the
-        // previous-frame light buffer. Reuse the reservoir's stored targetPdf as the temporal MIS
-        // target
-        selectedLightPrevIdx = RTXDI_INVALID_LIGHT_INDEX;
+        // Reuse the reservoir's stored targetPdf as the temporal MIS target
+        // This is more stable when reservoirs are not updated every frame
         useStoredTemporalTargetPdf = true;
         storedTemporalTargetPdf = prevReservoir.targetPdf;
       }
@@ -724,8 +719,7 @@ RTXDI_Reservoir RTXDI_SpatialResampling(
 
       if (RAB_UseLightIdentityResolution())
       {
-        bool neighborExactIndexMatch;
-        RAB_ResolveReservoirLightIndex(neighborReservoir, neighborExactIndexMatch);
+        RAB_ResolveReservoirLightIndex(neighborReservoir);
       }
 
       float targetPdf = 0;

@@ -245,9 +245,8 @@ uint16_t RAB_ResolveLightIndexFromIdentity(uint identity)
     return RTXDI_INVALID_LIGHT_INDEX;
 }
 
-bool RAB_ResolveReservoirLightIndex(inout RTXDI_Reservoir reservoir, out bool exactIndexMatch)
+bool RAB_ResolveReservoirLightIndex(inout RTXDI_Reservoir reservoir)
 {
-    exactIndexMatch = false;
     return RTXDI_IsValidReservoir(reservoir);
 }
 
